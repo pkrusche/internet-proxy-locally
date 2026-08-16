@@ -1,0 +1,35 @@
+# TEST POLICY — NEVER use for normal operation.
+#
+# Identical to config/pipelock.yaml plus wildcard DNS fixture domains
+# (nip.io / sslip.io / rbndr.us) whose hostnames resolve to arbitrary,
+# attacker-chosen IPs. Allowlisting them is the point of the test: with
+# the hostname allowed, the proxy's *IP-layer* SSRF floors (private,
+# loopback, link-local, metadata, DNS rebinding) must still block the
+# connection. See checks/egress.py and docs/security.md.
+#
+# Activate with:  ./run.py --engine pipelock up --test-policy
+# Deactivate with a normal `./run.py up` (recreates with the real policy).
+
+version: 1
+mode: strict
+enforce: true
+
+api_allowlist:
+  - github.com
+  - "*.github.com"
+  - "*.githubusercontent.com"
+  - pypi.org
+  - files.pythonhosted.org
+  - registry.npmjs.org
+  # --- DNS fixtures for the adversarial suite only ---
+  - "*.nip.io"
+  - "*.sslip.io"
+  - "*.rbndr.us"
+
+forward_proxy:
+  enabled: true
+  sni_verification: true
+  sni_require_tls: true
+
+tls_interception:
+  enabled: false

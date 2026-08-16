@@ -1,0 +1,33 @@
+# Pipelock configuration: strict standard forward proxy, default deny.
+#
+# This file is the Pipelock expression of the shared logical policy in
+# docs/policy.md. Keep the allowlist in sync with config/smokescreen.yaml
+# (`./run.py setup` cross-checks the two).
+#
+# Notes:
+# - MCP / A2A / fetch-API features of Pipelock are intentionally unused.
+# - TLS interception stays disabled for v1 (docs/pipelock.md).
+# - Validate keys against the pinned release (services/pipelock.toml)
+#   after any upgrade: `./run.py setup && ./run.py check --quick`.
+
+version: 1
+mode: strict
+enforce: true
+
+api_allowlist:
+  - github.com
+  - "*.github.com"
+  - "*.githubusercontent.com"
+  - pypi.org
+  - files.pythonhosted.org
+  - registry.npmjs.org
+
+forward_proxy:
+  enabled: true
+  # CONNECT target must match the TLS ClientHello SNI (blocks domain fronting).
+  sni_verification: true
+  # Bytes inside a CONNECT tunnel must be TLS (blocks raw protocol smuggling).
+  sni_require_tls: true
+
+tls_interception:
+  enabled: false

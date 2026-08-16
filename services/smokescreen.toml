@@ -1,0 +1,38 @@
+# Smokescreen service definition.
+#
+# Upstream (stripe/smokescreen) does not publish OCI images or regular
+# version tags, so we build a local image from a pinned source commit.
+# `ref` must be a full commit SHA. It starts empty in a fresh checkout;
+# record it once, on a networked machine, with:
+#
+#     ./run.py pin smokescreen
+#
+# and commit the result. `./run.py setup` builds the image and tags it
+# with the first 12 characters of the pinned SHA; `./run.py up` refuses
+# to start if the pinned image is not present (fail closed).
+
+[image]
+repository = "internet-proxy-locally/smokescreen"
+
+[source]
+repo = "https://github.com/stripe/smokescreen"
+ref = ""
+
+[build]
+# Builder/runtime base pins for images/smokescreen/Dockerfile.
+# Update deliberately; keep in sync with the ARGs in the Dockerfile.
+go_image = "golang:1.24.6-alpine3.22"
+runtime_image = "alpine:3.22.1"
+
+[container]
+name = "internet-proxy-smokescreen"
+internal_port = 4750
+config_file = "config/smokescreen.yaml"
+test_config_file = "config/smokescreen.test.yaml"
+config_mount = "/etc/smokescreen/acl.yaml"
+args = [
+    "--listen-ip", "0.0.0.0",
+    "--listen-port", "4750",
+    "--egress-acl-file", "/etc/smokescreen/acl.yaml",
+    "--allow-missing-role",
+]

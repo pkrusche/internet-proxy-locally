@@ -1,0 +1,28 @@
+# Smokescreen egress ACL: default deny, enforce mode.
+#
+# This file is the Smokescreen expression of the shared logical policy in
+# docs/policy.md. Keep the allowlist in sync with config/pipelock.yaml
+# (`./run.py setup` cross-checks the two).
+#
+# Smokescreen is run with --allow-missing-role, so every client (no TLS
+# client cert in v1) is subject to the `default` service below.
+# Private/loopback/link-local destination blocking is built into
+# Smokescreen and is NOT disabled here (never pass
+# --unsafe-allow-private-ranges).
+
+---
+version: v1
+
+services: []
+
+default:
+  name: default
+  project: internet-proxy-locally
+  action: enforce
+  allowed_domains:
+    - github.com
+    - "*.github.com"
+    - "*.githubusercontent.com"
+    - pypi.org
+    - files.pythonhosted.org
+    - registry.npmjs.org

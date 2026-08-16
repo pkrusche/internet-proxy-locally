@@ -1,0 +1,28 @@
+# Pipelock service definition.
+#
+# Pins are the source of truth for what `./run.py` will run.
+# `digest` is the immutable OCI manifest digest for `repository:tag`.
+# It starts empty in a fresh checkout; record it once, on a networked
+# machine, with:
+#
+#     ./run.py pin pipelock
+#
+# and commit the result. `./run.py up` refuses to start while the digest
+# is unpinned (fail closed). Never use a `latest` tag here.
+
+[image]
+repository = "ghcr.io/luckypipewrench/pipelock"
+tag = "v3.0.0"
+digest = ""
+
+[container]
+name = "internet-proxy-pipelock"
+internal_port = 8888
+config_file = "config/pipelock.yaml"
+test_config_file = "config/pipelock.test.yaml"
+config_mount = "/config/pipelock.yaml"
+args = [
+    "run",
+    "--config", "/config/pipelock.yaml",
+    "--listen", "0.0.0.0:8888",
+]

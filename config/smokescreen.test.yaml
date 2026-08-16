@@ -1,0 +1,31 @@
+# TEST POLICY — NEVER use for normal operation.
+#
+# Identical to config/smokescreen.yaml plus wildcard DNS fixture domains
+# (nip.io / sslip.io / rbndr.us) whose hostnames resolve to arbitrary,
+# attacker-chosen IPs. Allowlisting them is the point of the test: with
+# the hostname allowed, Smokescreen's built-in IP-range blocking must
+# still deny private/loopback/link-local/metadata destinations.
+#
+# Activate with:  ./run.py --engine smokescreen up --test-policy
+# Deactivate with a normal `./run.py up` (recreates with the real policy).
+
+---
+version: v1
+
+services: []
+
+default:
+  name: default
+  project: internet-proxy-locally
+  action: enforce
+  allowed_domains:
+    - github.com
+    - "*.github.com"
+    - "*.githubusercontent.com"
+    - pypi.org
+    - files.pythonhosted.org
+    - registry.npmjs.org
+    # --- DNS fixtures for the adversarial suite only ---
+    - "*.nip.io"
+    - "*.sslip.io"
+    - "*.rbndr.us"

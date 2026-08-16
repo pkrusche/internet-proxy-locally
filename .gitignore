@@ -1,0 +1,6 @@
+# project-sandbox — do not commit agent secrets
+.project-sandbox/
+.devcontainer/
+__pycache__/
+*.pyc
+results/
