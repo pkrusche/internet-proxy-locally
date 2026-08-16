@@ -10,7 +10,7 @@ exact command to run.
 - [x] Repository skeleton (README §1 layout).
 - [x] Backend detection (Docker / Apple `container`, macOS preference, override).
 - [x] Pipelock service definition (`services/pipelock.toml`).
-- [x] Pipelock release pinned (`v3.0.0`); ⏳ digest: `./run.py pin pipelock` on a networked machine, then commit.
+- [x] Pipelock release pinned (image tag `3.3.0`); ⏳ digest: `./run.py pin pipelock` on a networked machine, then commit.
 - [x] Strict allowlist config (`config/pipelock.yaml`).
 - [x] Stable endpoint `127.0.0.1:18080` (env-independent, engine-independent).
 - [x] `up` / `status` / `logs` / `down` (+ explicit `restart`), fail-closed semantics.

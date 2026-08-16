@@ -8,8 +8,12 @@ Upstream: <https://github.com/stripe/smokescreen>.
 * egress ACL (`config/smokescreen.yaml`): `version: v1`, a single
   `default` service with `action: enforce` and the shared allowlist —
   never `open` or `report`;
-* run with `--allow-missing-role`, so every client (no client TLS in v1)
-  is subject to that default service;
+* daemon config (`config/smokescreen.conf.yaml`, mounted at
+  `/etc/smokescreen/config.yaml` and passed with `--config-file`) sets
+  `allow_missing_role: true`, so every client (no client TLS in v1) is
+  subject to that default service. It lives in a config file because
+  upstream exposes that key there only — there is no CLI flag for it, and
+  without it requests are rejected before the ACL is consulted;
 * Smokescreen's built-in protections stay on: public-IP validation,
   private/loopback/link-local range blocking, resolved-IP checking
   (`--unsafe-allow-private-ranges` is forbidden and rejected by

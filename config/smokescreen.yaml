@@ -4,8 +4,9 @@
 # docs/policy.md. Keep the allowlist in sync with config/pipelock.yaml
 # (`./run.py setup` cross-checks the two).
 #
-# Smokescreen is run with --allow-missing-role, so every client (no TLS
-# client cert in v1) is subject to the `default` service below.
+# Smokescreen is run with `allow_missing_role: true` (set in
+# config/smokescreen.conf.yaml — it has no CLI equivalent), so every client
+# (no TLS client cert in v1) is subject to the `default` service below.
 # Private/loopback/link-local destination blocking is built into
 # Smokescreen and is NOT disabled here (never pass
 # --unsafe-allow-private-ranges).

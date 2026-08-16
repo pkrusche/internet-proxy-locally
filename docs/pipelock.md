@@ -30,7 +30,10 @@ required by the plan and enforced socially, not mechanically.
 ## Image and pinning
 
 * `ghcr.io/luckypipewrench/pipelock`, release tag pinned in
-  `services/pipelock.toml` (`v3.0.0` at time of writing; never `latest`);
+  `services/pipelock.toml` (`3.3.0` at time of writing; never `latest`).
+  Registry tags are unprefixed — the git tag is `v3.3.0`, the image tag is
+  `3.3.0` — and only recent releases stay published, so a stale pin will
+  404 on pull;
 * the immutable digest is recorded by `./run.py pin pipelock` and required
   by `up`;
 * upstream publishes signed, SBOM-backed releases — verify the signature

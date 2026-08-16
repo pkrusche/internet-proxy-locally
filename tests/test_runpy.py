@@ -123,6 +123,11 @@ class RunPyCliTest(unittest.TestCase):
         shutil.copy(REPO_ROOT / "run.py", self.tmp / "run.py")
         for sub in ("services", "config"):
             shutil.copytree(REPO_ROOT / sub, self.tmp / sub)
+        # Start from unpinned service specs regardless of what the checkout
+        # currently pins, so the fail-closed tests stay meaningful and the
+        # tests that need a pin set one explicitly.
+        self.unpin("pipelock", "digest")
+        self.unpin("smokescreen", "ref")
         (self.tmp / "checks").mkdir()
         shutil.copy(REPO_ROOT / "checks" / "egress.py", self.tmp / "checks" / "egress.py")
 
@@ -156,10 +161,23 @@ class RunPyCliTest(unittest.TestCase):
             [os.sys.executable, str(self.tmp / "run.py"), *args],
             capture_output=True, text=True, env=self.env, timeout=120)
 
+    def unpin(self, engine: str, key: str) -> None:
+        toml = self.tmp / "services" / f"{engine}.toml"
+        text, count = re.subn(rf'^{key} = ".*"$', f'{key} = ""',
+                              toml.read_text(), count=1, flags=re.M)
+        if count != 1:
+            raise AssertionError(f"no `{key}` pin found in services/{engine}.toml")
+        toml.write_text(text)
+
     def pin_pipelock(self, digest: str = "sha256:" + "ab" * 32) -> None:
         toml = self.tmp / "services" / "pipelock.toml"
         toml.write_text(re.sub(r'^digest = ""$', f'digest = "{digest}"',
                                toml.read_text(), flags=re.M))
+
+    def fake_image(self, ref: str) -> None:
+        """Mark an image as present in the shim's state (its `build` is a no-op)."""
+        key = ref.translate(str.maketrans("/:@", "___"))
+        (self.state / f"image-{key}").write_text("[{}]\n")
 
     def backend_log(self) -> str:
         return self.log.read_text()
@@ -224,6 +242,21 @@ class RunPyCliTest(unittest.TestCase):
         self.assertEqual(down.returncode, 0)
         self.assertIn("removed internet-proxy-pipelock", down.stdout)
         self.assertFalse((self.state / "container-internet-proxy-pipelock").exists())
+
+    def test_up_mounts_smokescreen_daemon_config(self) -> None:
+        # allow_missing_role has no CLI flag; without this mount every request
+        # is rejected before the ACL's `default` rule is reached.
+        sha = "c" * 40
+        toml = self.tmp / "services" / "smokescreen.toml"
+        toml.write_text(re.sub(r'^ref = ""$', f'ref = "{sha}"',
+                               toml.read_text(), flags=re.M))
+        self.fake_image(f"internet-proxy-locally/smokescreen:{sha[:12]}")
+        up = self.run_cli("--backend", "docker", "--engine", "smokescreen", "up")
+        self.assertEqual(up.returncode, 0, up.stderr)
+        run_line = next(l for l in self.backend_log().splitlines() if l.startswith("run "))
+        self.assertIn(":/etc/smokescreen/acl.yaml:ro", run_line)
+        self.assertIn(":/etc/smokescreen/config.yaml:ro", run_line)
+        self.assertIn("--config-file /etc/smokescreen/config.yaml", run_line)
 
     def test_check_requires_running_engine(self) -> None:
         proc = self.run_cli("--backend", "docker", "check", "--quick")

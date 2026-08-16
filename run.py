@@ -65,6 +65,8 @@ class ServiceSpec:
     config_file: str = ""
     test_config_file: str = ""
     config_mount: str = ""
+    extra_config_file: str = ""
+    extra_config_mount: str = ""
     args: list[str] = field(default_factory=list)
 
     @property
@@ -96,6 +98,8 @@ class ServiceSpec:
             config_file=container.get("config_file", ""),
             test_config_file=container.get("test_config_file", ""),
             config_mount=container.get("config_mount", ""),
+            extra_config_file=container.get("extra_config_file", ""),
+            extra_config_mount=container.get("extra_config_mount", ""),
             args=list(container.get("args", [])),
         )
         if not spec.image_repository or not spec.container_name or not spec.internal_port:
@@ -130,6 +134,18 @@ class ServiceSpec:
         if not path.is_file():
             raise Fail(f"missing config file: {path}")
         return path
+
+    def mounts(self, test_policy: bool) -> list[tuple[Path, str]]:
+        """Read-only bind mounts for `up`: the policy file, plus any daemon config."""
+        pairs = [(self.config_path(test_policy), self.config_mount)]
+        if self.extra_config_file:
+            path = REPO_ROOT / self.extra_config_file
+            if not path.is_file():
+                raise Fail(f"missing config file: {path}")
+            if not self.extra_config_mount:
+                raise Fail(f"services/{self.engine}.toml: extra_config_file needs extra_config_mount")
+            pairs.append((path, self.extra_config_mount))
+        return pairs
 
 
 # ---------------------------------------------------------------------------
@@ -177,17 +193,21 @@ class Backend:
         if not info:
             return "absent"
         entry = info[0] if isinstance(info, list) else info
-        # docker: {"State": {"Status": "running"}}; Apple container: {"status": "running"}
+        if not isinstance(entry, dict):
+            return "absent"
+        # docker:          {"State": {"Status": "running"}}
+        # Apple container: {"status": {"state": "running", ...}}
+        #                  (older shapes use a plain string for either key)
         status = ""
-        if isinstance(entry, dict):
-            state = entry.get("State")
-            if isinstance(state, dict):
-                status = state.get("Status", "")
-            elif isinstance(state, str):
-                status = state
-            else:
-                status = entry.get("status", "")
-        return "running" if status.lower() == "running" else "stopped"
+        for key in ("State", "status"):
+            value = entry.get(key)
+            if isinstance(value, str):
+                status = value
+            elif isinstance(value, dict):
+                status = value.get("Status") or value.get("state") or ""
+            if status:
+                break
+        return "running" if str(status).lower() == "running" else "stopped"
 
     def remove_container(self, name: str) -> bool:
         """Remove a container if present; returns True if something was removed."""
@@ -257,15 +277,22 @@ class Backend:
         except json.JSONDecodeError:
             return ""
         entry = (info[0] if isinstance(info, list) and info else info) or {}
-        if isinstance(entry, dict):
-            for key in ("RepoDigests",):
-                digests = entry.get(key)
-                if isinstance(digests, list) and digests:
-                    return str(digests[0]).rpartition("@")[2]
-            # Apple `container image inspect` exposes the manifest digest directly.
+        if not isinstance(entry, dict):
+            return ""
+        digests = entry.get("RepoDigests")
+        if isinstance(digests, list) and digests:
+            return str(digests[0]).rpartition("@")[2]
+        # Apple `container image inspect` reports the manifest digest under
+        # `configuration.descriptor.digest` (a manifest-list digest for
+        # multi-arch images); older shapes put it at the top level.
+        descriptor = (entry.get("configuration") or {}).get("descriptor") or {}
+        for source in (descriptor, entry):
+            if not isinstance(source, dict):
+                continue
             for key in ("digest", "Digest"):
-                if entry.get(key):
-                    return str(entry[key])
+                value = source.get(key)
+                if isinstance(value, str) and value.startswith("sha256:"):
+                    return value
         return ""
 
     def build(self, *, tag: str, dockerfile: Path, context: Path, build_args: dict[str, str]) -> None:
@@ -610,7 +637,7 @@ def cmd_up(opts: argparse.Namespace) -> int:
         publish_host=host,
         publish_port=port,
         internal_port=spec.internal_port,
-        mounts=[(config_path, spec.config_mount)],
+        mounts=spec.mounts(opts.test_policy),
         args=spec.args,
     )
 

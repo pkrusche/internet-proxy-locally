@@ -39,7 +39,8 @@ RUN apk add --no-cache ca-certificates \
 
 COPY --from=build /out/smokescreen /usr/local/bin/smokescreen
 # Required license notice for redistribution of the built binary.
-COPY --from=build /src/LICENSE /licenses/smokescreen.LICENSE
+# Upstream names it LICENSE.txt; re-check after a ref bump.
+COPY --from=build /src/LICENSE.txt /licenses/smokescreen.LICENSE
 
 USER smokescreen
 
