@@ -39,8 +39,8 @@ API traffic goes through Agentgateway, not this proxy.
   resolving to a private address is rejected;
 * protect against DNS rebinding (validation applies to the address the
   proxy actually connects to);
-* rejected destinations are logged by the engine (see docs/pipelock.md and
-  docs/smokescreen.md for what each log contains).
+* rejected destinations are logged by the engine (docs/usage.md's logging
+  section covers what each engine's lines contain).
 
 ## Changing the policy
 

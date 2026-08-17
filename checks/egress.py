@@ -7,7 +7,7 @@ through the stable proxy endpoint, and produces comparable results.
 Stdlib only; Python 3.11+.
 
 Groups:
-  quick — ordinary allow/deny behavior (README §8 "Basic policy")
+  quick — ordinary allow/deny behavior (docs/policy.md)
   full  — quick + SSRF/DNS fixtures and CONNECT-abuse tests
 
 The DNS fixture tests (nip.io / sslip.io / rbndr.us) only make sense when
@@ -20,36 +20,62 @@ otherwise.
 Outcomes:
   pass   — behavior matched the expectation
   fail   — behavior violated the expectation
-  record — engine behavior documented, no pass/fail defined (README §8)
+  record — engine behavior documented, no pass/fail defined (docs/comparison.md)
   skip   — prerequisites missing (with reason)
   error  — the test itself could not run
+
+Each result may carry: a best-effort denial `cause` classification, a
+wall-clock `elapsed_ms`, per-attempt evidence (`attempts` — used by the
+DNS fixtures), full response `headers` (allow-path checks), and the
+engine's own log lines for that test's window (`--backend-bin`/
+`--container`; `run.py check` wires this automatically).
+
+`--diff A.json B.json` compares two prior `--json` runs and prints only
+the rows that diverge, instead of running the suite.
 """
 
 from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import ipaddress
 import json
 import re
 import socket
 import ssl
+import subprocess
 import sys
-from dataclasses import dataclass, asdict
+import time
+from dataclasses import dataclass, field, asdict
 
 DEFAULT_PROXY = "http://127.0.0.1:18080"
 TIMEOUT = 8.0
+SCHEMA_VERSION = 1
 
 ALLOWED_HTTP_HOST = "pypi.org"          # must be on the allowlist
 ALLOWED_HTTPS_HOST = "pypi.org"         # must be on the allowlist
 ALLOWED_ALT_HOST = "files.pythonhosted.org"  # allowlisted, used as mismatching SNI
 BLOCKED_HOST = "example.com"            # must NOT be on the allowlist
 
-# Engine-specific expectations for the CONNECT-abuse tests (README §8):
-# Pipelock is expected to reject; Smokescreen behavior is recorded.
+# Engine-specific expectations for the CONNECT-abuse tests: Pipelock is
+# expected to reject; Smokescreen behavior is recorded (docs/comparison.md
+# has the measured outcome — Smokescreen allows both).
 ENGINE_EXPECTATIONS = {
     "pipelock": {"connect-sni-mismatch": "deny", "connect-raw-tunnel": "deny"},
     "smokescreen": {"connect-sni-mismatch": "record", "connect-raw-tunnel": "record"},
 }
+
+
+@dataclass
+class Attempt:
+    """One probe within a multi-target check (e.g. dns-rebinding)."""
+    n: int
+    target: str
+    local_resolved: list[str]   # IPs the checker itself resolved, if any
+    outcome: str                # "established" | "denied" | "error"
+    status: int | None
+    elapsed_ms: float
+    detail: str
 
 
 @dataclass
@@ -59,6 +85,139 @@ class Result:
     expectation: str    # "allow" | "deny" | "record"
     outcome: str        # "pass" | "fail" | "record" | "skip" | "error"
     detail: str
+    cause: str | None = None            # best-effort denial classification
+    elapsed_ms: float | None = None
+    attempts: list[Attempt] = field(default_factory=list)
+    headers: dict[str, str] = field(default_factory=dict)
+    engine_logs: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RawOutcome:
+    """What a test function returns when it has more than (outcome, detail)."""
+    outcome: str
+    detail: str
+    attempts: list[Attempt] = field(default_factory=list)
+    headers: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class HttpResponse:
+    status: int | None
+    headers: dict[str, str]
+    body: str
+    first_line: str
+
+
+def _normalize(raw: "tuple[str, str] | RawOutcome") -> RawOutcome:
+    if isinstance(raw, RawOutcome):
+        return raw
+    outcome, detail = raw
+    return RawOutcome(outcome, detail)
+
+
+# ---------------------------------------------------------------------------
+# Local DNS resolution and IP classification
+# ---------------------------------------------------------------------------
+
+
+def resolve_locally(host: str) -> list[str]:
+    """What *this* process resolves `host` to, right now. Best-effort:
+    empty on any resolution failure (offline, NXDOMAIN, fixture down)."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return []
+    return sorted({info[4][0] for info in infos})
+
+
+def _is_private(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
+
+
+# ---------------------------------------------------------------------------
+# Denial-cause classification
+# ---------------------------------------------------------------------------
+
+# Ordered: more specific buckets first. Best-effort text match over
+# whatever detail the checker already assembled (its own framing plus, when
+# available, the engine's response body) — real engines' exact wording is
+# unverified here (no network in this environment); "unknown" is expected
+# and honest when nothing matches.
+_TAXONOMY: list[tuple[str, re.Pattern]] = [
+    ("metadata", re.compile(r"metadata|169\.254\.169\.254", re.I)),
+    ("sni-mismatch", re.compile(r"\bsni\b|unrecognized_name|domain.?fronting", re.I)),
+    ("non-tls-in-tunnel", re.compile(r"non-tls|non.?tls.?in.?tunnel|decode_error|"
+                                      r"plain (http|bytes)|raw (protocol|bytes)", re.I)),
+    ("private-ip", re.compile(r"private|loopback|link-local|rfc.?1918|reserved address|"
+                               r"fd00|fe80|127\.0\.0\.", re.I)),
+    ("timeout", re.compile(r"timed out|timeout", re.I)),
+    ("hostname-not-allowlisted", re.compile(r"not (on the )?allowlist|not.?allowlisted|"
+                                             r"not.?whitelist|forbidden|denied by (mock )?policy|"
+                                             r"no matching allow|blacklist", re.I)),
+]
+
+
+def classify_denial(text: str) -> str:
+    for cause, pattern in _TAXONOMY:
+        if pattern.search(text):
+            return cause
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# TLS record decoding
+# ---------------------------------------------------------------------------
+
+_TLS_CONTENT_TYPES = {20: "change_cipher_spec", 21: "alert", 22: "handshake", 23: "application_data"}
+_TLS_VERSIONS = {0x0301: "TLS1.0", 0x0302: "TLS1.1", 0x0303: "TLS1.2", 0x0304: "TLS1.3"}
+_TLS_ALERT_LEVELS = {1: "warning", 2: "fatal"}
+_TLS_ALERT_DESCRIPTIONS = {
+    0: "close_notify", 10: "unexpected_message", 20: "bad_record_mac",
+    21: "decryption_failed", 22: "record_overflow", 30: "decompression_failure",
+    40: "handshake_failure", 42: "bad_certificate", 43: "unsupported_certificate",
+    44: "certificate_revoked", 45: "certificate_expired", 46: "certificate_unknown",
+    47: "illegal_parameter", 48: "unknown_ca", 49: "access_denied",
+    50: "decode_error", 51: "decrypt_error", 70: "protocol_version",
+    71: "insufficient_security", 80: "internal_error", 90: "user_canceled",
+    109: "missing_extension", 110: "unsupported_extension",
+    112: "unrecognized_name", 116: "certificate_required",
+}
+
+
+def annotate_tls_bytes(data: bytes) -> str:
+    """Decode TLS records (esp. alerts) instead of dumping repr(). Falls
+    back to a hex/repr summary when the bytes are not TLS records at all
+    (e.g. plaintext HTTP forwarded into a tunnel)."""
+    records: list[str] = []
+    offset = 0
+    while offset + 5 <= len(data) and len(records) < 8:
+        ctype = data[offset]
+        version = int.from_bytes(data[offset + 1:offset + 3], "big")
+        length = int.from_bytes(data[offset + 3:offset + 5], "big")
+        if ctype not in _TLS_CONTENT_TYPES:
+            break
+        body = data[offset + 5:offset + 5 + length]
+        ctype_name = _TLS_CONTENT_TYPES.get(ctype, f"unknown({ctype})")
+        version_name = _TLS_VERSIONS.get(version, f"0x{version:04x}")
+        line = f"type={ctype_name}({ctype}) version={version_name} length={length}"
+        if ctype == 21 and len(body) >= 2:
+            level = _TLS_ALERT_LEVELS.get(body[0], f"unknown({body[0]})")
+            desc = _TLS_ALERT_DESCRIPTIONS.get(body[1], f"unknown({body[1]})")
+            line += f" -> alert level={level}({body[0]}) description={desc}({body[1]})"
+        records.append(line)
+        offset += 5 + length
+    if records:
+        summary = "; ".join(records)
+        remaining = data[offset:]
+        if remaining:
+            summary += f"; +{len(remaining)} trailing bytes: {remaining[:32].hex()}"
+        return summary
+    return f"not a recognized TLS record; first bytes: {data[:32].hex()} ({data[:32]!r})"
 
 
 class ProxyClient:
@@ -78,8 +237,8 @@ class ProxyClient:
         match = re.match(r"HTTP/\d(?:\.\d)?\s+(\d{3})", line)
         return int(match.group(1)) if match else None
 
-    def http_get(self, url: str) -> tuple[int | None, str]:
-        """Absolute-form GET through the proxy. Returns (status, detail)."""
+    def http_get(self, url: str) -> HttpResponse:
+        """Absolute-form GET through the proxy."""
         host = re.sub(r"^\w+://", "", url).split("/", 1)[0]
         request = (
             f"GET {url} HTTP/1.1\r\n"
@@ -92,13 +251,16 @@ class ProxyClient:
                 sock.sendall(request.encode())
                 data = self._recv_some(sock)
         except OSError as exc:
-            return None, f"connection error: {exc}"
+            return HttpResponse(None, {}, "", f"connection error: {exc}")
         status = self._status_of(data)
         first = data.split(b"\r\n", 1)[0].decode("latin-1", "replace")
-        return status, first or "(connection closed, no data)"
+        return HttpResponse(status, _parse_headers(data), _parse_body(data),
+                            first or "(connection closed, no data)")
 
     def connect(self, target: str) -> tuple[socket.socket | None, int | None, str]:
-        """CONNECT to `host:port`. On 200, returns the open tunnel socket."""
+        """CONNECT to `host:port`. On 200, returns the open tunnel socket.
+        On denial, `detail` includes a short response body when the engine
+        sent one, for cause classification."""
         request = (
             f"CONNECT {target} HTTP/1.1\r\n"
             f"Host: {target}\r\n\r\n"
@@ -113,8 +275,19 @@ class ProxyClient:
         first = data.split(b"\r\n", 1)[0].decode("latin-1", "replace")
         if status == 200:
             return sock, status, first
+        _, _, extra = data.partition(b"\r\n\r\n")
+        if not extra:
+            # Body not yet in hand — engines that send one usually do so
+            # immediately, so wait only briefly rather than the full timeout.
+            try:
+                sock.settimeout(1.0)
+                extra = sock.recv(2048)
+            except OSError:
+                pass
         sock.close()
-        return None, status, first or "(connection closed, no data)"
+        body = extra.decode("latin-1", "replace").strip()
+        detail = f"{first} — {body}" if body else (first or "(connection closed, no data)")
+        return None, status, detail
 
     def _recv_headers(self, sock: socket.socket) -> bytes:
         data = b""
@@ -171,13 +344,30 @@ class ProxyClient:
             return b"", f"tunnel reset while sending raw bytes: {exc}"
         sock.close()
         if not data:
-            return b"", "tunnel established; connection closed with no response to raw bytes"
-        first = data.split(b"\r\n", 1)[0].decode("latin-1", "replace")
-        return data, f"raw bytes traversed the tunnel; response: {first!r}"
+            return b"", ("tunnel established; connection closed with no response to raw "
+                        "(non-TLS) bytes — consistent with a non-TLS-in-tunnel policy check")
+        annotated = annotate_tls_bytes(data)
+        return data, f"raw bytes traversed the tunnel; response: {annotated}"
+
+
+def _parse_headers(data: bytes) -> dict[str, str]:
+    head, _, _ = data.partition(b"\r\n\r\n")
+    lines = head.decode("latin-1", "replace").split("\r\n")[1:]
+    headers: dict[str, str] = {}
+    for line in lines:
+        if ":" in line:
+            key, _, value = line.partition(":")
+            headers[key.strip()] = value.strip()
+    return headers
+
+
+def _parse_body(data: bytes) -> str:
+    _, _, body = data.partition(b"\r\n\r\n")
+    return body.decode("latin-1", "replace")
 
 
 # ---------------------------------------------------------------------------
-# Individual tests. Each returns (outcome, detail) given a client.
+# Individual tests. Each returns (outcome, detail) or a RawOutcome.
 # ---------------------------------------------------------------------------
 
 
@@ -190,17 +380,19 @@ def _classify_deny_connect(client: ProxyClient, target: str) -> tuple[str, str]:
 
 
 def _classify_deny_http(client: ProxyClient, url: str) -> tuple[str, str]:
-    status, detail = client.http_get(url)
-    if status is not None and status < 400:
-        return "fail", f"request succeeded ({detail})"
-    return "pass", f"denied: {detail}"
+    resp = client.http_get(url)
+    if resp.status is not None and resp.status < 400:
+        return "fail", f"request succeeded ({resp.first_line})"
+    body = resp.body.strip()
+    text = f"{resp.first_line} — {body}" if body else resp.first_line
+    return "pass", f"denied: {text}"
 
 
-def test_allowed_http(client: ProxyClient) -> tuple[str, str]:
-    status, detail = client.http_get(f"http://{ALLOWED_HTTP_HOST}/")
-    if status is not None and status < 400:
-        return "pass", f"reached {ALLOWED_HTTP_HOST} ({detail})"
-    return "fail", f"expected success, got: {detail}"
+def test_allowed_http(client: ProxyClient) -> RawOutcome:
+    resp = client.http_get(f"http://{ALLOWED_HTTP_HOST}/")
+    if resp.status is not None and resp.status < 400:
+        return RawOutcome("pass", f"reached {ALLOWED_HTTP_HOST} ({resp.first_line})", headers=resp.headers)
+    return RawOutcome("fail", f"expected success, got: {resp.first_line}")
 
 
 def test_allowed_https(client: ProxyClient) -> tuple[str, str]:
@@ -229,7 +421,7 @@ def test_rfc1918(client: ProxyClient) -> tuple[str, str]:
     bad = [d for o, d in outcomes if o == "fail"]
     if bad:
         return "fail", "; ".join(bad)
-    return "pass", "10.0.0.1, 192.168.1.1, 172.16.0.1 all denied"
+    return "pass", "; ".join(d for _, d in outcomes)
 
 
 def test_link_local(client: ProxyClient) -> tuple[str, str]:
@@ -241,7 +433,7 @@ def test_metadata(client: ProxyClient) -> tuple[str, str]:
     o2, d2 = _classify_deny_http(client, "http://169.254.169.254/latest/meta-data/")
     if "fail" in (o1, o2):
         return "fail", f"CONNECT: {d1}; GET: {d2}"
-    return "pass", "metadata endpoint denied for CONNECT and GET"
+    return "pass", f"metadata endpoint denied for CONNECT and GET (CONNECT: {d1}; GET: {d2})"
 
 
 def test_ipv6_loopback(client: ProxyClient) -> tuple[str, str]:
@@ -253,7 +445,7 @@ def test_ipv6_private(client: ProxyClient) -> tuple[str, str]:
     bad = [d for o, d in outcomes if o == "fail"]
     if bad:
         return "fail", "; ".join(bad)
-    return "pass", "fd00::1 and fe80::1 denied"
+    return "pass", "; ".join(d for _, d in outcomes)
 
 
 # -- DNS fixtures (need the test policy active) -----------------------------
@@ -273,49 +465,101 @@ FIXTURE_SKIP = ("test policy not active — run `./run.py up --test-policy` "
                 "to exercise DNS/SSRF fixtures, then re-run")
 
 
-def test_dns_private_v4(client: ProxyClient) -> tuple[str, str]:
+def _connect_attempt(client: ProxyClient, n: int, target: str, host_for_resolution: str) -> Attempt:
+    local = resolve_locally(host_for_resolution)
+    t0 = time.monotonic()
+    sock, status, detail = client.connect(target)
+    elapsed = round((time.monotonic() - t0) * 1000, 1)
+    established = sock is not None
+    if established:
+        sock.close()
+    outcome = "established" if established else ("error" if status is None else "denied")
+    return Attempt(n, target, local, outcome, status, elapsed, detail)
+
+
+def test_dns_private_v4(client: ProxyClient) -> RawOutcome:
     targets = ("10.0.0.1.nip.io:80", "192.168.1.1.nip.io:80",
                "127.0.0.1.nip.io:80", "169.254.169.254.nip.io:80")
-    outcomes = [_classify_deny_connect(client, t) for t in targets]
-    bad = [d for o, d in outcomes if o == "fail"]
+    attempts = [_connect_attempt(client, i, t, t.rsplit(":", 1)[0]) for i, t in enumerate(targets)]
+    bad = [a for a in attempts if a.outcome == "established"]
     if bad:
-        return "fail", "; ".join(bad)
-    return "pass", "allowlisted hostnames resolving to private/loopback/metadata IPv4 all denied"
+        detail = "; ".join(f"{a.target} established (resolved {a.local_resolved})" for a in bad)
+        return RawOutcome("fail", detail, attempts=attempts)
+    return RawOutcome("pass", "allowlisted hostnames resolving to private/loopback/metadata IPv4 "
+                              "all denied; resolved IPs recorded per attempt", attempts=attempts)
 
 
-def test_dns_private_v6(client: ProxyClient) -> tuple[str, str]:
+def test_dns_private_v6(client: ProxyClient) -> RawOutcome:
     # sslip.io: dashes become colons, so "--1" => ::1, "fe80--1" => fe80::1
     targets = ("--1.sslip.io:80", "fe80--1.sslip.io:80", "fd00--1.sslip.io:80")
-    outcomes = [_classify_deny_connect(client, t) for t in targets]
-    bad = [d for o, d in outcomes if o == "fail"]
+    attempts = [_connect_attempt(client, i, t, t.rsplit(":", 1)[0]) for i, t in enumerate(targets)]
+    bad = [a for a in attempts if a.outcome == "established"]
     if bad:
-        return "fail", "; ".join(bad)
-    return "pass", "allowlisted hostnames resolving to private/loopback IPv6 all denied"
+        detail = "; ".join(f"{a.target} established (resolved {a.local_resolved})" for a in bad)
+        return RawOutcome("fail", detail, attempts=attempts)
+    return RawOutcome("pass", "allowlisted hostnames resolving to private/loopback IPv6 all "
+                              "denied; resolved IPs recorded per attempt", attempts=attempts)
 
 
-def test_dns_rebind(client: ProxyClient) -> tuple[str, str]:
-    """rbndr.us alternates answers between 1.1.1.1 and 127.0.0.1.
+# rbndr.us fixture pool for cache-busted rebinding attempts: pair a public
+# resolver IP with a varying loopback octet so every attempt is a hostname
+# neither the checker nor the engine has resolved before (see TODO.md §1 —
+# a repeated hostname makes a stale/cached DNS answer indistinguishable
+# from a real per-connection rebind defence).
+_REBIND_PUBLIC_IPS = ("1.1.1.1", "1.0.0.1", "9.9.9.9", "8.8.8.8", "8.8.4.4", "149.112.112.112")
 
-    A proxy with rebinding protection validates the resolved IP it actually
-    connects to, every time; loopback must never be reachable. The result is
-    recorded (timing-dependent), with a hard fail only if a tunnel is
-    established AND the fixture currently resolves to loopback is undetectable
-    from here — so established tunnels are reported for manual review.
-    """
-    target = "7f000001.01010101.rbndr.us:443"
-    denied = established = errors = 0
-    for _ in range(6):
-        sock, status, _ = client.connect(target)
-        if sock is not None:
-            established += 1
-            sock.close()
-        elif status is None:
-            errors += 1
-        else:
-            denied += 1
-    return "record", (f"{target}: denied={denied} established={established} errors={errors} "
-                      "(established tunnels can be legitimate when the answer was public; "
-                      "verify engine logs show per-connection resolved-IP validation)")
+
+def _hex_ip(ip: str) -> str:
+    return "".join(f"{int(octet):02x}" for octet in ip.split("."))
+
+
+def _rebind_target(attempt: int) -> tuple[str, str, str]:
+    """Return (hostname, public_ip, private_ip) for one cache-busted attempt."""
+    public_ip = _REBIND_PUBLIC_IPS[attempt % len(_REBIND_PUBLIC_IPS)]
+    private_ip = f"127.0.0.{2 + (attempt % 250)}"
+    hostname = f"{_hex_ip(public_ip)}.{_hex_ip(private_ip)}.rbndr.us"
+    return hostname, public_ip, private_ip
+
+
+def test_dns_rebind(client: ProxyClient) -> RawOutcome:
+    """Each attempt uses a fresh rbndr.us hostname (see `_rebind_target`), so
+    no attempt can be served from a cache warmed by an earlier one, and
+    records what the checker itself resolved that hostname to at attempt
+    time.
+
+    Stays `record`: rbndr.us answers *every query* with one of its two
+    encoded IPs at random, so the checker's resolution and the engine's are
+    independent draws. An established tunnel does not prove the engine saw
+    the loopback answer, and a denial does not prove it saw the public one —
+    grading a single attempt against the checker's own lookup would fail a
+    correct engine most runs. What the per-attempt evidence *does* settle is
+    the question docs/comparison.md's 2026-08-17 run could not (`denied=0
+    established=6` on one engine, `denied=6 established=0` on the other):
+    whether the fixture varied at all. Uniform local resolutions across six
+    fresh hostnames mean a caching resolver, and a uniform engine result is
+    then evidence of nothing. The graded proof that a hostname cannot reach
+    a private address is `dns-private-ipv4`/`ipv6`; a conclusive rebinding
+    grade needs the local DNS fixture (docs/security.md), not rbndr.us."""
+    attempts = []
+    for i in range(6):
+        hostname, _, _ = _rebind_target(i)
+        attempts.append(_connect_attempt(client, i, f"{hostname}:443", hostname))
+
+    counts = {outcome: sum(1 for a in attempts if a.outcome == outcome)
+              for outcome in ("established", "denied", "error")}
+    resolved = sorted({ip for a in attempts for ip in a.local_resolved})
+    if not resolved:
+        fixture = ("the checker resolved none of them (no network / fixture unreachable), "
+                   "so the engine-side result is unattributable")
+    elif any(_is_private(ip) for ip in resolved) and not all(_is_private(ip) for ip in resolved):
+        fixture = f"the fixture did vary for the checker (saw {resolved})"
+    else:
+        fixture = (f"the checker saw only {resolved} across all six — a caching resolver, "
+                   "so a uniform engine result proves nothing")
+    detail = (f"{counts['established']} established, {counts['denied']} denied, "
+              f"{counts['error']} error across 6 cache-busted hostnames; {fixture}; "
+              "per-attempt resolutions recorded")
+    return RawOutcome("record", detail, attempts=attempts)
 
 
 def test_dns_mixed(client: ProxyClient) -> tuple[str, str]:
@@ -398,7 +642,27 @@ def _finalize(name: str, expectation: str, raw: tuple[str, str]) -> tuple[str, s
     return "record", f"observed: {outcome} — {detail}"
 
 
-def run_suite(proxy: str, engine: str, full: bool) -> list[Result]:
+def _log_delta(before: list[str], after: list[str]) -> list[str]:
+    """New lines since `before`. Falls back to the full `after` snapshot
+    if the log stream rotated/truncated between the two reads."""
+    if after[:len(before)] == before:
+        return after[len(before):]
+    return after
+
+
+def _fetch_logs(backend_bin: str | None, container: str | None) -> list[str]:
+    if not backend_bin or not container:
+        return []
+    try:
+        proc = subprocess.run([backend_bin, "logs", container],
+                              capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return ((proc.stdout or "") + (proc.stderr or "")).splitlines()
+
+
+def run_suite(proxy: str, engine: str, full: bool,
+             backend_bin: str | None = None, container: str | None = None) -> list[Result]:
     match = re.match(r"(?:http://)?([^:/]+):(\d+)/?$", proxy)
     if not match:
         raise SystemExit(f"cannot parse proxy endpoint: {proxy}")
@@ -423,11 +687,21 @@ def run_suite(proxy: str, engine: str, full: bool) -> list[Result]:
             if not have_fixtures:
                 results.append(Result(name, group, expectation, "skip", FIXTURE_SKIP))
                 continue
+        before_logs = _fetch_logs(backend_bin, container)
+        t0 = time.monotonic()
         try:
-            outcome, detail = _finalize(name, expectation, fn(client))
+            raw = _normalize(fn(client))
+            outcome, detail = _finalize(name, expectation, (raw.outcome, raw.detail))
         except Exception as exc:  # a test must never take down the suite
             outcome, detail = "error", f"{type(exc).__name__}: {exc}"
-        results.append(Result(name, group, expectation, outcome, detail))
+            raw = RawOutcome(outcome, detail)
+        elapsed_ms = round((time.monotonic() - t0) * 1000, 1)
+        after_logs = _fetch_logs(backend_bin, container)
+        cause = classify_denial(detail) if expectation == "deny" and outcome in ("pass", "fail") else None
+        results.append(Result(name, group, expectation, outcome, detail,
+                              cause=cause, elapsed_ms=elapsed_ms,
+                              attempts=raw.attempts, headers=raw.headers,
+                              engine_logs=_log_delta(before_logs, after_logs)))
     return results
 
 
@@ -435,7 +709,10 @@ def print_text(results: list[Result], engine: str) -> None:
     width = max(len(r.name) for r in results)
     print(f"egress checks — engine: {engine}")
     for r in results:
-        print(f"  {r.name:<{width}}  [{r.expectation:^6}]  {r.outcome.upper():<6}  {r.detail}")
+        extra = f" [{r.cause}]" if r.cause else ""
+        timing = f" ({r.elapsed_ms:.0f}ms)" if r.elapsed_ms is not None else ""
+        attempts = f" [{len(r.attempts)} attempts]" if r.attempts else ""
+        print(f"  {r.name:<{width}}  [{r.expectation:^6}]  {r.outcome.upper():<6}{extra}{timing}{attempts}  {r.detail}")
     counts: dict[str, int] = {}
     for r in results:
         counts[r.outcome] = counts.get(r.outcome, 0) + 1
@@ -443,19 +720,77 @@ def print_text(results: list[Result], engine: str) -> None:
     print(f"summary: {summary}")
 
 
+# ---------------------------------------------------------------------------
+# --diff mode
+# ---------------------------------------------------------------------------
+
+
+def _load_results(path: str) -> dict:
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def diff_results(a: dict, b: dict) -> list[str]:
+    a_by_name = {r["name"]: r for r in a.get("results", [])}
+    b_by_name = {r["name"]: r for r in b.get("results", [])}
+    lines: list[str] = []
+    for name in sorted(set(a_by_name) | set(b_by_name)):
+        ra, rb = a_by_name.get(name), b_by_name.get(name)
+        if ra is None:
+            lines.append(f"{name}: only in B — {rb['outcome']} ({rb['detail']})")
+            continue
+        if rb is None:
+            lines.append(f"{name}: only in A — {ra['outcome']} ({ra['detail']})")
+            continue
+        if ra["outcome"] != rb["outcome"] or ra.get("cause") != rb.get("cause"):
+            a_tag = f"{ra['outcome']}" + (f" [{ra['cause']}]" if ra.get("cause") else "")
+            b_tag = f"{rb['outcome']}" + (f" [{rb['cause']}]" if rb.get("cause") else "")
+            lines.append(f"{name}: A={a_tag} vs B={b_tag}\n    A: {ra['detail']}\n    B: {rb['detail']}")
+    return lines
+
+
+def cmd_diff(path_a: str, path_b: str) -> int:
+    a, b = _load_results(path_a), _load_results(path_b)
+    if a.get("schema_version") != b.get("schema_version"):
+        print(f"warning: schema_version mismatch ({a.get('schema_version')} vs "
+              f"{b.get('schema_version')}); fields may not align", file=sys.stderr)
+    lines = diff_results(a, b)
+    label_a, label_b = a.get("engine", path_a), b.get("engine", path_b)
+    if not lines:
+        print(f"no divergence between {label_a} ({path_a}) and {label_b} ({path_b}): "
+              f"all {len(a.get('results', []))} checks agree")
+        return 0
+    print(f"divergences between {label_a} ({path_a}) and {label_b} ({path_b}):")
+    for line in lines:
+        print(f"  {line}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--proxy", default=DEFAULT_PROXY)
-    parser.add_argument("--engine", choices=("pipelock", "smokescreen"), required=True)
+    parser.add_argument("--engine", choices=("pipelock", "smokescreen"), default=None)
+    parser.add_argument("--backend-bin", default=None,
+                        help="container backend binary (docker/container), for engine log capture")
+    parser.add_argument("--container", default=None,
+                        help="container name, paired with --backend-bin, for engine log capture")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--quick", action="store_true")
     mode.add_argument("--full", action="store_true")
     parser.add_argument("--json", action="store_true", dest="as_json")
+    parser.add_argument("--diff", nargs=2, metavar=("RESULTS_A", "RESULTS_B"),
+                        help="compare two prior --json result files instead of running the suite")
     opts = parser.parse_args(argv)
 
-    results = run_suite(opts.proxy, opts.engine, full=opts.full)
+    if opts.diff:
+        return cmd_diff(opts.diff[0], opts.diff[1])
+    if not opts.engine:
+        parser.error("--engine is required unless --diff is given")
+
+    results = run_suite(opts.proxy, opts.engine, full=opts.full,
+                        backend_bin=opts.backend_bin, container=opts.container)
     if opts.as_json:
-        print(json.dumps({"engine": opts.engine, "proxy": opts.proxy,
+        print(json.dumps({"schema_version": SCHEMA_VERSION, "engine": opts.engine, "proxy": opts.proxy,
                           "results": [asdict(r) for r in results]}, indent=2))
     else:
         print_text(results, opts.engine)

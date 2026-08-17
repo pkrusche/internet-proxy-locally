@@ -56,6 +56,25 @@ class MockProxyServer(socketserver.ThreadingTCPServer):
             pass
         return host in self.allowed
 
+    def deny_reason(self, host: str) -> str:
+        """A cause-differentiated deny body, mirroring the kind of detail a
+        real engine's response is expected to carry (docs/security.md's
+        denial-taxonomy gap) — not a claim about actual engine wording."""
+        bare = host.strip("[]").lower()
+        try:
+            addr = ipaddress.ip_address(bare)
+        except ValueError:
+            return "denied by mock policy: hostname not on allowlist"
+        if bare == "169.254.169.254":
+            return "denied by mock policy: destination is the cloud metadata endpoint"
+        if addr.is_loopback:
+            return "denied by mock policy: destination resolves to a loopback address"
+        if addr.is_link_local:
+            return "denied by mock policy: destination resolves to a link-local address"
+        if addr.is_private or addr.is_reserved:
+            return "denied by mock policy: destination resolves to a private address"
+        return "denied by mock policy: IP-literal CONNECT targets are not allowlisted"
+
 
 class Handler(socketserver.BaseRequestHandler):
     server: MockProxyServer
@@ -100,14 +119,14 @@ class Handler(socketserver.BaseRequestHandler):
             if self.server.host_allowed(host):
                 self._send(200, "OK", f"mock response from {host}\n")
             else:
-                self._send(403, "Forbidden", "denied by mock policy\n")
+                self._send(403, "Forbidden", self.server.deny_reason(host) + "\n")
             return
         self._send(400, "Bad Request", "expected absolute-form or CONNECT\n")
 
     def _handle_connect(self, target: str) -> None:
         host, _, _port = target.rpartition(":")
         if not self.server.host_allowed(host):
-            self._send(403, "Forbidden", "denied by mock policy\n")
+            self._send(403, "Forbidden", self.server.deny_reason(host) + "\n")
             return
         self.request.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
 

@@ -722,9 +722,11 @@ def cmd_check(opts: argparse.Namespace) -> int:
     engine = opts.engine or active
     if engine != active:
         raise Fail(f"--engine {engine} requested but {active} is running; `./run.py --engine {engine} up` first")
+    spec = ServiceSpec.load(engine)
     host, port = endpoint()
     cmd = [sys.executable, str(REPO_ROOT / "checks" / "egress.py"),
-           "--proxy", f"http://{host}:{port}", "--engine", engine]
+           "--proxy", f"http://{host}:{port}", "--engine", engine,
+           "--backend-bin", backend.bin, "--container", spec.container_name]
     cmd.append("--full" if opts.full else "--quick")
     if opts.json:
         cmd.append("--json")

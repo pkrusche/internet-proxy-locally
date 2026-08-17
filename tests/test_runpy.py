@@ -47,7 +47,13 @@ case "$cmd" in
     esac
     ;;
   pull|build|stop) : ;;
-  logs) echo "fake engine logs" ;;
+  logs)
+    n_file="$FAKE_STATE/logcalls"
+    n=$(( $(cat "$n_file" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" > "$n_file"
+    i=1
+    while [ "$i" -le "$n" ]; do echo "fake engine log line $i"; i=$((i+1)); done
+    ;;
   rm)
     for a in "$@"; do
       [ "$a" = "-f" ] && continue
@@ -242,6 +248,23 @@ class RunPyCliTest(unittest.TestCase):
         self.assertEqual(down.returncode, 0)
         self.assertIn("removed internet-proxy-pipelock", down.stdout)
         self.assertFalse((self.state / "container-internet-proxy-pipelock").exists())
+
+    def test_check_wires_engine_log_capture(self) -> None:
+        # `check` should pass --backend-bin/--container through to
+        # checks/egress.py so each result's `engine_logs` is populated
+        # from the running container's own log stream (TODO.md §1).
+        self.pin_pipelock()
+        up = self.run_cli("--backend", "docker", "up")
+        self.assertEqual(up.returncode, 0, up.stderr)
+
+        check = self.run_cli("--backend", "docker", "check", "--quick", "--json")
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        payload = json.loads(check.stdout)
+        results = payload["results"]
+        self.assertTrue(results)
+        for r in results:
+            self.assertTrue(r["engine_logs"], f"{r['name']}: expected non-empty engine_logs")
+            self.assertTrue(all(line.startswith("fake engine log line") for line in r["engine_logs"]))
 
     def test_up_mounts_smokescreen_daemon_config(self) -> None:
         # allow_missing_role has no CLI flag; without this mount every request

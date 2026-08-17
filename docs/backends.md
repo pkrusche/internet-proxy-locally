@@ -22,19 +22,26 @@ difference in one `Backend` class.
 | build | `build --tag … --file … --build-arg … <ctx>` | same |
 | image inspect | `image inspect <ref>` | same (JSON shape differs; both parsed) |
 
-## Parity checklist (README §12)
+## Parity checklist
+
+Every runtime-affecting feature must be tested or explicitly documented as
+backend-specific.
 
 | Feature | Docker (Linux/macOS) | Apple `container` (macOS 26+) |
 | --- | --- | --- |
-| `setup` | ☑ implemented, ☐ verified on hardware | ☐ verify |
-| image pull / build | ☑ implemented | ☐ verify (multi-arch build of images/smokescreen) |
-| `up` | ☑ implemented, exercised via backend shim tests | ☐ verify |
-| loopback port publication | `--publish 127.0.0.1:18080:…` | ☐ verify `--publish ip:host:container` support on the installed release; if unavailable, do **not** substitute a broader binding — the endpoint must stay loopback-only |
-| `status` / `logs` / `check` / `down` | ☑ implemented | ☐ verify |
+| `setup` | ☑ implemented, ☐ verified on hardware | ☑ verified |
+| image pull / build | ☑ implemented | ☑ verified (Pipelock pull by digest; local Smokescreen build) |
+| `up` | ☑ implemented, exercised via backend shim tests | ☑ verified, both engines |
+| loopback port publication | `--publish 127.0.0.1:18080:…` | ☑ verified; if a future release drops `--publish ip:host:container`, do **not** substitute a broader binding — the endpoint must stay loopback-only |
+| `status` / `logs` / `check` / `down` | ☑ implemented | ☑ verified (`check --full` on both engines) |
 
-This sandbox has no container runtime, so hardware verification is a
-follow-up on a real host; the fake-backend tests in `tests/test_runpy.py`
-pin down the exact CLI invocations either backend receives.
+Apple `container` was verified on macOS 26.6.1 / arm64 on 2026-08-17; the
+full adversarial suite ran against both engines there
+(docs/comparison.md). Docker is installed on that host but has not been
+exercised end to end — that is the open parity item (TODO.md).
+
+The fake-backend tests in `tests/test_runpy.py` pin down the exact CLI
+invocations either backend receives, without needing a runtime.
 
 If Apple `container` lacks an exact Docker feature, prefer the common
 lower-level behavior over divergent semantics — e.g. no restart policies

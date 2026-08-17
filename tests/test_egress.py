@@ -153,5 +153,204 @@ class EgressSuiteTest(unittest.TestCase):
         self.assertEqual(rc_ok, 0)
 
 
+class ClassifyDenialTest(unittest.TestCase):
+    """Best-effort denial-cause taxonomy (TODO.md §1)."""
+
+    def test_metadata(self) -> None:
+        text = "denied by mock policy: destination is the cloud metadata endpoint"
+        self.assertEqual(egress.classify_denial(text), "metadata")
+
+    def test_sni_mismatch(self) -> None:
+        text = "tunnel established but TLS handshake failed (SNI=files.pythonhosted.org): mismatch"
+        self.assertEqual(egress.classify_denial(text), "sni-mismatch")
+
+    def test_non_tls_in_tunnel(self) -> None:
+        text = ("tunnel established; connection closed with no response to raw (non-TLS) "
+                "bytes — consistent with a non-TLS-in-tunnel policy check")
+        self.assertEqual(egress.classify_denial(text), "non-tls-in-tunnel")
+
+    def test_private_ip(self) -> None:
+        text = "denied by mock policy: destination resolves to a loopback address"
+        self.assertEqual(egress.classify_denial(text), "private-ip")
+
+    def test_timeout(self) -> None:
+        self.assertEqual(egress.classify_denial("connection error: timed out"), "timeout")
+
+    def test_hostname_not_allowlisted(self) -> None:
+        text = "HTTP/1.1 403 Forbidden — denied by mock policy: hostname not on allowlist"
+        self.assertEqual(egress.classify_denial(text), "hostname-not-allowlisted")
+
+    def test_unknown_fallback(self) -> None:
+        self.assertEqual(egress.classify_denial("connection reset by peer"), "unknown")
+
+
+class AnnotateTlsBytesTest(unittest.TestCase):
+    """Decoding the exact alert bytes docs/comparison.md manually decoded."""
+
+    def test_decodes_documented_alert_sequence(self) -> None:
+        data = b"\x15\x03\x03\x00\x02\x02\x32" + b"\x15\x03\x03\x00\x02\x01\x00"
+        result = egress.annotate_tls_bytes(data)
+        self.assertIn("alert(21)", result)
+        self.assertIn("fatal(2)", result)
+        self.assertIn("decode_error(50)", result)
+        self.assertIn("warning(1)", result)
+        self.assertIn("close_notify(0)", result)
+
+    def test_falls_back_for_non_tls_bytes(self) -> None:
+        result = egress.annotate_tls_bytes(b"HTTP/1.1 400 Bad Request\r\n")
+        self.assertIn("not a recognized TLS record", result)
+
+
+class LogDeltaTest(unittest.TestCase):
+    def test_returns_new_lines(self) -> None:
+        self.assertEqual(egress._log_delta(["a", "b"], ["a", "b", "c", "d"]), ["c", "d"])
+
+    def test_empty_before(self) -> None:
+        self.assertEqual(egress._log_delta([], ["x"]), ["x"])
+
+    def test_falls_back_on_rotation(self) -> None:
+        self.assertEqual(egress._log_delta(["a"], ["b", "c"]), ["b", "c"])
+
+
+class LogCaptureTest(unittest.TestCase):
+    """`--backend-bin`/`--container` end to end, via a tiny fake backend
+    that returns a growing log on every `logs` call — no real container
+    runtime available in this environment (TODO.md §1's log-capture item)."""
+
+    def setUp(self) -> None:
+        tmp = Path(tempfile.mkdtemp(prefix="ipl-logcap-test-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        counter_file = tmp / "counter"
+        script = tmp / "fakebackend.py"
+        script.write_text(
+            "#!/usr/bin/env python3\n"
+            "import pathlib\n"
+            f"state = pathlib.Path({str(counter_file)!r})\n"
+            "n = int(state.read_text()) if state.exists() else 0\n"
+            "n += 1\n"
+            "state.write_text(str(n))\n"
+            "for i in range(1, n + 1):\n"
+            "    print(f'log line {i}')\n"
+        )
+        script.chmod(0o755)
+        self.backend_bin = str(script)
+
+    def test_each_result_gets_a_distinct_log_window(self) -> None:
+        port = free_port()
+        server = mock_proxy.start_in_thread(port, mode="strict")
+        self.addCleanup(server.shutdown)
+        results = egress.run_suite(f"http://127.0.0.1:{port}", "pipelock", full=False,
+                                   backend_bin=self.backend_bin, container="fake")
+        self.assertTrue(results)
+        for r in results:
+            self.assertEqual(len(r.engine_logs), 1, f"{r.name}: {r.engine_logs}")
+        lines = [r.engine_logs[0] for r in results]
+        self.assertEqual(len(lines), len(set(lines)), "each test's window should be distinct")
+
+    def test_no_capture_without_backend_args(self) -> None:
+        port = free_port()
+        server = mock_proxy.start_in_thread(port, mode="strict")
+        self.addCleanup(server.shutdown)
+        results = egress.run_suite(f"http://127.0.0.1:{port}", "pipelock", full=False)
+        self.assertTrue(all(r.engine_logs == [] for r in results))
+
+
+class DnsRebindEvidenceTest(unittest.TestCase):
+    """`test_dns_rebind`'s per-attempt evidence (TODO.md §1). The outcome
+    stays `record` — each rbndr.us query is an independent random draw, so
+    the checker's own resolution cannot grade the engine's — but the detail
+    must say whether the fixture varied or a cache flattened it. Driven
+    through monkeypatched `resolve_locally` since real DNS is unavailable
+    here."""
+
+    def setUp(self) -> None:
+        self._orig_resolve = egress.resolve_locally
+        self.addCleanup(lambda: setattr(egress, "resolve_locally", self._orig_resolve))
+
+    @staticmethod
+    def _hostnames() -> set[str]:
+        return {egress._rebind_target(i)[0] for i in range(6)}
+
+    def test_every_attempt_uses_a_fresh_hostname(self) -> None:
+        self.assertEqual(len(self._hostnames()), 6)
+
+    def test_established_attempts_are_recorded_not_failed(self) -> None:
+        port = free_port()
+        allowed = set(mock_proxy.DEFAULT_ALLOWED) | self._hostnames()
+        server = mock_proxy.start_in_thread(port, allowed=allowed, mode="strict")
+        self.addCleanup(server.shutdown)
+        egress.resolve_locally = lambda host: ["127.0.0.9"]
+        client = egress.ProxyClient("127.0.0.1", port)
+
+        raw = egress.test_dns_rebind(client)
+        self.assertEqual(raw.outcome, "record")
+        self.assertEqual(len(raw.attempts), 6)
+        self.assertTrue(all(a.outcome == "established" for a in raw.attempts))
+        self.assertIn("6 established", raw.detail)
+        self.assertIn("caching resolver", raw.detail)
+
+    def test_denied_attempts_are_recorded_not_passed(self) -> None:
+        port = free_port()
+        server = mock_proxy.start_in_thread(port, mode="strict")  # default allowlist: hostnames denied
+        self.addCleanup(server.shutdown)
+        egress.resolve_locally = lambda host: ["127.0.0.9"]
+        client = egress.ProxyClient("127.0.0.1", port)
+
+        raw = egress.test_dns_rebind(client)
+        self.assertEqual(raw.outcome, "record")
+        self.assertTrue(all(a.outcome == "denied" for a in raw.attempts))
+        self.assertIn("6 denied", raw.detail)
+
+    def test_varying_resolution_is_reported_as_such(self) -> None:
+        port = free_port()
+        server = mock_proxy.start_in_thread(port, mode="strict")
+        self.addCleanup(server.shutdown)
+        answers = iter(["1.1.1.1", "127.0.0.2"] * 3)
+        egress.resolve_locally = lambda host: [next(answers)]
+        client = egress.ProxyClient("127.0.0.1", port)
+
+        raw = egress.test_dns_rebind(client)
+        self.assertEqual(raw.outcome, "record")
+        self.assertIn("did vary", raw.detail)
+
+    def test_unresolvable_fixture_is_called_unattributable(self) -> None:
+        port = free_port()
+        server = mock_proxy.start_in_thread(port, mode="strict")
+        self.addCleanup(server.shutdown)
+        egress.resolve_locally = lambda host: []
+        client = egress.ProxyClient("127.0.0.1", port)
+
+        raw = egress.test_dns_rebind(client)
+        self.assertEqual(raw.outcome, "record")
+        self.assertIn("unattributable", raw.detail)
+        self.assertTrue(all(a.local_resolved == [] for a in raw.attempts))
+
+
+class DiffModeTest(unittest.TestCase):
+    def test_flags_only_divergent_checks(self) -> None:
+        a = {"schema_version": 1, "engine": "pipelock", "results": [
+            {"name": "connect-sni-mismatch", "outcome": "pass", "cause": None, "detail": "denied"},
+            {"name": "allowed-http", "outcome": "pass", "cause": None, "detail": "200"},
+        ]}
+        b = {"schema_version": 1, "engine": "smokescreen", "results": [
+            {"name": "connect-sni-mismatch", "outcome": "record", "cause": None, "detail": "allowed"},
+            {"name": "allowed-http", "outcome": "pass", "cause": None, "detail": "301"},
+        ]}
+        lines = egress.diff_results(a, b)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("connect-sni-mismatch", lines[0])
+
+    def test_no_divergence_when_identical(self) -> None:
+        a = {"results": [{"name": "x", "outcome": "pass", "cause": None, "detail": "d"}]}
+        self.assertEqual(egress.diff_results(a, a), [])
+
+    def test_flags_checks_present_in_only_one_file(self) -> None:
+        a = {"results": [{"name": "x", "outcome": "pass", "cause": None, "detail": "d"}]}
+        b = {"results": []}
+        lines = egress.diff_results(a, b)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("only in A", lines[0])
+
+
 if __name__ == "__main__":
     unittest.main()
