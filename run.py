@@ -434,12 +434,20 @@ def port_listening(host: str, port: int, timeout: float = 1.0) -> bool:
         return False
 
 
-def probe_proxy(host: str, port: int, timeout: float = 4.0) -> tuple[bool, str]:
+def probe_proxy(host: str, port: int, timeout: float = 4.0) -> tuple[bool, str, bool]:
     """Ask the proxy for a guaranteed-non-allowlisted host.
 
     Healthy means: the proxy answers with an HTTP error (policy denial or
     resolution failure). A 2xx/3xx would mean the proxy is not enforcing at
     all, which we refuse to call healthy (fail closed).
+
+    Returns (healthy, detail, retryable). `retryable` marks a failure that
+    only says the engine is not serving *yet* — no answer, or an answer that
+    is not HTTP. Docker publishes the host port as soon as the container is
+    created, so a connection can be accepted seconds before the engine
+    listens behind it; those probes must be retried, not treated as verdicts.
+    A proxy that answers and allows the probe is never retryable: it is
+    enforcing nothing, and waiting longer cannot fix that.
     """
     request = (
         "GET http://ipl-health-probe.invalid/ HTTP/1.1\r\n"
@@ -452,15 +460,15 @@ def probe_proxy(host: str, port: int, timeout: float = 4.0) -> tuple[bool, str]:
             sock.sendall(request.encode())
             data = sock.recv(4096)
     except OSError as exc:
-        return False, f"no response from proxy: {exc}"
+        return False, f"no response from proxy: {exc}", True
     line = data.split(b"\r\n", 1)[0].decode("latin-1", "replace") if data else ""
     match = re.match(r"HTTP/\d\.\d\s+(\d{3})", line)
     if not match:
-        return False, f"non-HTTP response: {line!r}"
+        return False, f"non-HTTP response: {line!r}", True
     status = int(match.group(1))
     if status >= 400:
-        return True, f"denies unknown destinations ({line.strip()})"
-    return False, f"proxy allowed a non-allowlisted host ({line.strip()}) — NOT healthy"
+        return True, f"denies unknown destinations ({line.strip()})", False
+    return False, f"proxy allowed a non-allowlisted host ({line.strip()}) — NOT healthy", False
 
 
 # ---------------------------------------------------------------------------
@@ -645,8 +653,9 @@ def cmd_up(opts: argparse.Namespace) -> int:
     healthy, detail = False, "timed out waiting for the proxy to listen"
     while time.monotonic() < deadline:
         if port_listening(host, port):
-            healthy, detail = probe_proxy(host, port)
-            break
+            healthy, detail, retryable = probe_proxy(host, port)
+            if healthy or not retryable:
+                break
         if backend.container_state(spec.container_name) != "running":
             detail = "container exited during startup"
             break
@@ -695,8 +704,8 @@ def cmd_status(opts: argparse.Namespace) -> int:
         print(f"  image:     {spec.image_repository}:{spec.image_tag or spec.source_ref[:12] or '?'}")
         print(f"  pin:       {pin or '(unpinned)'}")
     if active:
-        healthy, detail = probe_proxy(host, port) if port_listening(host, port) \
-            else (False, "endpoint not listening")
+        healthy, detail, _ = probe_proxy(host, port) if port_listening(host, port) \
+            else (False, "endpoint not listening", False)
         print(f"proxy check: {'OK' if healthy else 'FAILED'} — {detail}")
         return 0 if healthy else 1
     print("proxy check: skipped (no engine running)")

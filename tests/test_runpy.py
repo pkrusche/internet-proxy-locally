@@ -301,6 +301,69 @@ class RunPyUnitTest(unittest.TestCase):
         path.write_text(text)
         return path
 
+    def _serve_once(self, handler) -> int:
+        """Run a one-shot TCP server on a free port; return the port."""
+        import threading
+        srv = socket.socket()
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+
+        def run() -> None:
+            try:
+                conn, _ = srv.accept()
+                with conn:
+                    handler(conn)
+            except OSError:
+                pass
+            finally:
+                srv.close()
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 2.0)
+        self.addCleanup(srv.close)
+        return port
+
+    def test_probe_marks_silent_close_retryable(self) -> None:
+        """Docker publishes the port before the engine listens behind it.
+
+        Such a probe is accepted and then closed with no reply. Treating
+        that as a verdict failed `up` on a healthy proxy; it must be
+        retried instead (docs/comparison.md, "Not yet measured").
+        """
+        port = self._serve_once(lambda conn: conn.close())
+        healthy, _, retryable = self.run_mod.probe_proxy("127.0.0.1", port, timeout=2.0)
+        self.assertFalse(healthy)
+        self.assertTrue(retryable)
+
+    def test_probe_marks_permissive_proxy_not_retryable(self) -> None:
+        """A proxy that answers and *allows* the probe is enforcing nothing.
+
+        Waiting cannot fix that, so it must fail immediately rather than
+        burn the health deadline.
+        """
+        def handler(conn: socket.socket) -> None:
+            conn.recv(4096)
+            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+
+        port = self._serve_once(handler)
+        healthy, detail, retryable = self.run_mod.probe_proxy("127.0.0.1", port, timeout=2.0)
+        self.assertFalse(healthy)
+        self.assertFalse(retryable)
+        self.assertIn("NOT healthy", detail)
+
+    def test_probe_accepts_denial_as_healthy(self) -> None:
+        def handler(conn: socket.socket) -> None:
+            conn.recv(4096)
+            conn.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+
+        port = self._serve_once(handler)
+        healthy, _, retryable = self.run_mod.probe_proxy("127.0.0.1", port, timeout=2.0)
+        self.assertTrue(healthy)
+        self.assertFalse(retryable)
+
     def test_shipped_policies_are_valid(self) -> None:
         for engine, rel in (("pipelock", "config/pipelock.yaml"),
                             ("pipelock", "config/pipelock.test.yaml"),

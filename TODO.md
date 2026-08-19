@@ -12,18 +12,33 @@ measured engine results live in [docs/comparison.md](docs/comparison.md).
 its own, and in each case the missing information was something the
 checker could have collected.
 
-**Status: implemented at the tooling level** (`checks/egress.py`,
-verified against `tests/mock_proxy.py`). The sandbox this was built in has
-no network and no docker/`container` binary, so none of it has been
-re-run against real engines yet — that re-run (needs §2's Docker
-verification or a networked macOS host) is the remaining step before
-docs/comparison.md can be refreshed. Notably, the rebinding cache-busting
-scheme and the denial-cause text classifier are both unverified against
-real `rbndr.us` and real engine wording; the engine-log-capture feature
-(now full-log-diff based, not `--since` — see below) is the more reliable
-attribution path until that re-run happens. Note also that `dns-rebinding`
-stays `record`: the collected evidence makes the row *legible*, but
-`rbndr.us` cannot make it graded (see below).
+**Status: done and verified against both real engines** on 2026-08-19
+(Docker backend, macOS; docs/comparison.md). Every row on both engines now
+carries an attributed cause — zero `unknown` — and `--diff` between the two
+runs prints only genuine divergences.
+
+The re-run corrected three things the offline implementation got wrong:
+
+* **The classifier keyed on the destination, not the reason.** Pipelock
+  reports `domain not in allowlist: 127.0.0.1`, so patterns matching bare
+  `127.0.0.1`/`fd00`/`fe80`/`169.254.169.254` read the *target* and
+  mislabelled plain allowlist denials as `private-ip`/`metadata`.
+  `forbidden` was likewise matching every 403. Both are gone; patterns
+  now match stated reasons only, and Smokescreen's wording
+  (`default rule policy used`, `denied by rule 'Deny: Private Range'`) is
+  covered.
+* **Two causes were missing.** `dns-failure` (NXDOMAIN / resolve failure —
+  not a policy verdict at all) and `unparseable-destination` (Smokescreen
+  rejecting `[::1]:80` before policy). Without them, six NXDOMAINs read as
+  six policy denials.
+* **Aggregate cause was computed over concatenated text**, so a mixed set
+  reported whichever bucket came first in the taxonomy
+  (`dns-private-ipv4` read as `metadata` when three of four attempts were
+  `private-ip`). Attempts are classified individually now and combined.
+
+`dns-rebinding` stays `record`. `rbndr.us` no longer resolves at all, so
+the row is six `dns-failure`s on both engines — legible, but not a
+measurement. Only the local fixture in §3 can make it graded.
 
 ### What went wrong
 
@@ -69,11 +84,13 @@ stays `record`: the collected evidence makes the row *legible*, but
   for `--since` isn't confirmed (docs/backends.md) and full-log-diff works
   identically on both backends.
 * [x] **Classify denials by cause** (`classify_denial`) into
-  `hostname-not-allowlisted` / `private-ip` / `metadata` / `sni-mismatch`
-  / `non-tls-in-tunnel` / `timeout` / `unknown`. Best-effort text
-  matching over the checker's own detail text; accuracy against real
-  engines' exact wording is unverified — treat `engine_logs` as the more
-  trustworthy attribution until confirmed.
+  `hostname-not-allowlisted` / `private-ip` / `metadata` / `dns-failure` /
+  `unparseable-destination` / `sni-mismatch` / `non-tls-in-tunnel` /
+  `timeout` / `unknown`. Verified against both engines' real wording on
+  2026-08-19 (zero `unknown`); the exact strings are pinned in
+  `tests/test_egress.py::ClassifyDenialRealWordingTest`. Patterns match
+  stated reasons only — never an address the engine echoes back, and
+  never a reason word the checker itself wrote.
 * [x] **Record full response headers** for allow-path checks
   (`Result.headers`, `test_allowed_http`), and decode TLS records (type,
   version, length, alert level/description) instead of dumping `repr()`
@@ -87,19 +104,30 @@ stays `record`: the collected evidence makes the row *legible*, but
 
 ### Acceptance
 
-Re-running `check --full` against both engines should make every row in
-docs/comparison.md self-explanatory — no row should need "verify engine
-logs" or "unattributed" as its note. **Not yet confirmed** — needs a real
-run (§2's Docker verification, or a networked host) against both engines;
-the tooling above hasn't touched real engines or a real DNS fixture yet.
+**Met (2026-08-19).** Every row in docs/comparison.md is self-explanatory;
+no row needs "verify engine logs" or "unattributed". The two notes that
+remained are resolved rather than deferred: finding 5 (200 vs 301) is
+attributed to the upstream tier by the captured headers, and finding 3
+(rebinding) states plainly that the fixture is unreachable instead of
+implying a result.
+
+The evidence also caught a bug it was not looking for: `dns-private-ipv6`
+used `--1.sslip.io`, an invalid IDNA label that both engines rejected by
+name, so the IPv6-loopback SSRF case had never actually run while still
+scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
 
 ---
 
 ## 2. Backend verification
 
-* [ ] Verify the **Docker** backend end to end:
-      `./run.py --backend docker setup && … up && … check --full`.
-      Docker is installed on the measurement host but was not exercised.
+* [x] Verified the **Docker** backend end to end on 2026-08-19 (Docker
+      29.7.2, both engines, setup + up + `check --full`). Found and fixed a
+      backend-specific race: Docker accepts connections on the published
+      port before the engine listens behind it, so the single post-start
+      probe failed `up` on a healthy proxy with `non-HTTP response: ''`.
+      `probe_proxy()` now separates not-ready-yet (retry until the
+      deadline) from a real verdict (never retried). Apple `container`
+      does not accept early, which is why this never showed there.
 * [x] Apple `container` verified on macOS 26.6.1 / arm64 (both engines,
       build + run + full suite).
 * [ ] Confirm Apple `container` honours `--publish ip:host:container`
@@ -130,12 +158,25 @@ the tooling above hasn't touched real engines or a real DNS fixture yet.
 
 ## 5. Smaller items
 
-* [ ] Attribute the `allowed-http` 200-vs-301 difference (docs/comparison.md
-      finding 5) or confirm it is upstream/CDN variation.
+* [x] Attributed the `allowed-http` 200-vs-301 difference: response
+      headers show Smokescreen answered at the Fastly edge (`Server:
+      Varnish`, `Location: https://pypi.org/`) and Pipelock at pypi.org's
+      origin (`Server: gunicorn`). CDN variation, not a proxy feature.
+      One residual: confirm Pipelock does not normalize the upstream
+      request, since `200` over plain HTTP from a Fastly-fronted host is
+      unusual (docs/comparison.md finding 5).
 * [ ] Consider surfacing Smokescreen's `407` denials more usefully to
       clients — some HTTP clients treat it as a credentials prompt and
       retry-loop instead of surfacing the block. Upstream behavior; may
       only be documentable.
+* [ ] Guard the Python version explicitly. `run.py` documents "Python
+      3.11+" but only fails when `import tomllib` raises, so on a host
+      whose `python3` is older (macOS Command Line Tools ships 3.9)
+      `./run.py` dies with a bare `ModuleNotFoundError` traceback and no
+      hint. The same applies to running the tests. A version check ahead
+      of the stdlib imports, printing the interpreter found and what is
+      required, would turn a confusing traceback into one line.
+
 * [ ] Re-validate Pipelock config keys against the pinned release's
       upstream configuration docs after every version bump — the keys in
       `config/pipelock.yaml` were taken from the docs current at pinning

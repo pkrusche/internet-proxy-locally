@@ -76,6 +76,7 @@ class Attempt:
     status: int | None
     elapsed_ms: float
     detail: str
+    cause: str | None = None    # filled in by the runner for denied attempts
 
 
 @dataclass
@@ -145,19 +146,50 @@ def _is_private(ip: str) -> bool:
 
 # Ordered: more specific buckets first. Best-effort text match over
 # whatever detail the checker already assembled (its own framing plus, when
-# available, the engine's response body) — real engines' exact wording is
-# unverified here (no network in this environment); "unknown" is expected
-# and honest when nothing matches.
+# available, the engine's response body).
+#
+# Patterns match the engine's *stated reason*, never the destination it
+# echoes back. Verified against real Pipelock wording on 2026-08-19: it
+# reports "domain not in allowlist: 127.0.0.1" for a direct-IP CONNECT, so
+# an earlier revision that keyed on bare addresses (127.0.0.1, fd00, fe80,
+# 169.254.169.254) read the *target* and mislabelled plain allowlist
+# denials as "private-ip"/"metadata". Likewise "forbidden" is a status-line
+# artifact present in every 403, not a reason — matching it made the
+# allowlist bucket a catch-all. Both are deliberately absent below; keep
+# them out. "unknown" is expected and honest when nothing matches.
 _TAXONOMY: list[tuple[str, re.Pattern]] = [
-    ("metadata", re.compile(r"metadata|169\.254\.169\.254", re.I)),
+    # An engine that resolved the name and rejected the answer states so.
+    ("metadata", re.compile(r"metadata", re.I)),
     ("sni-mismatch", re.compile(r"\bsni\b|unrecognized_name|domain.?fronting", re.I)),
     ("non-tls-in-tunnel", re.compile(r"non-tls|non.?tls.?in.?tunnel|decode_error|"
                                       r"plain (http|bytes)|raw (protocol|bytes)", re.I)),
-    ("private-ip", re.compile(r"private|loopback|link-local|rfc.?1918|reserved address|"
-                               r"fd00|fe80|127\.0\.0\.", re.I)),
+    # Pipelock: "SSRF blocked: X resolves to internal IP".
+    # Smokescreen: "no valid IP found among resolved addresses - 10.0.0.1
+    # denied by rule 'Deny: Private Range'".
+    ("private-ip", re.compile(r"\bssrf\b|private range|"
+                               r"no valid ip found among resolved|"
+                               r"resolves? to (a |an )?(non.?overridable )?"
+                               r"(internal|private|loopback|link.?local|reserved)|"
+                               r"(private|loopback|link.?local|rfc.?1918|reserved|internal)"
+                               r" (ip|address)", re.I)),
+    # Resolution never produced an answer: not a policy verdict at all.
+    # Pipelock: "DNS lookup for X returned no such host".
+    # Smokescreen: "502 Failed to resolve remote hostname: lookup X ...".
+    ("dns-failure", re.compile(r"no such host|nxdomain|name or service not known|"
+                                r"dns lookup .*(failed|returned)|"
+                                r"(failed|unable) to resolve", re.I)),
+    # Smokescreen rejects bracketed IPv6 literals before any policy applies
+    # ("Destination host cannot be determined"), so its pass on the
+    # private-IPv6 checks says nothing about private-IP defence. Kept as its
+    # own bucket precisely so that row cannot be read as one.
+    ("unparseable-destination", re.compile(r"destination host cannot be determined|"
+                                            r"invalid domain|invalid label|\bidna\b|"
+                                            r"could not parse (the )?(destination|host)", re.I)),
     ("timeout", re.compile(r"timed out|timeout", re.I)),
-    ("hostname-not-allowlisted", re.compile(r"not (on the )?allowlist|not.?allowlisted|"
-                                             r"not.?whitelist|forbidden|denied by (mock )?policy|"
+    # Smokescreen's default-deny ACL verdict is "default rule policy used".
+    ("hostname-not-allowlisted", re.compile(r"not (on|in)( the)? allowlist|not.?allowlisted|"
+                                             r"not.?whitelist|denied by (mock )?policy|"
+                                             r"default rule policy|"
                                              r"no matching allow|blacklist", re.I)),
 ]
 
@@ -167,6 +199,24 @@ def classify_denial(text: str) -> str:
         if pattern.search(text):
             return cause
     return "unknown"
+
+
+def aggregate_cause(detail: str, attempts: "list[Attempt]") -> str:
+    """One cause for a whole check.
+
+    With per-attempt evidence, classify each attempt and combine, rather
+    than matching the concatenated detail: a single text match returns
+    whichever bucket appears first in the taxonomy, which on a mixed set
+    silently reports a minority reason (dns-private-ipv4 read as
+    "metadata" when three of its four attempts were plain private-IP
+    rejections). Distinct causes are joined with "+" so a mixed row stays
+    truthful and still diffs cleanly.
+    """
+    denied = [a for a in attempts if a.cause]
+    if not denied:
+        return classify_denial(detail)
+    causes = sorted({a.cause for a in denied if a.cause})
+    return "+".join(causes)
 
 
 # ---------------------------------------------------------------------------
@@ -433,7 +483,13 @@ def test_metadata(client: ProxyClient) -> tuple[str, str]:
     o2, d2 = _classify_deny_http(client, "http://169.254.169.254/latest/meta-data/")
     if "fail" in (o1, o2):
         return "fail", f"CONNECT: {d1}; GET: {d2}"
-    return "pass", f"metadata endpoint denied for CONNECT and GET (CONNECT: {d1}; GET: {d2})"
+    # Deliberately does not say "metadata": the cause is classified from
+    # this text, and a reason word injected by the checker would be read
+    # back as the engine's own. Pipelock in fact rejects the bare address
+    # at the allowlist, exactly as it does 127.0.0.1 — the genuine
+    # metadata verdict shows up in dns-private-ipv4, where an allowlisted
+    # hostname resolves to 169.254.169.254.
+    return "pass", f"denied for CONNECT and GET (CONNECT: {d1}; GET: {d2})"
 
 
 def test_ipv6_loopback(client: ProxyClient) -> tuple[str, str]:
@@ -490,8 +546,14 @@ def test_dns_private_v4(client: ProxyClient) -> RawOutcome:
 
 
 def test_dns_private_v6(client: ProxyClient) -> RawOutcome:
-    # sslip.io: dashes become colons, so "--1" => ::1, "fe80--1" => fe80::1
-    targets = ("--1.sslip.io:80", "fe80--1.sslip.io:80", "fd00--1.sslip.io:80")
+    # sslip.io: dashes become colons, so "0--1" => 0::1 (== ::1),
+    # "fe80--1" => fe80::1. The bare "--1.sslip.io" spelling also resolves
+    # to ::1 but is an invalid IDNA label (a label may not start with two
+    # hyphens): Smokescreen rejects it as `invalid domain ... idna: invalid
+    # label` and Pipelock as `no such host`, so neither engine ever reached
+    # the SSRF check and the row scored a pass for the wrong reason
+    # (measured 2026-08-19). "0--1" is the equivalent, valid spelling.
+    targets = ("0--1.sslip.io:80", "fe80--1.sslip.io:80", "fd00--1.sslip.io:80")
     attempts = [_connect_attempt(client, i, t, t.rsplit(":", 1)[0]) for i, t in enumerate(targets)]
     bad = [a for a in attempts if a.outcome == "established"]
     if bad:
@@ -697,7 +759,11 @@ def run_suite(proxy: str, engine: str, full: bool,
             raw = RawOutcome(outcome, detail)
         elapsed_ms = round((time.monotonic() - t0) * 1000, 1)
         after_logs = _fetch_logs(backend_bin, container)
-        cause = classify_denial(detail) if expectation == "deny" and outcome in ("pass", "fail") else None
+        for attempt in raw.attempts:
+            if attempt.outcome == "denied" and attempt.cause is None:
+                attempt.cause = classify_denial(attempt.detail)
+        cause = (aggregate_cause(detail, raw.attempts)
+                 if expectation == "deny" and outcome in ("pass", "fail") else None)
         results.append(Result(name, group, expectation, outcome, detail,
                               cause=cause, elapsed_ms=elapsed_ms,
                               attempts=raw.attempts, headers=raw.headers,
