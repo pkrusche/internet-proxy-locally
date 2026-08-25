@@ -25,6 +25,10 @@ api_allowlist:
   - "*.nip.io"
   - "*.sslip.io"
   - "*.rbndr.us"
+  # --- mixed-answer fixture (config/dns-fixture.hosts) ---
+  - public-only.fixture.test
+  - mixed-public-first.fixture.test
+  - mixed-private-first.fixture.test
 
 forward_proxy:
   enabled: true

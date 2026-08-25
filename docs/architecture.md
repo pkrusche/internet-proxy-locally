@@ -13,8 +13,8 @@ but can be used independently.
 │       │                              │              │
 │       │                              │              │
 │       ▼                              ▼              │
-│  OpenAI / Anthropic           Pipelock or           │
-│  and MCP services             Smokescreen           │
+│  OpenAI / Anthropic           Pipelock,             │
+│  and MCP services             Smokescreen or Squid  │
 │                                      │              │
 │                                      ▼              │
 │                                public Internet      │
@@ -40,9 +40,9 @@ proxy, regardless of implementation:
 http://127.0.0.1:18080
 ```
 
-Internal container ports differ (Pipelock 8888, Smokescreen 4750) and are
-not part of the contract. `project-sandbox` does not need to know which
-engine is running.
+Internal container ports differ (Pipelock 8888, Smokescreen 4750, Squid
+3128) and are not part of the contract. `project-sandbox` does not need to
+know which engine is running.
 
 Clients use the standard environment variables:
 
@@ -54,9 +54,9 @@ export HTTPS_PROXY=http://127.0.0.1:18080
 ## Responsibilities
 
 **This repository owns** engine selection; image selection, building and
-pinning; both engine configurations; the Internet allowlist; SSRF/private
+pinning; every engine configuration; the Internet allowlist; SSRF/private
 -address policy; proxy lifecycle; logs; health and status; the upgrade
-procedure; the security tests; and the Pipelock-vs-Smokescreen comparison.
+procedure; the security tests; and the cross-engine comparison.
 
 ## Non-goals
 

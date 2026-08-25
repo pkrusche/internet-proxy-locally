@@ -128,6 +128,23 @@ class EgressSuiteTest(unittest.TestCase):
         self.assertEqual(results["connect-raw-tunnel"].outcome, "record",
                          results["connect-raw-tunnel"].detail)
 
+    def test_full_suite_lenient_squid_expectations(self) -> None:
+        # Squid relays CONNECT tunnels without inspecting them, like
+        # Smokescreen, so its tunnel behavior is recorded rather than
+        # graded (docs/comparison.md).
+        results = self.run_suite("squid", "lenient", full=True)
+        self.assertEqual(results["connect-sni-mismatch"].outcome, "record",
+                         results["connect-sni-mismatch"].detail)
+        self.assertEqual(results["connect-raw-tunnel"].outcome, "record",
+                         results["connect-raw-tunnel"].detail)
+
+    def test_quick_suite_strict_squid(self) -> None:
+        # The graded deny/allow floors are engine-independent; Squid must
+        # pass the same eleven the other two do.
+        results = self.run_suite("squid", "strict", full=False)
+        for name, result in results.items():
+            self.assertEqual(result.outcome, "pass", f"{name}: {result.detail}")
+
     def test_lenient_behavior_would_fail_pipelock_expectations(self) -> None:
         # If Pipelock behaved leniently, the suite must flag it.
         results = self.run_suite("pipelock", "lenient", full=True)
@@ -135,6 +152,61 @@ class EgressSuiteTest(unittest.TestCase):
                          results["connect-sni-mismatch"].detail)
         self.assertEqual(results["connect-raw-tunnel"].outcome, "fail",
                          results["connect-raw-tunnel"].detail)
+
+    def _mixed_fixture_server(self, allowed_names: set[str]) -> int:
+        """A mock allowing exactly `allowed_names` on top of the nip.io probe
+        that gates the fixture-dependent tests.
+
+        The mock decides by hostname, so it can stand in for an engine's
+        *verdict* on the mixed names but not for the resolution behind it —
+        which is fine: this exercises the check's own grading, and the real
+        resolution behavior is measured in docs/comparison.md.
+        """
+        port = free_port()
+        allowed = set(mock_proxy.DEFAULT_ALLOWED) | {"1.1.1.1.nip.io"} | allowed_names
+        server = mock_proxy.start_in_thread(
+            port, allowed=allowed, mode="strict",
+            certfile=self.certfile, keyfile=self.keyfile)
+        self.addCleanup(server.shutdown)
+        return port
+
+    def test_mixed_answers_passes_when_only_the_control_is_reachable(self) -> None:
+        port = self._mixed_fixture_server({egress.MIXED_FIXTURE_CONTROL})
+        client = egress.ProxyClient("127.0.0.1", port)
+        raw = egress.test_dns_mixed(client)
+        self.assertEqual(raw.outcome, "pass", raw.detail)
+        self.assertEqual(len(raw.attempts), 1 + len(egress.MIXED_FIXTURE_TARGETS))
+
+    def test_mixed_answers_fails_when_a_mixed_name_is_reachable(self) -> None:
+        port = self._mixed_fixture_server(
+            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS})
+        client = egress.ProxyClient("127.0.0.1", port)
+        raw = egress.test_dns_mixed(client)
+        self.assertEqual(raw.outcome, "fail", raw.detail)
+        for name in egress.MIXED_FIXTURE_TARGETS:
+            self.assertIn(name, raw.detail)
+
+    def test_mixed_answers_skips_without_a_working_control(self) -> None:
+        # No control means a denial below cannot be attributed to
+        # mixed-answer handling, so the row must not bank a pass.
+        port = self._mixed_fixture_server(set())
+        client = egress.ProxyClient("127.0.0.1", port)
+        raw = egress.test_dns_mixed(client)
+        self.assertEqual(raw.outcome, "skip", raw.detail)
+        self.assertIn("control probe", raw.detail)
+        self.assertEqual(len(raw.attempts), 1)
+
+    def test_mixed_answers_failure_carries_no_invented_cause(self) -> None:
+        """A failing deny-check has no denial to attribute. The detail must
+        not read back as one — an earlier revision said "a private address"
+        and got itself classified as `private-ip`."""
+        port = self._mixed_fixture_server(
+            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS})
+        results = {r.name: r for r in
+                   egress.run_suite(f"http://127.0.0.1:{port}", "squid", full=True)}
+        row = results["dns-mixed-answers"]
+        self.assertEqual(row.outcome, "fail", row.detail)
+        self.assertIsNone(row.cause)
 
     def test_fixture_detection_activates_with_test_policy(self) -> None:
         port = free_port()
@@ -182,6 +254,33 @@ class ClassifyDenialTest(unittest.TestCase):
 
     def test_unknown_fallback(self) -> None:
         self.assertEqual(egress.classify_denial("connection reset by peer"), "unknown")
+
+
+class SummarizeBodyTest(unittest.TestCase):
+    """Squid answers denials with an HTML error page rather than a
+    sentence. `summarize_body` has to flatten it without losing the reason
+    classify_denial() reads out of `detail`."""
+
+    def test_strips_tags_and_collapses_whitespace(self) -> None:
+        body = ("<html><head><title>403 Forbidden</title></head><body>\n"
+                "<p>internet-proxy-locally denied this   request:\n"
+                "the destination is not in the allowlist.</p>\n</body></html>")
+        summary = egress.summarize_body(body)
+        self.assertNotIn("<", summary)
+        self.assertIn("the destination is not in the allowlist.", summary)
+        self.assertEqual(summary, " ".join(summary.split()))
+
+    def test_reason_survives_for_classification(self) -> None:
+        body = "<html><body><p>SSRF blocked, the destination resolves to a private address.</p></body></html>"
+        self.assertEqual(egress.classify_denial(egress.summarize_body(body)), "private-ip")
+
+    def test_truncates_overlong_bodies(self) -> None:
+        summary = egress.summarize_body("x " * 4000, limit=100)
+        self.assertLessEqual(len(summary), 102)
+        self.assertTrue(summary.endswith("…"))
+
+    def test_short_body_is_unchanged(self) -> None:
+        self.assertEqual(egress.summarize_body("  denied by policy  "), "denied by policy")
 
 
 class ClassifyDenialRealWordingTest(unittest.TestCase):
@@ -232,6 +331,33 @@ class ClassifyDenialRealWordingTest(unittest.TestCase):
          "01010101.7f000002.rbndr.us: no such host", "dns-failure"),
     ]
 
+    # Measured against real Squid 6.12 on 2026-08-25. The first four are
+    # the custom `deny_info` pages in images/squid/errors, which exist so a
+    # Squid denial states its cause the way the other two engines' do; the
+    # last is Squid's own ERR_DNS_FAIL, which is not a policy verdict.
+    SQUID = [
+        ("HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
+         "the destination is not in the allowlist.", "hostname-not-allowlisted"),
+        ("HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
+         "SSRF blocked, the destination resolves to a private, loopback, link-local or "
+         "otherwise non-public address.", "private-ip"),
+        ("HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
+         "SSRF blocked, the destination resolves to a cloud metadata endpoint.", "metadata"),
+        ("HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
+         "CONNECT to this port is not allowed, tunnels are permitted to port 443 only.",
+         "port-not-allowed"),
+        ("HTTP/1.1 503 Service Unavailable — ERROR: The requested URL could not be retrieved "
+         "The following error was encountered while trying to retrieve the URL: "
+         "https://01010101.7f000002.rbndr.us/* Unable to determine IP address from host name "
+         "01010101.7f000002.rbndr.us The DNS server returned: Server Failure: The name server "
+         "was unable to process this query.", "dns-failure"),
+    ]
+
+    def test_squid_wording(self) -> None:
+        for text, expected in self.SQUID:
+            with self.subTest(text=text[:60]):
+                self.assertEqual(egress.classify_denial(text), expected)
+
     def test_pipelock_wording(self) -> None:
         for text, expected in self.PIPELOCK:
             with self.subTest(text=text[:60]):
@@ -243,7 +369,7 @@ class ClassifyDenialRealWordingTest(unittest.TestCase):
                 self.assertEqual(egress.classify_denial(text), expected)
 
     def test_no_real_denial_is_unknown(self) -> None:
-        for text, _ in self.PIPELOCK + self.SMOKESCREEN:
+        for text, _ in self.PIPELOCK + self.SMOKESCREEN + self.SQUID:
             with self.subTest(text=text[:60]):
                 self.assertNotEqual(egress.classify_denial(text), "unknown")
 
@@ -267,6 +393,12 @@ class AggregateCauseTest(unittest.TestCase):
         attempts.append(self._attempt(3, "metadata"))
         self.assertEqual(egress.aggregate_cause("ignored", attempts),
                          "metadata+private-ip")
+
+    def test_no_cause_when_attempts_exist_but_none_was_denied(self) -> None:
+        established = egress.Attempt(n=0, target="t", local_resolved=[], outcome="established",
+                                     status=200, elapsed_ms=1.0, detail="HTTP/1.1 200 OK")
+        self.assertIsNone(egress.aggregate_cause(
+            "the engine connected although 10.0.0.1 was in the answer set", [established]))
 
     def test_falls_back_to_detail_without_attempts(self) -> None:
         self.assertEqual(

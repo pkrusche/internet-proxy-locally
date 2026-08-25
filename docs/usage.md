@@ -4,7 +4,7 @@ One CLI drives both container backends. `run.py` is stdlib-only and needs
 Python 3.11+ (it imports `tomllib`). 
 
 ```text
-usage: run.py [--engine {pipelock,smokescreen}] [--backend {docker,container}]
+usage: run.py [--engine {pipelock,smokescreen,squid}] [--backend {docker,container}]
               {setup,up,restart,down,status,logs,check,pin} ...
 ```
 
@@ -23,13 +23,14 @@ usage: run.py [--engine {pipelock,smokescreen}] [--backend {docker,container}]
 
 ### `setup`
 
-`--rebuild` forces a Smokescreen image rebuild; `--all` prepares both
-engines.
+`--rebuild` forces a rebuild of a locally built image (Smokescreen,
+Squid); `--all` prepares every engine.
 
 Validates the Python version, detects available backends, verifies engine
 prerequisites, pulls the pinned Pipelock image by digest, builds the
-Smokescreen image when needed, and validates both config files plus their
-cross-engine allowlist sync. It never modifies system networking.
+Smokescreen and Squid images when needed, and validates all three config
+files plus their cross-engine allowlist sync. It never modifies system
+networking.
 
 ### `up [--test-policy]`
 
@@ -37,7 +38,8 @@ Validates the policy, recreates the container, publishes the stable
 endpoint, and runs a post-start health check. It refuses to start when:
 
 * the policy file is invalid or non-strict;
-* the image is unpinned (no digest / no source SHA) or uses `latest`;
+* the image is unpinned (no digest / source SHA / package version) or
+  uses `latest`;
 * the endpoint is occupied by an unknown process;
 * the other engine's container is already running;
 * the post-start health check fails.
@@ -45,9 +47,13 @@ endpoint, and runs a post-start health check. It refuses to start when:
 On health-check failure the container is **left in place** with its last
 logs printed, so the failure can be diagnosed; `./run.py down` removes it.
 
-`--test-policy` mounts `config/<engine>.test.yaml` instead of the real
-policy — see docs/policy.md. `up` prints a reminder to return to the
-normal policy.
+`--test-policy` mounts the engine's test policy (`config/*.test.yaml`,
+`config/squid.test.conf`) instead of the real one, **and** starts the local
+DNS fixture — a dnsmasq container serving `config/dns-fixture.hosts` — with
+the engine's resolver pointed at it via `--dns`. See docs/policy.md and
+docs/security.md. `up` prints a reminder to return to the normal policy; a
+normal `./run.py up` removes the fixture along with the engine, so it can
+never outlive the test run.
 
 ### The post-start health check
 
@@ -63,8 +69,8 @@ resolve and can never be allowlisted — and grades the status line:
 | 2xx / 3xx | **unhealthy** — the proxy forwarded what it should block |
 
 A success response is deliberately treated as a failure. Grading on
-`>= 400` rather than a specific code is what lets one check serve both
-engines: Pipelock denies with `403`, Smokescreen with `407`
+`>= 400` rather than a specific code is what lets one check serve every
+engine: Pipelock and Squid deny with `403`, Smokescreen with `407`
 (docs/comparison.md).
 
 ### `status`
@@ -97,6 +103,9 @@ reason), `error` (the test itself could not run). Exit code is 1 if any
 
 The `--full` DNS fixtures require `up --test-policy`; the suite
 auto-detects this and skips them with an explanatory reason otherwise.
+`dns-mixed-answers` additionally probes a control name before grading, so
+that a missing or unreachable fixture skips the row instead of turning
+into a pass it did not earn.
 
 `--json` results are schema-versioned (`schema_version`) and, per check,
 may include: `cause` (best-effort denial classification), `elapsed_ms`,
@@ -120,13 +129,15 @@ checks/egress.py --diff results/pipelock-20260817.json results/smokescreen-20260
 
 ### `down`
 
-Removes only containers owned by this repository (both engines). It never
-touches Agentgateway or `project-sandbox` containers.
+Removes only containers owned by this repository — every engine, plus the
+DNS fixture. It never touches Agentgateway or `project-sandbox`
+containers.
 
-### `pin <engine> [--ref REF]`
+### `pin <service> [--ref REF]`
 
-Records immutable pins in `services/*.toml`; needs network. See
-docs/backends.md for the upgrade procedure.
+Records immutable pins in `services/*.toml`; needs network. Takes any
+engine, or `dnsmasq` for the DNS fixture. See docs/backends.md for the
+upgrade procedure.
 
 ## Typical sessions
 
@@ -145,6 +156,10 @@ docs/backends.md for the upgrade procedure.
 ./run.py --engine smokescreen setup
 ./run.py --engine smokescreen up --test-policy
 ./run.py check --full --json > results/smokescreen-$(date +%Y%m%d).json
+
+./run.py --engine squid setup
+./run.py --engine squid up --test-policy
+./run.py check --full --json > results/squid-$(date +%Y%m%d).json
 ```
 
 ## Local test suite
@@ -163,8 +178,12 @@ raw-tunnel classification in both strict and lenient modes.
 Proxy logs can reveal requested hostnames, full URLs for plaintext HTTP,
 timestamps, and traffic volume. Smokescreen writes a structured (logrus)
 access line per connection: client address, requested hostname, resolved
-IP, decision and reason, timing. Pipelock is left on its default
-denial/access logging — its richer audit features (signed action receipts,
+IP, decision and reason, timing. Squid writes its native access log to
+the container's stdout — one line per request with the client address,
+the decision tag (`TCP_DENIED/403`, `TCP_TUNNEL/200`) and the target —
+and its cache log to stderr; no log files are kept inside the container
+(`logfile_rotate 0`, no `cache_store_log`). Pipelock is left on its
+default denial/access logging — its richer audit features (signed action receipts,
 scan verdicts) stay off, since enabling them persists more than the
 hostnames above; anything beyond stdout logs must be an explicit, reviewed
 config change.

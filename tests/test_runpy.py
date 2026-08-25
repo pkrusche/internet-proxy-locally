@@ -30,7 +30,7 @@ case "$cmd" in
   inspect)
     f="$FAKE_STATE/container-$1"
     if [ -f "$f" ]; then
-      printf '[{"State": {"Status": "%s"}}]\n' "$(cat "$f")"
+      printf '[{"State": {"Status": "%s"}, "NetworkSettings": {"IPAddress": "172.17.0.9"}}]\n' "$(cat "$f")"
     else
       exit 1
     fi
@@ -63,13 +63,16 @@ case "$cmd" in
     done
     ;;
   run)
-    name=""; prev=""
+    name=""; prev=""; published=""
     for a in "$@"; do
       if [ "$prev" = "--name" ]; then name="$a"; fi
+      if [ "$a" = "--publish" ]; then published=1; fi
       prev="$a"
     done
     echo running > "$FAKE_STATE/container-$name"
-    if [ -n "${FAKE_PROXY_SPAWN:-}" ]; then
+    # Only the engine publishes a port; the DNS fixture must not also try
+    # to bind the test endpoint.
+    if [ -n "${FAKE_PROXY_SPAWN:-}" ] && [ -n "$published" ]; then
       extra=""
       if [ -n "${FAKE_PROXY_CERT:-}" ]; then
         extra="--cert $FAKE_PROXY_CERT --key $FAKE_PROXY_KEY"
@@ -134,6 +137,7 @@ class RunPyCliTest(unittest.TestCase):
         # tests that need a pin set one explicitly.
         self.unpin("pipelock", "digest")
         self.unpin("smokescreen", "ref")
+        self.unpin("squid", "package_version")
         (self.tmp / "checks").mkdir()
         shutil.copy(REPO_ROOT / "checks" / "egress.py", self.tmp / "checks" / "egress.py")
 
@@ -200,6 +204,12 @@ class RunPyCliTest(unittest.TestCase):
         proc = self.run_cli("--backend", "docker", "--engine", "smokescreen", "up")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("pin smokescreen", proc.stderr)
+
+    def test_up_refuses_unpinned_squid(self) -> None:
+        proc = self.run_cli("--backend", "docker", "--engine", "squid", "up")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("pin squid", proc.stderr)
+        self.assertNotIn("run --detach", self.backend_log())
 
     def test_up_refuses_occupied_port(self) -> None:
         self.pin_pipelock()
@@ -280,6 +290,88 @@ class RunPyCliTest(unittest.TestCase):
         self.assertIn(":/etc/smokescreen/acl.yaml:ro", run_line)
         self.assertIn(":/etc/smokescreen/config.yaml:ro", run_line)
         self.assertIn("--config-file /etc/smokescreen/config.yaml", run_line)
+
+    def test_up_squid_mounts_policy_over_the_stock_config(self) -> None:
+        # Squid's whole policy is the bind-mounted file; the image ships no
+        # squid.conf, so a mount that did not land would fail closed rather
+        # than run a permissive default.
+        version = "6.12-r0"
+        toml = self.tmp / "services" / "squid.toml"
+        toml.write_text(re.sub(r'^package_version = ""$', f'package_version = "{version}"',
+                               toml.read_text(), flags=re.M))
+        self.fake_image(f"internet-proxy-locally/squid:{version}")
+        up = self.run_cli("--backend", "docker", "--engine", "squid", "up")
+        self.assertEqual(up.returncode, 0, up.stderr)
+        run_line = next(l for l in self.backend_log().splitlines() if l.startswith("run "))
+        self.assertIn("--name internet-proxy-squid", run_line)
+        self.assertIn(f"--publish 127.0.0.1:{self.port}:3128", run_line)
+        self.assertIn(f"internet-proxy-locally/squid:{version}", run_line)
+        self.assertIn(":/etc/squid/squid.conf:ro", run_line)
+        self.assertNotIn(":latest", run_line)
+
+    def test_up_squid_refuses_unbuilt_image(self) -> None:
+        toml = self.tmp / "services" / "squid.toml"
+        toml.write_text(re.sub(r'^package_version = ""$', 'package_version = "6.12-r0"',
+                               toml.read_text(), flags=re.M))
+        proc = self.run_cli("--backend", "docker", "--engine", "squid", "up")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("not built yet", proc.stderr)
+        self.assertIn("--engine squid setup", proc.stderr)
+
+    def fake_dns_fixture_image(self) -> None:
+        self.fake_image("internet-proxy-locally/dnsmasq:2.91-r1")
+
+    def test_test_policy_starts_the_dns_fixture_and_points_the_engine_at_it(self) -> None:
+        self.pin_pipelock()
+        self.fake_dns_fixture_image()
+        up = self.run_cli("--backend", "docker", "up", "--test-policy")
+        self.assertEqual(up.returncode, 0, up.stderr + up.stdout)
+        runs = [l for l in self.backend_log().splitlines() if l.startswith("run ")]
+        fixture = next(l for l in runs if "internet-proxy-dnsfixture" in l)
+        engine = next(l for l in runs if "internet-proxy-pipelock" in l)
+        # The fixture serves the records and is reachable only from the
+        # container network — no host port.
+        self.assertIn(":/fixture/hosts:ro", fixture)
+        self.assertNotIn("--publish", fixture)
+        # The engine resolves through it.
+        self.assertIn("--dns 172.17.0.9", engine)
+
+    def test_normal_up_runs_no_dns_fixture(self) -> None:
+        self.pin_pipelock()
+        up = self.run_cli("--backend", "docker", "up")
+        self.assertEqual(up.returncode, 0, up.stderr)
+        runs = [l for l in self.backend_log().splitlines() if l.startswith("run ")]
+        self.assertFalse([l for l in runs if "internet-proxy-dnsfixture" in l])
+        engine = next(l for l in runs if "internet-proxy-pipelock" in l)
+        self.assertNotIn("--dns", engine)
+
+    def test_normal_up_removes_a_stale_dns_fixture(self) -> None:
+        # A fixture left over from `up --test-policy` must not outlive the
+        # engine it was attached to, or a real-policy run would still be
+        # resolving through it.
+        self.pin_pipelock()
+        self.fake_dns_fixture_image()
+        self.assertEqual(self.run_cli("--backend", "docker", "up", "--test-policy").returncode, 0)
+        self.assertTrue((self.state / "container-internet-proxy-dnsfixture").exists())
+        up = self.run_cli("--backend", "docker", "up")
+        self.assertEqual(up.returncode, 0, up.stderr)
+        self.assertIn("removed existing container internet-proxy-dnsfixture", up.stdout)
+        self.assertFalse((self.state / "container-internet-proxy-dnsfixture").exists())
+
+    def test_down_removes_the_dns_fixture(self) -> None:
+        self.pin_pipelock()
+        self.fake_dns_fixture_image()
+        self.assertEqual(self.run_cli("--backend", "docker", "up", "--test-policy").returncode, 0)
+        down = self.run_cli("--backend", "docker", "down")
+        self.assertEqual(down.returncode, 0)
+        self.assertIn("removed internet-proxy-dnsfixture", down.stdout)
+
+    def test_test_policy_refuses_without_the_fixture_image(self) -> None:
+        self.pin_pipelock()  # fixture image deliberately absent
+        proc = self.run_cli("--backend", "docker", "up", "--test-policy")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("DNS fixture image", proc.stderr)
+        self.assertIn("run `./run.py setup`", proc.stderr)
 
     def test_check_requires_running_engine(self) -> None:
         proc = self.run_cli("--backend", "docker", "check", "--quick")
@@ -368,7 +460,9 @@ class RunPyUnitTest(unittest.TestCase):
         for engine, rel in (("pipelock", "config/pipelock.yaml"),
                             ("pipelock", "config/pipelock.test.yaml"),
                             ("smokescreen", "config/smokescreen.yaml"),
-                            ("smokescreen", "config/smokescreen.test.yaml")):
+                            ("smokescreen", "config/smokescreen.test.yaml"),
+                            ("squid", "config/squid.conf"),
+                            ("squid", "config/squid.test.conf")):
             problems = self.run_mod.validate_policy_file(engine, REPO_ROOT / rel)
             self.assertEqual(problems, [], f"{rel}: {problems}")
 
@@ -398,9 +492,140 @@ class RunPyUnitTest(unittest.TestCase):
         problems = self.run_mod.validate_policy_file("smokescreen", self.write(text))
         self.assertTrue(any("allowed_domains" in p for p in problems))
 
+    def test_squid_policy_requires_default_deny_last(self) -> None:
+        text = (REPO_ROOT / "config" / "squid.conf").read_text()
+        path = self.write(text.replace("http_access deny all",
+                                       "http_access deny all\nhttp_access allow allowlist_exact"))
+        problems = self.run_mod.validate_policy_file("squid", path)
+        self.assertTrue(any("deny all" in p for p in problems), problems)
+
+    def test_squid_policy_rejects_open_proxy(self) -> None:
+        text = (REPO_ROOT / "config" / "squid.conf").read_text()
+        path = self.write(text.replace("http_access allow allowlist_exact",
+                                       "http_access allow all"))
+        problems = self.run_mod.validate_policy_file("squid", path)
+        self.assertTrue(any("allow all" in p for p in problems), problems)
+
+    def test_squid_policy_rejects_ssrf_floors_after_the_allowlist(self) -> None:
+        # http_access is first-match-wins: an allow above the `dst` denies
+        # would let an allowlisted hostname reach a private address.
+        text = (REPO_ROOT / "config" / "squid.conf").read_text()
+        text = text.replace("http_access deny private_ip\n", "")
+        text = text.replace("http_access allow allowlist_wild",
+                            "http_access allow allowlist_wild\nhttp_access deny private_ip")
+        problems = self.run_mod.validate_policy_file("squid", self.write(text))
+        self.assertTrue(any("private_ip" in p and "before" in p for p in problems), problems)
+
+    def test_squid_policy_rejects_a_missing_deny_range(self) -> None:
+        text = (REPO_ROOT / "config" / "squid.conf").read_text()
+        path = self.write(text.replace("acl private_ip dst 169.254.0.0/16\n", ""))
+        problems = self.run_mod.validate_policy_file("squid", path)
+        self.assertTrue(any("169.254.0.0/16" in p for p in problems), problems)
+
+    def test_squid_policy_rejects_tls_interception(self) -> None:
+        text = (REPO_ROOT / "config" / "squid.conf").read_text()
+        path = self.write(text + "\nssl_bump bump all\n")
+        problems = self.run_mod.validate_policy_file("squid", path)
+        self.assertTrue(any("ssl_bump" in p for p in problems), problems)
+
+    def test_squid_allowlist_normalizes_to_the_shared_forms(self) -> None:
+        # `*.d` is an anchored dstdom_regex in Squid; it has to read back as
+        # `*.d` or the cross-engine sync check compares nothing.
+        entries = self.run_mod.policy_allowlist(
+            "squid", REPO_ROOT / "config" / "squid.conf")
+        self.assertIn("*.github.com", entries)
+        self.assertIn("*.githubusercontent.com", entries)
+        self.assertIn("github.com", entries)
+        self.assertNotIn("githubusercontent.com", entries)
+
+    def test_squid_allowlist_keeps_unrecognized_patterns_visible(self) -> None:
+        # A hand-written regex must not be silently read as a wildcard
+        # entry; it should surface as drift instead.
+        self.assertEqual(self.run_mod._squid_regex_to_glob(r"\.github\.com$"), "*.github.com")
+        self.assertEqual(self.run_mod._squid_regex_to_glob(r"github"), "github")
+
+    def test_allowlist_drift_is_reported_for_every_engine_pair(self) -> None:
+        original = self.run_mod.policy_allowlist
+
+        def drifted(engine, path):
+            entries = set(original(engine, path))
+            if engine == "squid":
+                entries.add("evil.example")
+            return entries
+
+        self.run_mod.policy_allowlist = drifted
+        self.addCleanup(setattr, self.run_mod, "policy_allowlist", original)
+        warnings = self.run_mod.check_allowlist_sync(False)
+        self.assertTrue(any("evil.example" in w and "pipelock" in w for w in warnings), warnings)
+        self.assertTrue(any("evil.example" in w and "smokescreen" in w for w in warnings), warnings)
+
     def test_shipped_allowlists_are_in_sync(self) -> None:
         self.assertEqual(self.run_mod.check_allowlist_sync(False), [])
         self.assertEqual(self.run_mod.check_allowlist_sync(True), [])
+
+    def test_container_ip_parses_docker_and_apple_shapes(self) -> None:
+        Backend = self.run_mod.Backend
+
+        def fake(payload, returncode=0):
+            backend = Backend("docker")
+            backend._run = lambda *a, **k: CompletedProcess(  # type: ignore[method-assign]
+                a, returncode, stdout=payload, stderr="")
+            return backend
+
+        docker_flat = json.dumps([{"NetworkSettings": {"IPAddress": "172.17.0.4"}}])
+        docker_named = json.dumps([{"NetworkSettings": {
+            "IPAddress": "", "Networks": {"bridge": {"IPAddress": "172.18.0.7"}}}}])
+        # Apple `container` reports a CIDR, which has to be trimmed.
+        apple = json.dumps([{"status": {"networks": [{"ipv4Address": "192.168.64.38/24"}]}}])
+        self.assertEqual(fake(docker_flat).container_ip("x"), "172.17.0.4")
+        self.assertEqual(fake(docker_named).container_ip("x"), "172.18.0.7")
+        self.assertEqual(fake(apple).container_ip("x"), "192.168.64.38")
+        self.assertEqual(fake("", returncode=1).container_ip("x"), "")
+
+    def test_pin_kind_per_service(self) -> None:
+        kinds = {engine: self.run_mod.ServiceSpec.load(engine).pin_kind
+                 for engine in self.run_mod.PINNABLE}
+        self.assertEqual(kinds, {"pipelock": "digest", "smokescreen": "source",
+                                 "squid": "package", "dnsmasq": "package"})
+
+    def test_dns_fixture_is_not_an_engine(self) -> None:
+        # It is pinned and built like one, but `--engine dnsmasq` must not
+        # exist and `down`/`status` must not treat it as a proxy.
+        self.assertNotIn(self.run_mod.DNS_FIXTURE, self.run_mod.ENGINES)
+        self.assertIn(self.run_mod.DNS_FIXTURE, self.run_mod.PINNABLE)
+
+    def test_dns_fixture_records_cover_the_checker_names(self) -> None:
+        """The fixture file and checks/egress.py must agree, and the mixed
+        names must each carry one public and one private address in both
+        orderings — that is the whole content of the check."""
+        import ipaddress
+        egress = load_module("egress_fixture", REPO_ROOT / "checks" / "egress.py")
+        spec = self.run_mod.ServiceSpec.load(self.run_mod.DNS_FIXTURE)
+        records: dict[str, list[str]] = {}
+        for line in (REPO_ROOT / spec.config_file).read_text().splitlines():
+            line = line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            address, *names = line.split()
+            for name in names:
+                records.setdefault(name, []).append(address)
+
+        self.assertEqual(records.get(egress.MIXED_FIXTURE_CONTROL, []).__len__(), 1,
+                         "the control must resolve to exactly one address")
+        self.assertFalse(any(ipaddress.ip_address(a).is_private
+                             for a in records[egress.MIXED_FIXTURE_CONTROL]))
+
+        orderings = set()
+        for name in egress.MIXED_FIXTURE_TARGETS:
+            addresses = records.get(name, [])
+            self.assertEqual(len(addresses), 2, f"{name}: expected two records")
+            private = [ipaddress.ip_address(a).is_private for a in addresses]
+            self.assertEqual(sorted(private), [False, True],
+                             f"{name}: needs one public and one private address")
+            orderings.add(tuple(private))
+        self.assertEqual(len(orderings), 2,
+                         "both answer orderings must be represented, or an engine that "
+                         "validates only the first address would not be distinguished")
 
     def test_container_state_parses_docker_and_apple_shapes(self) -> None:
         Backend = self.run_mod.Backend
@@ -420,10 +645,22 @@ class RunPyUnitTest(unittest.TestCase):
         self.assertEqual(fake("", returncode=1).container_state("x"), "absent")
 
     def test_service_specs_load_and_refuse_unsafe_flags(self) -> None:
-        for engine in ("pipelock", "smokescreen"):
+        for engine in self.run_mod.ENGINES:
             spec = self.run_mod.ServiceSpec.load(engine)
             self.assertNotIn("--unsafe-allow-private-ranges", spec.args)
             self.assertNotEqual(spec.image_tag, "latest")
+
+    def test_every_engine_has_a_config_and_a_test_config(self) -> None:
+        for engine in self.run_mod.ENGINES:
+            spec = self.run_mod.ServiceSpec.load(engine)
+            for test_policy in (False, True):
+                self.assertTrue(spec.config_path(test_policy).is_file())
+
+    def test_squid_image_ref_is_the_pinned_package_version(self) -> None:
+        spec = self.run_mod.ServiceSpec.load("squid")
+        self.assertEqual(spec.run_image_ref(),
+                         f"{spec.image_repository}:{spec.package_version}")
+        self.assertTrue(spec.package_version, "services/squid.toml must pin a version")
 
 
 if __name__ == "__main__":

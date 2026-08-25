@@ -1,0 +1,31 @@
+# DNS fixture service — NOT a proxy engine.
+#
+# Serves config/dns-fixture.hosts so that `./run.py check --full` can grade
+# `dns-mixed-answers`: one name resolving to both a public and a private
+# address, which no public DNS service offers and which /etc/hosts cannot
+# represent (see images/dnsmasq/Dockerfile).
+#
+# `./run.py up --test-policy` starts this container, reads its address, and
+# points the engine's resolver at it with `--dns`. A normal `./run.py up`
+# removes it. It is never running during normal operation, and it is
+# reachable only from the container network — no host port is published.
+#
+# Pinned by apk version, like Squid:  ./run.py pin dnsmasq
+
+[image]
+repository = "internet-proxy-locally/dnsmasq"
+
+[source]
+package = "dnsmasq"
+package_version = "2.91-r1"
+
+[build]
+base_image = "alpine:3.22.1"
+
+[container]
+name = "internet-proxy-dnsfixture"
+internal_port = 53
+config_file = "config/dns-fixture.hosts"
+test_config_file = "config/dns-fixture.hosts"
+config_mount = "/fixture/hosts"
+args = []

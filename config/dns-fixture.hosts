@@ -1,0 +1,55 @@
+# TEST FIXTURE — served by the dnsmasq container that
+# `./run.py up --test-policy` starts, and read only through it. Never
+# present in normal operation.
+#
+# Why this exists: `dns-mixed-answers` asks whether an engine that resolves
+# a name to *several* addresses validates all of them, or silently picks
+# the public one and connects. No public wildcard-DNS service serves a
+# mixed answer set, so it has to be manufactured locally.
+#
+# Why it is not simply bind-mounted at /etc/hosts: it would not work.
+# Duplicate names in a hosts file are collapsed to a single address by both
+# resolvers involved — musl's `getent hosts` returns the first, Squid's own
+# hosts parser keeps the last — so the engine never sees more than one
+# address and the check would measure which record survived rather than how
+# a multi-address answer is handled. dnsmasq's `--addn-hosts` aggregates
+# them properly and returns both in one answer (verified 2026-08-25).
+#
+# The names are under `.test`, a reserved TLD (RFC 6761) that can never
+# resolve publicly, so a missing fixture degrades to NXDOMAIN rather than
+# to some real host.
+#
+# `9.9.9.9` is the public half throughout: it accepts TCP on 443, so an
+# engine that wrongly allowed one of the mixed names would actually
+# establish a tunnel and be caught, rather than failing for lack of a route
+# and looking like a denial.
+#
+# It is deliberately NOT `1.1.1.1`, which `direct-ip-connect` uses. dnsmasq
+# synthesizes PTR records from this file, and Squid's `dstdomain` falls back
+# to a reverse lookup when the destination is an IP literal and nothing else
+# matched — so making `1.1.1.1` resolve backwards to an allowlisted fixture
+# name let a bare-IP CONNECT through the allowlist and turned
+# `direct-ip-connect` into a failure (measured 2026-08-25). Keeping the two
+# addresses disjoint confines the fixture's PTR side effect to names no
+# other check touches. The Squid behavior it exposed is real and is written
+# up as finding 10 in docs/comparison.md.
+#
+# Keep the three names in sync with MIXED_FIXTURE_* in checks/egress.py and
+# with the allowlists in config/*.test.yaml and config/squid.test.conf.
+
+# Control: one public address, nothing else. It must be reachable through
+# the proxy for the check to mean anything — if this is denied, the fixture
+# is not running, not allowlisted, or unreachable, and the mixed results
+# below could not be attributed to mixed-answer handling. checks/egress.py
+# skips on that rather than banking a pass it did not earn.
+9.9.9.9		public-only.fixture.test
+
+# Public answer first, private second.
+9.9.9.9		mixed-public-first.fixture.test
+10.0.0.1	mixed-public-first.fixture.test
+
+# Private answer first, public second. Both orderings are present because
+# an engine that validates only the first address returned would pass one
+# and fail the other, and a single ordering could not tell those apart.
+10.0.0.1	mixed-private-first.fixture.test
+9.9.9.9		mixed-private-first.fixture.test

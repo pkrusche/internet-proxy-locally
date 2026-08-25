@@ -86,8 +86,9 @@ measurement. Only the local fixture in §3 can make it graded.
 * [x] **Classify denials by cause** (`classify_denial`) into
   `hostname-not-allowlisted` / `private-ip` / `metadata` / `dns-failure` /
   `unparseable-destination` / `sni-mismatch` / `non-tls-in-tunnel` /
-  `timeout` / `unknown`. Verified against both engines' real wording on
-  2026-08-19 (zero `unknown`); the exact strings are pinned in
+  `port-not-allowed` / `timeout` / `unknown`. Verified against real engine
+  wording on 2026-08-19 (Pipelock, Smokescreen) and 2026-08-25 (Squid) —
+  zero `unknown` on any of them; the exact strings are pinned in
   `tests/test_egress.py::ClassifyDenialRealWordingTest`. Patterns match
   stated reasons only — never an address the engine echoes back, and
   never a reason word the checker itself wrote.
@@ -128,8 +129,17 @@ scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
       `probe_proxy()` now separates not-ready-yet (retry until the
       deadline) from a real verdict (never retried). Apple `container`
       does not accept early, which is why this never showed there.
-* [x] Apple `container` verified on macOS 26.6.1 / arm64 (both engines,
-      build + run + full suite).
+* [x] Apple `container` verified on macOS 26.6.1 / arm64 (Pipelock and
+      Smokescreen, build + run + full suite; Squid on 2026-08-25).
+* [ ] Run **Squid** and the **DNS fixture** on the Docker backend.
+      Nothing in Squid's setup is backend-specific — a plain Dockerfile
+      build plus one read-only bind mount. The fixture is the one genuinely
+      new backend dependency in this repository: `up --test-policy` reads
+      the fixture container's address (`Backend.container_ip`, which parses
+      Docker's `NetworkSettings` and Apple's `status.networks[]`) and
+      passes `--dns` to the engine. Only the Apple path has been exercised
+      against a real runtime; the Docker shapes are covered by unit tests
+      only (docs/backends.md).
 * [ ] Confirm Apple `container` honours `--publish ip:host:container`
       loopback binding on the installed release. If it does not, **do not**
       substitute a broader binding — the endpoint must stay loopback-only
@@ -137,21 +147,57 @@ scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
 
 ## 3. Remaining suite coverage
 
-* [ ] `dns-mixed-answers` — currently an unconditional `skip`. Needs the
-      local dnsmasq fixture; recipe in docs/security.md. An engine that
-      silently picks "just the public answer" from a mixed answer set is a
-      finding worth recording.
+* [ ] Re-run the full suite for Pipelock and Smokescreen alongside Squid
+      on one host and one date. The table in docs/comparison.md now spans
+      three runs (2026-08-17, 2026-08-19, 2026-08-25) on two backends; the
+      rows are stable and the causes were re-verified, but a single
+      simultaneous run would let `checks/egress.py --diff` do the
+      comparison mechanically instead of by hand.
+
+* [x] `dns-mixed-answers` — **done 2026-08-25**, graded on all three
+      engines against a dnsmasq container that `up --test-policy` starts
+      and points the engine's resolver at (docs/security.md). It was the
+      suite's last unconditional `skip`; nothing skips now. It immediately
+      earned its keep: **Smokescreen fails it**, connecting to the public
+      address of a mixed answer instead of refusing the name
+      (docs/comparison.md findings 9 and 11).
+
+      A bind-mounted `/etc/hosts` was tried first and does not work — both
+      resolvers collapse duplicate names to one address — and the
+      `--host-record=name,v4,v4` recipe this file and docs/security.md used
+      to recommend returns a single address, because the second slot is for
+      IPv6. Both corrections are recorded in docs/security.md so the dead
+      ends are not re-explored.
 * [ ] Crash → fail-closed: kill the container mid-session and confirm the
       sandbox loses Internet rather than gaining unfiltered access.
 * [ ] `./run.py restart` behavior under load.
 * [ ] Record operational observations in docs/comparison.md: startup time,
       image size, log quality, resource usage, upgrade friction.
 
+* [ ] Decide what `dns-mixed-answers` failing means for Smokescreen.
+      `check --full` now exits 1 on that engine. docs/comparison.md finding
+      11 lays out the three options — leave it failing (current), relax the
+      rule in docs/policy.md to "must not connect to a private address", or
+      override the expectation to `record` for that engine. This is a
+      policy call, not a code change.
+
+* [ ] Close Squid's reverse-lookup allowlist bypass (docs/comparison.md
+      finding 10). For `dstdomain`/`dstdom_regex`, Squid falls back to a
+      reverse lookup when the destination is an IP literal, so a bare-IP
+      CONNECT can match the allowlist if that IP's PTR resolves to an
+      allowlisted name — and PTR records belong to whoever holds the
+      address block. Squid has no switch to disable the fallback, so the
+      fix is to reject IP-literal destinations with a `dst`-based rule
+      placed before the allowlist. Worth a suite check of its own: a
+      CONNECT to an address whose PTR is allowlisted must still be denied.
+
 ## 4. Default-engine decision
 
-* [x] Both engines measured against the common suite (docs/comparison.md).
+* [x] All three engines measured against the common suite
+      (docs/comparison.md).
 * [x] Pipelock confirmed as default (`DEFAULT_ENGINE` in `run.py`) on the
-      strength of its CONNECT-tunnel controls.
+      strength of its CONNECT-tunnel controls. Squid does not change this:
+      it matches Smokescreen at the tunnel layer (finding 8).
 * [ ] Revisit if the §3 DNS fixture makes rebinding conclusive and the
       engines then differ there. (§1's evidence makes the `rbndr.us` row
       readable, not gradable.)
@@ -181,3 +227,19 @@ scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
       upstream configuration docs after every version bump — the keys in
       `config/pipelock.yaml` were taken from the docs current at pinning
       time, and this is enforced socially, not mechanically.
+
+* [ ] Squid's denial pages (`images/squid/errors/ERR_IPL_*`) are wired to
+      ACL names by `deny_info`, and `config/squid.conf` is validated for
+      rule order and required ranges — but nothing checks that a given ACL
+      still maps to the page that describes it. Renaming `private_ip`
+      without updating `deny_info` would silently fall back to Squid's
+      generic page and turn every SSRF denial into `unknown`. A parse-level
+      check that each `deny_info` names an ACL the file defines would close
+      it.
+
+* [ ] Squid's `package_version` pin is only as immutable as Alpine's
+      repository: unlike a digest or a commit SHA, an apk version can be
+      withdrawn. `setup` then fails at `apk add` (fail closed, which is
+      right) but the recovery is a version bump, not a rebuild. Worth
+      considering whether the built image should itself be recorded by
+      digest once built.

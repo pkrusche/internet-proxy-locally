@@ -1,0 +1,1 @@
+<html><head><title>403 Forbidden</title></head><body><p>internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.</p></body></html>

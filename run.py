@@ -2,8 +2,8 @@
 """internet-proxy-locally — local containerized Internet filtering proxy.
 
 One CLI for both Docker and Apple `container`. Exposes a single stable
-host endpoint (http://127.0.0.1:18080) backed by either Pipelock or
-Smokescreen, with a default-deny destination policy.
+host endpoint (http://127.0.0.1:18080) backed by Pipelock, Smokescreen or
+Squid, with a default-deny destination policy.
 
 Stdlib only; Python 3.11+.
 """
@@ -27,11 +27,25 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent
 
 DEFAULT_ENDPOINT = "127.0.0.1:18080"
-ENGINES = ("pipelock", "smokescreen")
+ENGINES = ("pipelock", "smokescreen", "squid")
 DEFAULT_ENGINE = "pipelock"
+# Engines whose image this repository builds locally rather than pulling.
+BUILT_ENGINES = ("smokescreen", "squid")
 BACKENDS = ("docker", "container")
 
 HEALTH_WAIT_SECONDS = 15.0
+
+# The local DNS fixture: a dnsmasq container serving
+# config/dns-fixture.hosts, started only by `up --test-policy` so that
+# `check --full` can grade dns-mixed-answers. Not an engine — it never
+# appears in ENGINES — but it is pinned, built and torn down like one.
+#
+# It has to be a resolver rather than a bind-mounted /etc/hosts: duplicate
+# names in a hosts file collapse to one address (musl keeps the first,
+# Squid's parser the last), so the engine would never see a multi-address
+# answer. dnsmasq's --addn-hosts aggregates them.
+DNS_FIXTURE = "dnsmasq"
+PINNABLE = ENGINES + (DNS_FIXTURE,)
 
 
 class Fail(Exception):
@@ -58,8 +72,11 @@ class ServiceSpec:
     image_digest: str = ""
     source_repo: str = ""
     source_ref: str = ""
+    source_package: str = ""
+    package_version: str = ""
     go_image: str = ""
     runtime_image: str = ""
+    base_image: str = ""
     container_name: str = ""
     internal_port: int = 0
     config_file: str = ""
@@ -91,8 +108,11 @@ class ServiceSpec:
             image_digest=image.get("digest", ""),
             source_repo=source.get("repo", ""),
             source_ref=source.get("ref", ""),
+            source_package=source.get("package", ""),
+            package_version=source.get("package_version", ""),
             go_image=build.get("go_image", ""),
             runtime_image=build.get("runtime_image", ""),
+            base_image=build.get("base_image", ""),
             container_name=container.get("name", ""),
             internal_port=int(container.get("internal_port", 0)),
             config_file=container.get("config_file", ""),
@@ -110,20 +130,36 @@ class ServiceSpec:
             raise Fail(f"{path}: private-range blocking must never be disabled")
         return spec
 
+    @property
+    def pin_kind(self) -> str:
+        """What kind of thing this service is pinned by, inferred from which
+        keys its TOML defines: an OCI digest (Pipelock), a distribution
+        package version (Squid, the DNS fixture), or a source commit
+        (Smokescreen). Upstreams publish different things; each pin is
+        whatever is immutable for that upstream."""
+        if self.source_package:
+            return "package"
+        if self.source_repo:
+            return "source"
+        return "digest"
+
     def run_image_ref(self) -> str:
         """Immutable image reference for `up`; fails closed when unpinned."""
-        if self.engine == "pipelock":
+        pin_hint = (f"Run `./run.py pin {self.engine}` (needs network), review, commit, "
+                    "then `./run.py setup`.")
+        if self.pin_kind == "digest":
             if not self.image_digest:
-                raise Fail(
-                    "pipelock image digest is not pinned in services/pipelock.toml.\n"
-                    "Run `./run.py pin pipelock` (needs network), review, and commit."
-                )
+                raise Fail(f"{self.engine} image digest is not pinned in "
+                           f"services/{self.engine}.toml.\n{pin_hint}")
             return f"{self.image_repository}@{self.image_digest}"
+        if self.pin_kind == "package":
+            if not self.package_version:
+                raise Fail(f"{self.engine} package version is not pinned in "
+                           f"services/{self.engine}.toml.\n{pin_hint}")
+            return f"{self.image_repository}:{self.package_version}"
         if not self.source_ref:
-            raise Fail(
-                "smokescreen source ref is not pinned in services/smokescreen.toml.\n"
-                "Run `./run.py pin smokescreen` (needs network), review, commit, then `./run.py setup`."
-            )
+            raise Fail(f"{self.engine} source ref is not pinned in "
+                       f"services/{self.engine}.toml.\n{pin_hint}")
         return f"{self.image_repository}:{self.source_ref[:12]}"
 
     def config_path(self, test_policy: bool) -> Path:
@@ -209,6 +245,41 @@ class Backend:
                 break
         return "running" if str(status).lower() == "running" else "stopped"
 
+    def container_ip(self, name: str) -> str:
+        """The container's address on the backend's own network.
+
+        Only used to point an engine's resolver at the DNS fixture, which is
+        why no host port is published for it. Docker reports it under
+        `NetworkSettings`; Apple `container` under `status.networks[]` as a
+        CIDR that has to be trimmed.
+        """
+        proc = self._run("inspect", name, check=False)
+        if proc.returncode != 0:
+            return ""
+        try:
+            info = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return ""
+        entry = (info[0] if isinstance(info, list) and info else info) or {}
+        if not isinstance(entry, dict):
+            return ""
+        settings = entry.get("NetworkSettings")
+        if isinstance(settings, dict):
+            address = settings.get("IPAddress")
+            if isinstance(address, str) and address:
+                return address
+            for network in (settings.get("Networks") or {}).values():
+                address = (network or {}).get("IPAddress")
+                if isinstance(address, str) and address:
+                    return address
+        networks = (entry.get("status") or {}).get("networks")
+        if isinstance(networks, list):
+            for network in networks:
+                address = (network or {}).get("ipv4Address")
+                if isinstance(address, str) and address:
+                    return address.split("/", 1)[0]
+        return ""
+
     def remove_container(self, name: str) -> bool:
         """Remove a container if present; returns True if something was removed."""
         if self.container_state(name) == "absent":
@@ -230,9 +301,18 @@ class Backend:
         internal_port: int,
         mounts: list[tuple[Path, str]],
         args: list[str],
+        publish: bool = True,
+        dns: str = "",
     ) -> None:
-        cmd: list[str] = ["run", "--detach", "--name", name,
-                          "--publish", f"{publish_host}:{publish_port}:{internal_port}"]
+        cmd: list[str] = ["run", "--detach", "--name", name]
+        if publish:
+            cmd += ["--publish", f"{publish_host}:{publish_port}:{internal_port}"]
+        if dns:
+            # Both CLIs spell this `--dns <ip>`. Docker also has --add-host,
+            # which would be a tidier way to inject a single record, but
+            # Apple `container` has no equivalent and a hosts entry cannot
+            # carry a multi-address answer anyway (docs/backends.md).
+            cmd += ["--dns", dns]
         for src, dst in mounts:
             cmd += ["--volume", f"{src}:{dst}:ro"]
         cmd.append(image)
@@ -295,6 +375,12 @@ class Backend:
                     return value
         return ""
 
+    def run_once(self, image: str, args: list[str]) -> str:
+        """Run a throwaway container and return its stdout. Used by `pin` to
+        ask a base image what package version it would install."""
+        proc = self._run("run", "--rm", image, *args)
+        return proc.stdout or ""
+
     def build(self, *, tag: str, dockerfile: Path, context: Path, build_args: dict[str, str]) -> None:
         cmd = ["build", "--tag", tag, "--file", str(dockerfile)]
         for key, value in build_args.items():
@@ -355,6 +441,52 @@ def _yaml_block(text: str, key: str) -> str:
     return "\n".join(lines)
 
 
+# The IP ranges config/squid.conf must refuse. Pipelock and Smokescreen
+# block private destinations in engine code; for Squid the floor is ours to
+# write, so it is also ours to check. Dropping a line from the `private_ip`
+# ACL would otherwise be a silent, unreviewable widening of the policy.
+REQUIRED_SQUID_DENY_RANGES = (
+    ("metadata_ip", "169.254.169.254/32"),
+    ("private_ip", "10.0.0.0/8"),
+    ("private_ip", "127.0.0.0/8"),
+    ("private_ip", "169.254.0.0/16"),
+    ("private_ip", "172.16.0.0/12"),
+    ("private_ip", "192.168.0.0/16"),
+    ("private_ip", "::1/128"),
+    ("private_ip", "fc00::/7"),
+    ("private_ip", "fe80::/10"),
+)
+
+
+def _squid_access_rules(text: str) -> list[str]:
+    """Every `http_access` line, in file order, whitespace-normalized."""
+    return [" ".join(line.split()) for line in text.splitlines()
+            if re.match(r"^\s*http_access\s", line)]
+
+
+def _squid_acl_values(text: str, name: str, acl_type: str) -> list[str]:
+    """Values accumulated across every `acl <name> <type> ...` line."""
+    values: list[str] = []
+    for line in text.splitlines():
+        match = re.match(rf"^\s*acl\s+{re.escape(name)}\s+{re.escape(acl_type)}\s+(.*)$", line)
+        if match:
+            values += [tok for tok in match.group(1).split() if not tok.startswith("-")]
+    return values
+
+
+def _squid_regex_to_glob(pattern: str) -> str:
+    r"""`\.github\.com$` -> `*.github.com`.
+
+    Anything that is not that exact anchored-suffix shape is returned
+    unchanged, so a hand-written pattern surfaces as allowlist drift
+    instead of being silently read as a wildcard entry.
+    """
+    match = re.fullmatch(r"\\\.((?:[\w-]+\\\.)*[\w-]+)\$", pattern)
+    if not match:
+        return pattern
+    return "*." + match.group(1).replace("\\.", ".")
+
+
 def _require(cond: bool, path: Path, message: str, problems: list[str]) -> None:
     if not cond:
         problems.append(f"{path}: {message}")
@@ -391,33 +523,74 @@ def validate_policy_file(engine: str, path: Path) -> list[str]:
                  "default.action must be `enforce`", problems)
         _require(len(_yaml_list(default_block, "allowed_domains")) > 0, path,
                  "default.allowed_domains must not be empty", problems)
+    elif engine == "squid":
+        rules = _squid_access_rules(text)
+        _require(bool(rules) and rules[-1] == "http_access deny all", path,
+                 "the last http_access rule must be `http_access deny all` (default deny)", problems)
+        _require(not any(re.match(r"http_access\s+allow\s+all\b", rule) for rule in rules), path,
+                 "`http_access allow all` is forbidden (no open proxy mode)", problems)
+        # First match wins, so an allow placed above the SSRF floors would
+        # let an allowlisted hostname reach a private address.
+        first_allow = next((i for i, rule in enumerate(rules)
+                            if rule.startswith("http_access allow")), len(rules))
+        for acl in ("metadata_ip", "private_ip"):
+            index = next((i for i, rule in enumerate(rules)
+                          if rule == f"http_access deny {acl}"), None)
+            _require(index is not None and index < first_allow, path,
+                     f"`http_access deny {acl}` must appear before the first `http_access allow` "
+                     "(http_access is first-match-wins)", problems)
+        for acl, cidr in REQUIRED_SQUID_DENY_RANGES:
+            _require(cidr in _squid_acl_values(text, acl, "dst"), path,
+                     f"the `{acl}` ACL must deny {cidr}", problems)
+        _require(re.search(r"^\s*ssl_bump\s+.*\bbump\b", text, re.M) is None, path,
+                 "`ssl_bump ... bump` is forbidden (no TLS interception in v1)", problems)
+        _require(re.search(r"^\s*cache\s+deny\s+all\b", text, re.M) is not None, path,
+                 "must set `cache deny all` (a cache hit is a response nobody re-authorized)",
+                 problems)
+        _require(len(policy_allowlist("squid", path)) > 0, path,
+                 "the allowlist must not be empty (default deny needs explicit allows)", problems)
     else:
         raise Fail(f"unknown engine: {engine}")
     return problems
 
 
 def policy_allowlist(engine: str, path: Path) -> set[str]:
+    """The engine's allowlist, normalized to the shared `d` / `*.d` forms of
+    docs/policy.md so the three files can be compared directly."""
     text = path.read_text()
     if engine == "pipelock":
         return set(_yaml_list(text, "api_allowlist"))
+    if engine == "squid":
+        entries = set(_squid_acl_values(text, "allowlist_exact", "dstdomain"))
+        entries.update(_squid_regex_to_glob(pattern) for pattern
+                       in _squid_acl_values(text, "allowlist_wild", "dstdom_regex"))
+        return entries
     return set(_yaml_list(_yaml_block(text, "default"), "allowed_domains"))
 
 
 def check_allowlist_sync(test_policy: bool = False) -> list[str]:
-    """Warn when the two engines' allowlists have drifted apart."""
+    """Warn when the engines' allowlists have drifted apart.
+
+    Compared pairwise rather than against a designated master: there is no
+    master. docs/policy.md is the logical policy and each config is one
+    expression of it, so any disagreement is a finding no matter which file
+    is the odd one out.
+    """
+    allowlists: dict[str, set[str]] = {}
     try:
-        pl = ServiceSpec.load("pipelock")
-        sm = ServiceSpec.load("smokescreen")
-        a = policy_allowlist("pipelock", pl.config_path(test_policy))
-        b = policy_allowlist("smokescreen", sm.config_path(test_policy))
+        for engine in ENGINES:
+            spec = ServiceSpec.load(engine)
+            allowlists[engine] = policy_allowlist(engine, spec.config_path(test_policy))
     except Fail:
         return []
     warnings = []
     label = "test policy" if test_policy else "policy"
-    for entry in sorted(a - b):
-        warnings.append(f"{label}: `{entry}` is allowed in pipelock but not smokescreen")
-    for entry in sorted(b - a):
-        warnings.append(f"{label}: `{entry}` is allowed in smokescreen but not pipelock")
+    for i, first in enumerate(ENGINES):
+        for second in ENGINES[i + 1:]:
+            for entry in sorted(allowlists[first] - allowlists[second]):
+                warnings.append(f"{label}: `{entry}` is allowed in {first} but not {second}")
+            for entry in sorted(allowlists[second] - allowlists[first]):
+                warnings.append(f"{label}: `{entry}` is allowed in {second} but not {first}")
     return warnings
 
 
@@ -480,6 +653,44 @@ def all_specs() -> list[ServiceSpec]:
     return [ServiceSpec.load(engine) for engine in ENGINES]
 
 
+def start_dns_fixture(backend: Backend) -> str:
+    """Start the dnsmasq fixture container and return its address.
+
+    Only called for `up --test-policy`. No host port is published: the
+    fixture is reachable from the engine container and from nothing else.
+    """
+    spec = ServiceSpec.load(DNS_FIXTURE)
+    image = spec.run_image_ref()
+    if not backend.image_present(image):
+        raise Fail(
+            f"the DNS fixture image {image} is not built — run `./run.py setup`.\n"
+            "`up --test-policy` needs it to serve the mixed-answer records that "
+            "`check --full` grades (docs/security.md)."
+        )
+    backend.remove_container(spec.container_name)
+    backend.run_detached(
+        name=spec.container_name,
+        image=image,
+        publish_host="",
+        publish_port=0,
+        internal_port=spec.internal_port,
+        mounts=spec.mounts(False),
+        args=spec.args,
+        publish=False,
+    )
+    deadline = time.monotonic() + HEALTH_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        address = backend.container_ip(spec.container_name)
+        if address:
+            return address
+        if backend.container_state(spec.container_name) != "running":
+            break
+        time.sleep(0.5)
+    logs = backend.tail_logs(spec.container_name)
+    raise Fail(f"the DNS fixture container did not report an address\n"
+               f"--- last container logs ---\n{logs}")
+
+
 def running_engine(backend: Backend) -> str | None:
     for spec in all_specs():
         if backend.container_state(spec.container_name) == "running":
@@ -521,8 +732,13 @@ def cmd_setup(opts: argparse.Namespace) -> int:
         spec = ServiceSpec.load(engine)
         if engine == "pipelock":
             _setup_pipelock(backend, spec)
+        elif spec.pin_kind == "package":
+            _setup_package_image(backend, spec, rebuild=opts.rebuild)
         else:
             _setup_smokescreen(backend, spec, rebuild=opts.rebuild)
+    # The DNS fixture is needed by `up --test-policy` whichever engine is
+    # chosen, so it is prepared unconditionally rather than per engine.
+    _setup_package_image(backend, ServiceSpec.load(DNS_FIXTURE), rebuild=opts.rebuild)
     print("setup complete")
     return 0
 
@@ -567,6 +783,29 @@ def _setup_smokescreen(backend: Backend, spec: ServiceSpec, rebuild: bool = Fals
     print(f"smokescreen: built {tag}")
 
 
+def _setup_package_image(backend: Backend, spec: ServiceSpec, rebuild: bool = False) -> None:
+    """Build an image around a pinned distribution package — Squid, and the
+    dnsmasq DNS fixture. The Dockerfile takes `<PACKAGE>_VERSION`."""
+    if not spec.package_version:
+        raise Fail(
+            f"{spec.engine} package version is not pinned.\n"
+            f"Run `./run.py pin {spec.engine}` (needs network), review and commit, "
+            "then re-run setup."
+        )
+    tag = spec.run_image_ref()
+    if backend.image_present(tag) and not rebuild:
+        print(f"{spec.engine}: image {tag} already built")
+        return
+    print(f"{spec.engine}: building {tag} from {spec.base_image} "
+          f"({spec.source_package}={spec.package_version})")
+    build_args = {f"{spec.source_package.upper()}_VERSION": spec.package_version}
+    if spec.base_image:
+        build_args["BASE_IMAGE"] = spec.base_image
+    context = REPO_ROOT / "images" / spec.engine
+    backend.build(tag=tag, dockerfile=context / "Dockerfile", context=context, build_args=build_args)
+    print(f"{spec.engine}: built {tag}")
+
+
 def _write_pin(toml_path: Path, key: str, value: str) -> None:
     text = toml_path.read_text()
     new_text, count = re.subn(rf'^{key} = "[^"]*"$', f'{key} = "{value}"', text, count=1, flags=re.M)
@@ -588,6 +827,30 @@ def cmd_pin(opts: argparse.Namespace) -> int:
             raise Fail(f"could not resolve a digest for {ref}; inspect the image manually")
         _write_pin(spec.toml_path, "digest", digest)
         print(f"pinned pipelock {spec.image_tag} @ {digest}")
+    elif spec.pin_kind == "package":
+        version = opts.ref
+        if not version:
+            backend = detect_backend(opts.backend)
+            base = spec.base_image
+            if not base:
+                raise Fail(f"services/{engine}.toml: [build] base_image is required "
+                           f"to pin {engine}")
+            print(f"asking {base} which {spec.source_package} version it would install")
+            output = backend.run_once(base, [
+                "sh", "-c",
+                f"apk update >/dev/null 2>&1 && apk list {spec.source_package} 2>/dev/null",
+            ])
+            versions = re.findall(rf"^{re.escape(spec.source_package)}-(\d[\w.]*-r\d+)\s",
+                                  output, re.M)
+            if not versions:
+                raise Fail(
+                    f"could not read a {spec.source_package} version from {base}.\n"
+                    f"Check it by hand (`apk list {spec.source_package}` in that image) and put "
+                    f"it in services/{engine}.toml"
+                )
+            version = sorted(set(versions))[-1]
+        _write_pin(spec.toml_path, "package_version", version)
+        print(f"pinned {engine} {version} (from {spec.base_image})")
     else:
         git = shutil.which("git")
         if not git:
@@ -619,16 +882,19 @@ def cmd_up(opts: argparse.Namespace) -> int:
     for warning in check_allowlist_sync(opts.test_policy):
         print(f"WARNING: {warning}")
     if opts.test_policy:
-        print("NOTE: starting with the TEST policy (extra DNS fixture domains). "
+        print("NOTE: starting with the TEST policy (extra DNS fixture domains, and a "
+              "local dnsmasq serving the mixed-answer records). "
               "Run `./run.py up` again without --test-policy for normal operation.")
 
     image = spec.run_image_ref()
-    if engine == "smokescreen" and not backend.image_present(image):
-        raise Fail(f"image {image} not built yet — run `./run.py --engine smokescreen setup`")
+    if engine in BUILT_ENGINES and not backend.image_present(image):
+        raise Fail(f"image {image} not built yet — run `./run.py --engine {engine} setup`")
 
     # `up` recreates: remove every container owned by this repository first
-    # (both engines publish the same endpoint, so they cannot coexist).
-    for owned in all_specs():
+    # (every engine publishes the same endpoint, so they cannot coexist).
+    # The DNS fixture goes too — a stale one would outlive the engine that
+    # was pointed at it, and must never be left running under a real policy.
+    for owned in all_specs() + [ServiceSpec.load(DNS_FIXTURE)]:
         if backend.remove_container(owned.container_name):
             print(f"removed existing container {owned.container_name}")
 
@@ -637,6 +903,12 @@ def cmd_up(opts: argparse.Namespace) -> int:
             f"{host}:{port} is already in use by something this repository does not own — "
             "refusing to start (choose down the other service or free the port)"
         )
+
+    fixture_dns = ""
+    if opts.test_policy:
+        fixture_dns = start_dns_fixture(backend)
+        print(f"started the DNS fixture at {fixture_dns} "
+              f"(serving {ServiceSpec.load(DNS_FIXTURE).config_file})")
 
     print(f"starting {engine} ({image}) on http://{host}:{port}")
     backend.run_detached(
@@ -647,6 +919,7 @@ def cmd_up(opts: argparse.Namespace) -> int:
         internal_port=spec.internal_port,
         mounts=spec.mounts(opts.test_policy),
         args=spec.args,
+        dns=fixture_dns,
     )
 
     deadline = time.monotonic() + HEALTH_WAIT_SECONDS
@@ -675,7 +948,7 @@ def cmd_up(opts: argparse.Namespace) -> int:
 def cmd_down(opts: argparse.Namespace) -> int:
     backend = detect_backend(opts.backend)
     removed = False
-    for spec in all_specs():
+    for spec in all_specs() + [ServiceSpec.load(DNS_FIXTURE)]:
         if backend.remove_container(spec.container_name):
             print(f"removed {spec.container_name}")
             removed = True
@@ -697,11 +970,18 @@ def cmd_status(opts: argparse.Namespace) -> int:
     print(f"endpoint: http://{host}:{port}")
     for spec in all_specs():
         state = backend.container_state(spec.container_name)
-        pin = spec.image_digest if spec.engine == "pipelock" else (spec.source_ref or "(unpinned)")
+        if spec.engine == "pipelock":
+            pin = spec.image_digest
+        elif spec.engine == "squid":
+            pin = spec.package_version
+        else:
+            pin = spec.source_ref
+        pin = pin or "(unpinned)"
         marker = " (active)" if spec.engine == active else ""
         print(f"{spec.engine}: {state}{marker}")
         print(f"  container: {spec.container_name}")
-        print(f"  image:     {spec.image_repository}:{spec.image_tag or spec.source_ref[:12] or '?'}")
+        tag = spec.image_tag or spec.package_version or spec.source_ref[:12] or "?"
+        print(f"  image:     {spec.image_repository}:{tag}")
         print(f"  pin:       {pin or '(unpinned)'}")
     if active:
         healthy, detail, _ = probe_proxy(host, port) if port_listening(host, port) \
@@ -750,7 +1030,8 @@ def cmd_check(opts: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="run.py",
-        description="Local containerized Internet filtering proxy (Pipelock or Smokescreen) "
+        description="Local containerized Internet filtering proxy "
+                    "(Pipelock, Smokescreen or Squid) "
                     f"on http://{DEFAULT_ENDPOINT}",
     )
     parser.add_argument("--engine", choices=ENGINES, default=None,
@@ -760,7 +1041,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_setup = sub.add_parser("setup", help="validate prerequisites, pull/build pinned images")
-    p_setup.add_argument("--rebuild", action="store_true", help="rebuild the smokescreen image even if present")
+    p_setup.add_argument("--rebuild", action="store_true",
+                         help="rebuild a locally built image (smokescreen, squid) even if present")
     p_setup.set_defaults(func=cmd_setup)
 
     p_up = sub.add_parser("up", help="(re)create the proxy container and health-check it")
@@ -787,13 +1069,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.set_defaults(func=cmd_check)
 
     p_pin = sub.add_parser("pin", help="record immutable pins in services/*.toml (needs network)")
-    p_pin.add_argument("target", choices=ENGINES)
-    p_pin.add_argument("--ref", help="smokescreen: pin a specific tag/branch instead of HEAD")
+    p_pin.add_argument("target", choices=PINNABLE)
+    p_pin.add_argument("--ref", help="smokescreen: pin a specific tag/branch instead of HEAD; "
+                                     "squid: pin a specific apk version instead of the base image's")
     p_pin.set_defaults(func=cmd_pin)
 
     # `setup` prepares one engine by default; allow all.
     p_setup.add_argument("--all", dest="engine_all", action="store_true",
-                         help="prepare both engines")
+                         help="prepare every engine")
     return parser
 
 

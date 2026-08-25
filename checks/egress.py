@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Common adversarial egress test suite for internet-proxy-locally.
 
-Runs the same checks against either engine (Pipelock or Smokescreen)
+Runs the same checks against any engine (Pipelock, Smokescreen or Squid)
 through the stable proxy endpoint, and produces comparable results.
 
 Stdlib only; Python 3.11+.
@@ -10,12 +10,15 @@ Groups:
   quick — ordinary allow/deny behavior (docs/policy.md)
   full  — quick + SSRF/DNS fixtures and CONNECT-abuse tests
 
-The DNS fixture tests (nip.io / sslip.io / rbndr.us) only make sense when
-the *test* policy is mounted (`./run.py up --test-policy`): the fixture
-hostnames must be allowlisted so that a rejection can only come from the
-IP-layer SSRF protections, not from ordinary hostname policy. The suite
-auto-detects whether the test policy is active and skips those tests
-otherwise.
+The DNS fixture tests (nip.io / sslip.io / rbndr.us, plus the local
+mixed-answer fixture) only make sense when the *test* policy is mounted
+(`./run.py up --test-policy`): the fixture hostnames must be allowlisted so
+that a rejection can only come from the IP-layer SSRF protections, not from
+ordinary hostname policy. The suite auto-detects whether the test policy is
+active and skips those tests otherwise. `dns-mixed-answers` additionally
+needs config/dns-fixture.hosts mounted in the engine container, which the
+same `--test-policy` flag arranges, and proves it with a control probe
+before grading anything.
 
 Outcomes:
   pass   — behavior matched the expectation
@@ -57,13 +60,32 @@ ALLOWED_HTTPS_HOST = "pypi.org"         # must be on the allowlist
 ALLOWED_ALT_HOST = "files.pythonhosted.org"  # allowlisted, used as mismatching SNI
 BLOCKED_HOST = "example.com"            # must NOT be on the allowlist
 
+# Mixed-answer fixture, served from config/dns-fixture.hosts which
+# `run.py up --test-policy` mounts at /etc/hosts inside the engine
+# container. The control resolves to one public address; the other two
+# resolve to the same public address *and* a private one, in both
+# orderings, so an engine that validates only the first answer fails one of
+# them. Keep these names in sync with that file and with the test policies.
+MIXED_FIXTURE_CONTROL = "public-only.fixture.test"
+MIXED_FIXTURE_TARGETS = ("mixed-public-first.fixture.test",
+                         "mixed-private-first.fixture.test")
+
 # Engine-specific expectations for the CONNECT-abuse tests: Pipelock is
-# expected to reject; Smokescreen behavior is recorded (docs/comparison.md
-# has the measured outcome — Smokescreen allows both).
+# expected to reject; Smokescreen and Squid behavior is recorded
+# (docs/comparison.md has the measured outcome — both allow both).
+#
+# Squid *can* inspect a tunnel, via `ssl_bump peek` + `splice`, but that
+# configuration was built, measured and rejected: it crashes the daemon
+# when a peeked connection must be terminated without a signing CA, and it
+# answers every CONNECT with 200 before evaluating policy. See the header
+# of config/squid.conf and docs/comparison.md.
 ENGINE_EXPECTATIONS = {
     "pipelock": {"connect-sni-mismatch": "deny", "connect-raw-tunnel": "deny"},
     "smokescreen": {"connect-sni-mismatch": "record", "connect-raw-tunnel": "record"},
+    "squid": {"connect-sni-mismatch": "record", "connect-raw-tunnel": "record"},
 }
+
+ENGINES = tuple(ENGINE_EXPECTATIONS)
 
 
 @dataclass
@@ -175,9 +197,13 @@ _TAXONOMY: list[tuple[str, re.Pattern]] = [
     # Resolution never produced an answer: not a policy verdict at all.
     # Pipelock: "DNS lookup for X returned no such host".
     # Smokescreen: "502 Failed to resolve remote hostname: lookup X ...".
+    # Squid: ERR_DNS_FAIL — "Unable to determine IP address from host name
+    # X / The DNS server returned: Server Failure".
     ("dns-failure", re.compile(r"no such host|nxdomain|name or service not known|"
                                 r"dns lookup .*(failed|returned)|"
-                                r"(failed|unable) to resolve", re.I)),
+                                r"(failed|unable) to resolve|"
+                                r"unable to determine ip address from host name|"
+                                r"the dns server returned", re.I)),
     # Smokescreen rejects bracketed IPv6 literals before any policy applies
     # ("Destination host cannot be determined"), so its pass on the
     # private-IPv6 checks says nothing about private-IP defence. Kept as its
@@ -185,6 +211,11 @@ _TAXONOMY: list[tuple[str, re.Pattern]] = [
     ("unparseable-destination", re.compile(r"destination host cannot be determined|"
                                             r"invalid domain|invalid label|\bidna\b|"
                                             r"could not parse (the )?(destination|host)", re.I)),
+    # Squid: "CONNECT to this port is not allowed" (config/squid.conf
+    # restricts tunnels to 443). Not a hostname verdict — the destination
+    # may well be allowlisted — so it gets its own bucket.
+    ("port-not-allowed", re.compile(r"connect to this port|port .{0,20}not (allowed|permitted)|"
+                                     r"unsafe port|disallowed port", re.I)),
     ("timeout", re.compile(r"timed out|timeout", re.I)),
     # Smokescreen's default-deny ACL verdict is "default rule policy used".
     ("hostname-not-allowlisted", re.compile(r"not (on|in)( the)? allowlist|not.?allowlisted|"
@@ -214,6 +245,14 @@ def aggregate_cause(detail: str, attempts: "list[Attempt]") -> str:
     """
     denied = [a for a in attempts if a.cause]
     if not denied:
+        if attempts:
+            # Per-attempt evidence exists and nothing was denied, so there
+            # is no denial to attribute. Falling through to the text would
+            # classify the checker's *own* summary — which is how a failing
+            # dns-mixed-answers row came to be labelled `private-ip` for
+            # saying the words "a private address" (TODO.md §1: never
+            # classify a reason word the checker wrote).
+            return None
         return classify_denial(detail)
     causes = sorted({a.cause for a in denied if a.cause})
     return "+".join(causes)
@@ -335,7 +374,7 @@ class ProxyClient:
             except OSError:
                 pass
         sock.close()
-        body = extra.decode("latin-1", "replace").strip()
+        body = summarize_body(extra.decode("latin-1", "replace"))
         detail = f"{first} — {body}" if body else (first or "(connection closed, no data)")
         return None, status, detail
 
@@ -400,6 +439,20 @@ class ProxyClient:
         return data, f"raw bytes traversed the tunnel; response: {annotated}"
 
 
+def summarize_body(body: str, limit: int = 600) -> str:
+    """Collapse a response body to a single readable line.
+
+    Pipelock and Smokescreen answer a denial with one sentence; Squid
+    answers with an HTML error page. Stripping tags and runs of whitespace
+    keeps all three comparable in the text table and in `--json`, and
+    leaves the engine's own wording intact for classify_denial() — which
+    reads `detail`, so the reason has to survive this.
+    """
+    text = re.sub(r"<[^>]*>", " ", body)
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[:limit].rstrip() + " …"
+
+
 def _parse_headers(data: bytes) -> dict[str, str]:
     head, _, _ = data.partition(b"\r\n\r\n")
     lines = head.decode("latin-1", "replace").split("\r\n")[1:]
@@ -433,7 +486,7 @@ def _classify_deny_http(client: ProxyClient, url: str) -> tuple[str, str]:
     resp = client.http_get(url)
     if resp.status is not None and resp.status < 400:
         return "fail", f"request succeeded ({resp.first_line})"
-    body = resp.body.strip()
+    body = summarize_body(resp.body)
     text = f"{resp.first_line} — {body}" if body else resp.first_line
     return "pass", f"denied: {text}"
 
@@ -521,8 +574,12 @@ FIXTURE_SKIP = ("test policy not active — run `./run.py up --test-policy` "
                 "to exercise DNS/SSRF fixtures, then re-run")
 
 
-def _connect_attempt(client: ProxyClient, n: int, target: str, host_for_resolution: str) -> Attempt:
-    local = resolve_locally(host_for_resolution)
+def _connect_attempt(client: ProxyClient, n: int, target: str, host_for_resolution: str,
+                     resolve: bool = True) -> Attempt:
+    """One CONNECT probe. `resolve=False` skips the checker's own lookup —
+    used for fixture names that exist only inside the engine's container,
+    where the lookup can only ever NXDOMAIN after a timeout."""
+    local = resolve_locally(host_for_resolution) if resolve else []
     t0 = time.monotonic()
     sock, status, detail = client.connect(target)
     elapsed = round((time.monotonic() - t0) * 1000, 1)
@@ -624,9 +681,46 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
     return RawOutcome("record", detail, attempts=attempts)
 
 
-def test_dns_mixed(client: ProxyClient) -> tuple[str, str]:
-    return "skip", ("mixed public/private DNS answers need a local DNS fixture; "
-                    "see docs/security.md for the dnsmasq recipe")
+def test_dns_mixed(client: ProxyClient) -> RawOutcome:
+    """An allowlisted name resolving to a public *and* a private address
+    must be refused, in both answer orderings.
+
+    This is the one check whose fixture cannot come from public DNS, so it
+    is manufactured in config/dns-fixture.hosts (mounted at /etc/hosts by
+    `up --test-policy`). The control probe is what makes the result
+    attributable: it resolves to the same public address as the mixed names
+    and nothing else, so if it does not establish, the fixture is missing,
+    unallowlisted or unreachable and a denial below would prove nothing.
+    The row skips in that case rather than banking an unearned pass.
+
+    Local resolution is deliberately not attempted — the names exist only
+    inside the engine's container — so `local_resolved` is empty on every
+    attempt here by design, not by failure.
+    """
+    control = _connect_attempt(client, 0, f"{MIXED_FIXTURE_CONTROL}:443",
+                               MIXED_FIXTURE_CONTROL, resolve=False)
+    if control.outcome != "established":
+        return RawOutcome("skip", (
+            f"control probe to {MIXED_FIXTURE_CONTROL} did not establish "
+            f"({control.detail}) — the mixed-answer fixture is not mounted, not "
+            "allowlisted, or its public address is unreachable from here. Run "
+            "`./run.py up --test-policy`, which mounts config/dns-fixture.hosts, "
+            "and re-run"), attempts=[control])
+
+    attempts = [control]
+    attempts += [_connect_attempt(client, i, f"{name}:443", name, resolve=False)
+                 for i, name in enumerate(MIXED_FIXTURE_TARGETS, start=1)]
+    established = [a for a in attempts[1:] if a.outcome == "established"]
+    if established:
+        # Deliberately phrased without a taxonomy reason word: this detail
+        # is fed to classify_denial(), and nothing here was denied.
+        return RawOutcome("fail", "; ".join(
+            f"{a.target} established — the engine connected although 10.0.0.1 was in "
+            "the answer set" for a in established), attempts=attempts)
+    return RawOutcome("pass", (
+        f"control {MIXED_FIXTURE_CONTROL} established, and both mixed-answer names "
+        "(public-first and private-first) were denied — every address in the answer set "
+        "is validated, not only the first one or the routable one"), attempts=attempts)
 
 
 # -- CONNECT abuse ----------------------------------------------------------
@@ -682,7 +776,7 @@ TESTS = [
     ("dns-private-ipv4",     "full",  "deny",   test_dns_private_v4,       True),
     ("dns-private-ipv6",     "full",  "deny",   test_dns_private_v6,       True),
     ("dns-rebinding",        "full",  "record", test_dns_rebind,           True),
-    ("dns-mixed-answers",    "full",  "record", test_dns_mixed,            True),
+    ("dns-mixed-answers",    "full",  "deny",   test_dns_mixed,            True),
     ("connect-sni-mismatch", "full",  "record", test_sni_mismatch,         False),
     ("connect-raw-tunnel",   "full",  "record", test_raw_tunnel,           False),
     ("concurrency-sanity",   "full",  "record", test_concurrency,          False),
@@ -835,7 +929,7 @@ def cmd_diff(path_a: str, path_b: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--proxy", default=DEFAULT_PROXY)
-    parser.add_argument("--engine", choices=("pipelock", "smokescreen"), default=None)
+    parser.add_argument("--engine", choices=ENGINES, default=None)
     parser.add_argument("--backend-bin", default=None,
                         help="container backend binary (docker/container), for engine log capture")
     parser.add_argument("--container", default=None,
