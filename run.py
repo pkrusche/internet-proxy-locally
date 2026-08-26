@@ -44,7 +44,7 @@ HEALTH_WAIT_SECONDS = 15.0
 # names in a hosts file collapse to one address (musl keeps the first,
 # Squid's parser the last), so the engine would never see a multi-address
 # answer. dnsmasq's --addn-hosts aggregates them.
-DNS_FIXTURE = "dnsmasq"
+DNS_FIXTURE = "dnsfixture"
 PINNABLE = ENGINES + (DNS_FIXTURE,)
 
 
@@ -72,8 +72,7 @@ class ServiceSpec:
     image_digest: str = ""
     source_repo: str = ""
     source_ref: str = ""
-    source_package: str = ""
-    package_version: str = ""
+    packages: dict[str, str] = field(default_factory=dict)
     go_image: str = ""
     runtime_image: str = ""
     base_image: str = ""
@@ -108,8 +107,7 @@ class ServiceSpec:
             image_digest=image.get("digest", ""),
             source_repo=source.get("repo", ""),
             source_ref=source.get("ref", ""),
-            source_package=source.get("package", ""),
-            package_version=source.get("package_version", ""),
+            packages=dict(source.get("packages", {})),
             go_image=build.get("go_image", ""),
             runtime_image=build.get("runtime_image", ""),
             base_image=build.get("base_image", ""),
@@ -131,13 +129,21 @@ class ServiceSpec:
         return spec
 
     @property
+    def primary_package_version(self) -> str:
+        """The version the image is tagged with: the package matching the
+        service name where there is one (squid), else the first pinned."""
+        if self.engine in self.packages:
+            return self.packages[self.engine]
+        return next(iter(self.packages.values()), "")
+
+    @property
     def pin_kind(self) -> str:
         """What kind of thing this service is pinned by, inferred from which
         keys its TOML defines: an OCI digest (Pipelock), a distribution
         package version (Squid, the DNS fixture), or a source commit
         (Smokescreen). Upstreams publish different things; each pin is
         whatever is immutable for that upstream."""
-        if self.source_package:
+        if self.packages:
             return "package"
         if self.source_repo:
             return "source"
@@ -153,10 +159,13 @@ class ServiceSpec:
                            f"services/{self.engine}.toml.\n{pin_hint}")
             return f"{self.image_repository}@{self.image_digest}"
         if self.pin_kind == "package":
-            if not self.package_version:
+            missing = sorted(name for name, version in self.packages.items() if not version)
+            if missing:
                 raise Fail(f"{self.engine} package version is not pinned in "
-                           f"services/{self.engine}.toml.\n{pin_hint}")
-            return f"{self.image_repository}:{self.package_version}"
+                           f"services/{self.engine}.toml ({', '.join(missing)}).\n{pin_hint}")
+            # Tagged by the package the service is named for, so the tag
+            # still reads as a version rather than a hash of several.
+            return f"{self.image_repository}:{self.primary_package_version}"
         if not self.source_ref:
             raise Fail(f"{self.engine} source ref is not pinned in "
                        f"services/{self.engine}.toml.\n{pin_hint}")
@@ -786,19 +795,14 @@ def _setup_smokescreen(backend: Backend, spec: ServiceSpec, rebuild: bool = Fals
 def _setup_package_image(backend: Backend, spec: ServiceSpec, rebuild: bool = False) -> None:
     """Build an image around a pinned distribution package — Squid, and the
     dnsmasq DNS fixture. The Dockerfile takes `<PACKAGE>_VERSION`."""
-    if not spec.package_version:
-        raise Fail(
-            f"{spec.engine} package version is not pinned.\n"
-            f"Run `./run.py pin {spec.engine}` (needs network), review and commit, "
-            "then re-run setup."
-        )
-    tag = spec.run_image_ref()
+    tag = spec.run_image_ref()   # raises when any package is unpinned
     if backend.image_present(tag) and not rebuild:
         print(f"{spec.engine}: image {tag} already built")
         return
-    print(f"{spec.engine}: building {tag} from {spec.base_image} "
-          f"({spec.source_package}={spec.package_version})")
-    build_args = {f"{spec.source_package.upper()}_VERSION": spec.package_version}
+    pinned = ", ".join(f"{name}={version}" for name, version in sorted(spec.packages.items()))
+    print(f"{spec.engine}: building {tag} from {spec.base_image} ({pinned})")
+    build_args = {f"{name.upper()}_VERSION": version
+                  for name, version in spec.packages.items()}
     if spec.base_image:
         build_args["BASE_IMAGE"] = spec.base_image
     context = REPO_ROOT / "images" / spec.engine
@@ -828,29 +832,36 @@ def cmd_pin(opts: argparse.Namespace) -> int:
         _write_pin(spec.toml_path, "digest", digest)
         print(f"pinned pipelock {spec.image_tag} @ {digest}")
     elif spec.pin_kind == "package":
-        version = opts.ref
-        if not version:
+        names = sorted(spec.packages)
+        if opts.ref:
+            if len(names) != 1:
+                raise Fail(f"--ref pins a single package, but {engine} pins "
+                           f"{len(names)} ({', '.join(names)}); edit "
+                           f"services/{engine}.toml directly")
+            _write_pin(spec.toml_path, names[0], opts.ref)
+            print(f"pinned {engine} {names[0]}={opts.ref}")
+        else:
             backend = detect_backend(opts.backend)
             base = spec.base_image
             if not base:
                 raise Fail(f"services/{engine}.toml: [build] base_image is required "
                            f"to pin {engine}")
-            print(f"asking {base} which {spec.source_package} version it would install")
+            print(f"asking {base} which versions of {', '.join(names)} it would install")
             output = backend.run_once(base, [
                 "sh", "-c",
-                f"apk update >/dev/null 2>&1 && apk list {spec.source_package} 2>/dev/null",
+                f"apk update >/dev/null 2>&1 && apk list {' '.join(names)} 2>/dev/null",
             ])
-            versions = re.findall(rf"^{re.escape(spec.source_package)}-(\d[\w.]*-r\d+)\s",
-                                  output, re.M)
-            if not versions:
-                raise Fail(
-                    f"could not read a {spec.source_package} version from {base}.\n"
-                    f"Check it by hand (`apk list {spec.source_package}` in that image) and put "
-                    f"it in services/{engine}.toml"
-                )
-            version = sorted(set(versions))[-1]
-        _write_pin(spec.toml_path, "package_version", version)
-        print(f"pinned {engine} {version} (from {spec.base_image})")
+            for name in names:
+                versions = re.findall(rf"^{re.escape(name)}-(\d[\w.]*-r\d+)\s", output, re.M)
+                if not versions:
+                    raise Fail(
+                        f"could not read a {name} version from {base}.\n"
+                        f"Check it by hand (`apk list {name}` in that image) and put it in "
+                        f"services/{engine}.toml"
+                    )
+                resolved = sorted(set(versions))[-1]
+                _write_pin(spec.toml_path, name, resolved)
+                print(f"pinned {engine} {name}={resolved} (from {base})")
     else:
         git = shutil.which("git")
         if not git:
@@ -972,15 +983,15 @@ def cmd_status(opts: argparse.Namespace) -> int:
         state = backend.container_state(spec.container_name)
         if spec.engine == "pipelock":
             pin = spec.image_digest
-        elif spec.engine == "squid":
-            pin = spec.package_version
+        elif spec.pin_kind == "package":
+            pin = spec.primary_package_version
         else:
             pin = spec.source_ref
         pin = pin or "(unpinned)"
         marker = " (active)" if spec.engine == active else ""
         print(f"{spec.engine}: {state}{marker}")
         print(f"  container: {spec.container_name}")
-        tag = spec.image_tag or spec.package_version or spec.source_ref[:12] or "?"
+        tag = spec.image_tag or spec.primary_package_version or spec.source_ref[:12] or "?"
         print(f"  image:     {spec.image_repository}:{tag}")
         print(f"  pin:       {pin or '(unpinned)'}")
     if active:
@@ -1016,6 +1027,11 @@ def cmd_check(opts: argparse.Namespace) -> int:
     cmd = [sys.executable, str(REPO_ROOT / "checks" / "egress.py"),
            "--proxy", f"http://{host}:{port}", "--engine", engine,
            "--backend-bin", backend.bin, "--container", spec.container_name]
+    # dns-rebinding grades on what the fixture observed, so the checker
+    # needs its log stream too. Only present under `up --test-policy`.
+    fixture = ServiceSpec.load(DNS_FIXTURE)
+    if backend.container_state(fixture.container_name) == "running":
+        cmd += ["--fixture-container", fixture.container_name]
     cmd.append("--full" if opts.full else "--quick")
     if opts.json:
         cmd.append("--json")

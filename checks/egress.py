@@ -10,15 +10,16 @@ Groups:
   quick — ordinary allow/deny behavior (docs/policy.md)
   full  — quick + SSRF/DNS fixtures and CONNECT-abuse tests
 
-The DNS fixture tests (nip.io / sslip.io / rbndr.us, plus the local
-mixed-answer fixture) only make sense when the *test* policy is mounted
+The DNS fixture tests (nip.io / sslip.io, plus the local mixed-answer and
+rebinding fixtures) only make sense when the *test* policy is mounted
 (`./run.py up --test-policy`): the fixture hostnames must be allowlisted so
 that a rejection can only come from the IP-layer SSRF protections, not from
 ordinary hostname policy. The suite auto-detects whether the test policy is
-active and skips those tests otherwise. `dns-mixed-answers` additionally
-needs config/dns-fixture.hosts mounted in the engine container, which the
-same `--test-policy` flag arranges, and proves it with a control probe
-before grading anything.
+active and skips those tests otherwise. `dns-mixed-answers` and
+`dns-rebinding` additionally need the local DNS fixture container, which the
+same `--test-policy` flag starts and points the engine's resolver at; each
+proves the fixture is live — a control probe, and the fixture's own lookup
+log — before grading anything.
 
 Outcomes:
   pass   — behavior matched the expectation
@@ -43,6 +44,7 @@ import argparse
 import concurrent.futures
 import ipaddress
 import json
+import os
 import re
 import socket
 import ssl
@@ -69,6 +71,27 @@ BLOCKED_HOST = "example.com"            # must NOT be on the allowlist
 MIXED_FIXTURE_CONTROL = "public-only.fixture.test"
 MIXED_FIXTURE_TARGETS = ("mixed-public-first.fixture.test",
                          "mixed-private-first.fixture.test")
+
+# Rebinding fixture, served by the same container (images/dnsfixture).
+# The first A query for one of these names is answered with a public
+# address and every later query with the fixture's own private address,
+# where it listens as a trap. Each name is fresh, so no name can be served
+# from a cache an earlier one warmed, and each is probed twice so that the
+# second answer is actually handed out.
+REBIND_ZONE = "rebind.fixture.test"
+REBIND_NAMES = 3          # probed twice each, either side of REBIND_TTL_GAP
+# The fixture answers with TTL 0, but a resolver cache keyed on a
+# whole-second clock — Squid's ipcache is one — will still serve two
+# probes issued in the same second from a single lookup, and the rebind
+# never gets handed out. One pass over every name, a pause, then a second
+# pass costs one gap for the whole check rather than one per name.
+REBIND_TTL_GAP = 1.5
+
+# The fixture's log stream, set by run_suite when `run.py check` passes
+# --fixture-container. Kept as a module-level hook so the rebinding test
+# can read it without every test function growing a parameter, and so the
+# unit tests can substitute a canned transcript.
+FIXTURE_LOG_SOURCE: "callable" = lambda: []
 
 # Engine-specific expectations for the CONNECT-abuse tests: Pipelock is
 # expected to reject; Smokescreen and Squid behavior is recorded
@@ -620,65 +643,127 @@ def test_dns_private_v6(client: ProxyClient) -> RawOutcome:
                               "denied; resolved IPs recorded per attempt", attempts=attempts)
 
 
-# rbndr.us fixture pool for cache-busted rebinding attempts: pair a public
-# resolver IP with a varying loopback octet so every attempt is a hostname
-# neither the checker nor the engine has resolved before (see TODO.md §1 —
-# a repeated hostname makes a stale/cached DNS answer indistinguishable
-# from a real per-connection rebind defence).
-_REBIND_PUBLIC_IPS = ("1.1.1.1", "1.0.0.1", "9.9.9.9", "8.8.8.8", "8.8.4.4", "149.112.112.112")
+def _rebind_name(index: int, token: str) -> str:
+    """A name unique to this run.
+
+    The fixture counts lookups per name and hands out the private address
+    from the second onward, so a name reused by a later `check` would start
+    its life already rebound and the first probe would be graded against
+    the wrong answer. The fixture container outlives individual check runs,
+    so the token cannot be dropped.
+    """
+    return f"a{index}-{token}.{REBIND_ZONE}"
 
 
-def _hex_ip(ip: str) -> str:
-    return "".join(f"{int(octet):02x}" for octet in ip.split("."))
+def parse_fixture_log(lines: "list[str]") -> "tuple[dict[str, list[str]], list[str]]":
+    """Split the fixture's `IPL-FIXTURE` lines into (answers, trap hits).
 
-
-def _rebind_target(attempt: int) -> tuple[str, str, str]:
-    """Return (hostname, public_ip, private_ip) for one cache-busted attempt."""
-    public_ip = _REBIND_PUBLIC_IPS[attempt % len(_REBIND_PUBLIC_IPS)]
-    private_ip = f"127.0.0.{2 + (attempt % 250)}"
-    hostname = f"{_hex_ip(public_ip)}.{_hex_ip(private_ip)}.rbndr.us"
-    return hostname, public_ip, private_ip
+    `answers` maps each queried name to the addresses handed out, in order,
+    so the number of entries is the number of times the engine resolved
+    that name. `trap` holds one entry per connection that reached the
+    fixture's private address — each of which is a rebind followed through.
+    """
+    answers: dict[str, list[str]] = {}
+    trap: list[str] = []
+    for line in lines:
+        if "IPL-FIXTURE" not in line:
+            continue
+        body = line.split("IPL-FIXTURE", 1)[1].strip()
+        fields = dict(part.split("=", 1) for part in body.split() if "=" in part)
+        if body.startswith("dns ") and "name" in fields and "answer" in fields:
+            answers.setdefault(fields["name"], []).append(fields["answer"])
+        elif body.startswith("trap connect"):
+            trap.append(fields.get("from", "?"))
+    return answers, trap
 
 
 def test_dns_rebind(client: ProxyClient) -> RawOutcome:
-    """Each attempt uses a fresh rbndr.us hostname (see `_rebind_target`), so
-    no attempt can be served from a cache warmed by an earlier one, and
-    records what the checker itself resolved that hostname to at attempt
-    time.
+    """The engine must never connect to an address it was handed *after*
+    validating a different one.
 
-    Stays `record`: rbndr.us answers *every query* with one of its two
-    encoded IPs at random, so the checker's resolution and the engine's are
-    independent draws. An established tunnel does not prove the engine saw
-    the loopback answer, and a denial does not prove it saw the public one —
-    grading a single attempt against the checker's own lookup would fail a
-    correct engine most runs. What the per-attempt evidence *does* settle is
-    the question docs/comparison.md's 2026-08-17 run could not (`denied=0
-    established=6` on one engine, `denied=6 established=0` on the other):
-    whether the fixture varied at all. Uniform local resolutions across six
-    fresh hostnames mean a caching resolver, and a uniform engine result is
-    then evidence of nothing. The graded proof that a hostname cannot reach
-    a private address is `dns-private-ipv4`/`ipv6`; a conclusive rebinding
-    grade needs the local DNS fixture (docs/security.md), not rbndr.us."""
-    attempts = []
-    for i in range(6):
-        hostname, _, _ = _rebind_target(i)
-        attempts.append(_connect_attempt(client, i, f"{hostname}:443", hostname))
+    Each name is probed twice. The fixture answers the first lookup with a
+    public address and every later lookup with its own private address, on
+    which it listens. So the second probe is a genuine rebind: whatever the
+    engine does there, it does knowing only what its resolver just told it.
+    An engine that re-resolves and re-validates refuses. An engine that
+    re-resolves and forgets to re-validate arrives at the trap, and the
+    fixture reports it.
 
-    counts = {outcome: sum(1 for a in attempts if a.outcome == outcome)
-              for outcome in ("established", "denied", "error")}
-    resolved = sorted({ip for a in attempts for ip in a.local_resolved})
-    if not resolved:
-        fixture = ("the checker resolved none of them (no network / fixture unreachable), "
-                   "so the engine-side result is unattributable")
-    elif any(_is_private(ip) for ip in resolved) and not all(_is_private(ip) for ip in resolved):
-        fixture = f"the fixture did vary for the checker (saw {resolved})"
-    else:
-        fixture = (f"the checker saw only {resolved} across all six — a caching resolver, "
-                   "so a uniform engine result proves nothing")
-    detail = (f"{counts['established']} established, {counts['denied']} denied, "
-              f"{counts['error']} error across 6 cache-busted hostnames; {fixture}; "
-              "per-attempt resolutions recorded")
-    return RawOutcome("record", detail, attempts=attempts)
+    Probing twice, with a pause between the passes, is the point. A single
+    probe per name never causes the private answer to be handed out at all,
+    so the trap could not fire even against a vulnerable engine and the row
+    would pass while testing nothing — the failure mode that made
+    `dns-private-ipv6` vacuous for two measurement rounds
+    (docs/comparison.md finding 6). Two probes in the same second are no
+    better against a resolver cache with second granularity, which is why
+    the passes are separated rather than interleaved.
+
+    **Only the trap decides the grade.** A second probe that establishes
+    with the trap silent is not a failure: it means the engine connected to
+    the public address it had already validated, which is the safe way to
+    resist rebinding. Both behaviors are recorded in the detail, because
+    they are different designs and the difference is worth seeing.
+
+    This replaced `rbndr.us`, which stopped resolving in 2026-08 and had
+    always been ungradable: it answered each query with one of its two
+    addresses at random, so nothing the checker observed could attribute
+    what the engine did (docs/comparison.md finding 3).
+    """
+    _, before_trap = parse_fixture_log(FIXTURE_LOG_SOURCE())
+    token = os.urandom(3).hex()
+    names = [_rebind_name(i, token) for i in range(REBIND_NAMES)]
+
+    attempts: list[Attempt] = []
+    for name in names:
+        attempts.append(_connect_attempt(client, len(attempts), f"{name}:443",
+                                         name, resolve=False))
+    time.sleep(REBIND_TTL_GAP)
+    for name in names:
+        attempts.append(_connect_attempt(client, len(attempts), f"{name}:443",
+                                         name, resolve=False))
+
+    answers, trap = parse_fixture_log(FIXTURE_LOG_SOURCE())
+    # The names are unique to this run, so their answers need no delta;
+    # trap hits accumulate in a long-lived container and do.
+    trap = trap[len(before_trap):]
+    ours = {name: answers.get(name, []) for name in names}
+    lookups = sum(len(seen) for seen in ours.values())
+    if not lookups:
+        return RawOutcome("skip", (
+            f"the DNS fixture reported no lookups for *.{REBIND_ZONE} — it is not "
+            "running, the engine is not resolving through it, or its log stream is not "
+            "readable from here. Run `./run.py up --test-policy` and `./run.py check "
+            "--full`, which wires the fixture's container through automatically"),
+            attempts=attempts)
+
+    for attempt in attempts:
+        attempt.local_resolved = list(ours.get(attempt.target.rsplit(":", 1)[0], []))
+
+    if trap:
+        return RawOutcome("fail", (
+            f"{len(trap)} connection(s) reached the fixture's private address "
+            f"(from {', '.join(sorted(set(trap)))}) after a repeat lookup handed it "
+            "over — the engine followed a rebind instead of re-validating"),
+            attempts=attempts)
+
+    # No trap hits: say why, because "never offered the rebind" and
+    # "offered it and refused" are very different amounts of evidence.
+    rebound = [name for name, seen in ours.items() if len(seen) > 1]
+    second_probes = attempts[REBIND_NAMES:]
+    established = sum(1 for a in second_probes if a.outcome == "established")
+    detail = (f"no connection reached the trap. {len(rebound)}/{REBIND_NAMES} names were "
+              f"resolved more than once and so were handed the private address "
+              f"({lookups} lookups total); of the {len(second_probes)} repeat probes, "
+              f"{len(second_probes) - established} were denied and {established} "
+              "established")
+    if not rebound:
+        detail += (" — but the engine resolved each name only once, so it was never "
+                   "offered the rebind and this run did not exercise one")
+    elif established:
+        detail += (" — an established repeat probe with a silent trap means the engine "
+                   "reused the address it had already validated rather than following "
+                   "the new answer")
+    return RawOutcome("pass", detail, attempts=attempts)
 
 
 def test_dns_mixed(client: ProxyClient) -> RawOutcome:
@@ -775,7 +860,7 @@ TESTS = [
     ("private-ipv6",         "quick", "deny",   test_ipv6_private,         False),
     ("dns-private-ipv4",     "full",  "deny",   test_dns_private_v4,       True),
     ("dns-private-ipv6",     "full",  "deny",   test_dns_private_v6,       True),
-    ("dns-rebinding",        "full",  "record", test_dns_rebind,           True),
+    ("dns-rebinding",        "full",  "deny",   test_dns_rebind,           True),
     ("dns-mixed-answers",    "full",  "deny",   test_dns_mixed,            True),
     ("connect-sni-mismatch", "full",  "record", test_sni_mismatch,         False),
     ("connect-raw-tunnel",   "full",  "record", test_raw_tunnel,           False),
@@ -818,7 +903,8 @@ def _fetch_logs(backend_bin: str | None, container: str | None) -> list[str]:
 
 
 def run_suite(proxy: str, engine: str, full: bool,
-             backend_bin: str | None = None, container: str | None = None) -> list[Result]:
+             backend_bin: str | None = None, container: str | None = None,
+             fixture_container: str | None = None) -> list[Result]:
     match = re.match(r"(?:http://)?([^:/]+):(\d+)/?$", proxy)
     if not match:
         raise SystemExit(f"cannot parse proxy endpoint: {proxy}")
@@ -829,6 +915,10 @@ def run_suite(proxy: str, engine: str, full: bool,
             pass
     except OSError as exc:
         raise SystemExit(f"proxy endpoint {proxy} is not reachable: {exc}")
+
+    global FIXTURE_LOG_SOURCE
+    if backend_bin and fixture_container:
+        FIXTURE_LOG_SOURCE = lambda: _fetch_logs(backend_bin, fixture_container)
 
     overrides = ENGINE_EXPECTATIONS.get(engine, {})
     have_fixtures = None
@@ -934,6 +1024,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="container backend binary (docker/container), for engine log capture")
     parser.add_argument("--container", default=None,
                         help="container name, paired with --backend-bin, for engine log capture")
+    parser.add_argument("--fixture-container", default=None,
+                        help="DNS fixture container name, paired with --backend-bin; "
+                             "dns-rebinding grades on what the fixture observed")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--quick", action="store_true")
     mode.add_argument("--full", action="store_true")
@@ -948,7 +1041,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--engine is required unless --diff is given")
 
     results = run_suite(opts.proxy, opts.engine, full=opts.full,
-                        backend_bin=opts.backend_bin, container=opts.container)
+                        backend_bin=opts.backend_bin, container=opts.container,
+                        fixture_container=opts.fixture_container)
     if opts.as_json:
         print(json.dumps({"schema_version": SCHEMA_VERSION, "engine": opts.engine, "proxy": opts.proxy,
                           "results": [asdict(r) for r in results]}, indent=2))

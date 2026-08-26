@@ -20,9 +20,8 @@
 [image]
 repository = "internet-proxy-locally/squid"
 
-[source]
-package = "squid"
-package_version = "6.12-r0"
+[source.packages]
+squid = "6.12-r0"
 
 [build]
 # Base image pin for images/squid/Dockerfile. Update deliberately; keep in

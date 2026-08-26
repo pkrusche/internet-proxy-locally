@@ -14,6 +14,13 @@ engine and record the results here. Feature tables alone do not decide it.
 >
 > Finding 9 also **corrects an earlier claim in this file**: the
 > 2026-08-25 `/etc/hosts` experiment did not show what it was said to show.
+>
+> **`dns-rebinding` is graded too, as of 2026-08-26** (finding 3). The
+> `rbndr.us` fixture — dead since 2026-08, and never gradable even when it
+> worked — is replaced by a local one that hands out a private address on
+> the second lookup and listens on it. All three engines pass, by two
+> different mechanisms: Pipelock and Smokescreen re-resolve and refuse the
+> rebind; Squid never re-resolves at all.
 
 > **Squid added 2026-08-25** (Apple `container`, macOS arm64). Two things
 > distinguish it, in opposite directions: its SSRF floors are configuration
@@ -62,18 +69,19 @@ engine and record the results here. Feature tables alone do not decide it.
 
 ## Results
 
-Since `dns-mixed-answers` became graded, Pipelock exits 0 with
-`16 pass, 2 record`, Squid exits 0 with `14 pass, 4 record`, and
-**Smokescreen exits 1** with `13 pass, 4 record, 1 fail`. No row skips on
-any engine any more.
+With `dns-mixed-answers` and `dns-rebinding` both graded, Pipelock exits 0
+with `17 pass, 1 record`, Squid exits 0 with `15 pass, 3 record`, and
+**Smokescreen exits 1** with `14 pass, 3 record, 1 fail`. No row skips on
+any engine any more, and every graded row is backed by a fixture that was
+observed to do its job.
 
 **Most of the pass-count difference is a grading change, not a behavior
 difference.** `ENGINE_EXPECTATIONS` in `checks/egress.py` grades
 `connect-sni-mismatch` and `connect-raw-tunnel` as `deny` for Pipelock but
 `record` for Smokescreen and Squid, so those two move out of the graded
-pool for those engines. Of the **14 graded checks**, all three engines pass
-the same 13; the fourteenth, `dns-mixed-answers`, is the first that has
-ever separated them on enforcement rather than on grading.
+pool for those engines. Of the **15 graded checks**, all three engines pass
+the same 14; the fifteenth, `dns-mixed-answers`, is the first that has ever
+separated them on enforcement rather than on grading.
 
 Outcomes below are stable across both runs. The bracketed values are the
 **attributed cause** from the 2026-08-19 re-run — what the engine said it
@@ -95,7 +103,7 @@ reason other than the one the check implies; that is finding 1.
 | private-ipv6 | PASS [allowlist] | PASS [**unparseable**] | PASS [**private-ip**] | `fd00::1`, `fe80::1` |
 | dns-private-ipv4 (nip.io) | PASS [private-ip + metadata] | PASS [private-ip] | PASS [private-ip + metadata] | **allowlisted** hostname → private IP, denied |
 | dns-private-ipv6 (sslip.io) | PASS [private-ip] | PASS [private-ip] | PASS [private-ip] | fixture corrected — finding 6 |
-| dns-rebinding (rbndr.us) | RECORD 6× dns-failure | RECORD 6× dns-failure | RECORD 6× dns-failure | fixture is gone — see below |
+| dns-rebinding (local fixture) | PASS [private-ip] — rebind offered, refused | PASS [private-ip] — rebind offered, refused | PASS — never re-resolves, so never offered | finding 3 |
 | dns-mixed-answers | PASS [private-ip] | **FAIL** | PASS [private-ip] | finding 9 — local dnsmasq fixture |
 | connect-sni-mismatch | PASS (denied) | RECORD **allowed** | RECORD **allowed** | **discriminator** |
 | connect-raw-tunnel | PASS (denied) | RECORD **allowed** | RECORD **allowed** | **discriminator** |
@@ -188,49 +196,54 @@ by pypi.org with the same `fatal(2) decode_error(50)` / `warning(1)
 close_notify(0)` alert pair), with the one difference that its tunnels are
 confined to port 443.
 
-### 3. The rebinding measurement is inconclusive on every engine
+### 3. Rebinding is now conclusive, and the engines defend it two different ways
 
-**As of 2026-08-19 the fixture is gone.** `rbndr.us` no longer resolves
-at all from the measurement host — not the generated names, not the apex
-domain — while `nip.io` and `sslip.io` resolve normally. All six attempts
-are `dns-failure` on every engine:
+**Resolved 2026-08-26.** This finding used to say the rebinding row could
+not be attributed on any engine. It can now, and the answer is more
+interesting than a pass.
 
-* Pipelock: `DNS lookup for 01010101.7f000002.rbndr.us returned no such host`
-* Smokescreen: `502 Failed to resolve remote hostname: lookup …`
-* Squid: `503` / `Unable to determine IP address from host name … The DNS
-  server returned: Server Failure` (2026-08-25)
+`rbndr.us` is gone. It answered every query with one of its two addresses
+at random, so the checker's lookup and the engine's were independent draws
+and neither an established tunnel nor a denial attributed to what the
+engine resolved — and from 2026-08 it stopped resolving at all, making the
+row six identical `dns-failure`s on all three engines. The replacement is
+local (docs/security.md): the fixture answers the **first** lookup of a
+name with a public address and **every later one** with its own private
+address, on which it listens. Each name is probed twice, either side of a
+pause, so the second answer is actually handed out.
 
-Six identical NXDOMAINs are not a rebinding measurement. The per-attempt
-evidence is what makes that legible: without it these would appear as six
-denials on each engine and read as a clean pass. The row is still
-`record`, and the conclusion below is unchanged — but the reason is now
-simply that the fixture is unavailable, which is a stronger argument for
-the local fixture in TODO.md §3 than the original one.
+That listener is what makes the row gradable. "Did the engine reach a
+private address" used to be inferred from counts; it is now reported by
+the thing that would have received the connection. **Only a trap hit
+fails the check.**
 
-The 2026-08-17 output, for the record, was:
+| | Pipelock | Smokescreen | Squid |
+| --- | --- | --- | --- |
+| Names rebound (of 3) | 3 | 3 | **0** |
+| Lookups | 9 | 6 | 3 |
+| Repeat probes denied | 3 | 3 | 0 (established) |
+| Trap hits | 0 | 0 | 0 |
 
-```
-pipelock:     denied=0  established=6
-smokescreen:  denied=6  established=0
-```
+**Pipelock and Smokescreen re-resolve and re-validate.** Both were handed
+the private address on every repeat lookup and refused all three, with
+cause `private-ip`. That is a rebind offered and declined — the first time
+this suite has actually exercised one.
 
-Tempting to read as a Smokescreen win. It is not — this output cannot
-establish that. `rbndr.us` alternates between `127.0.0.1` and `1.1.1.1`
-per query, so genuine per-connection resolution should trend toward ~3/3
-on either engine. A clean 6/0 in *either direction* is the signature of a
-cached answer being reused: Pipelock's resolver pinned the public IP (6
-legitimate tunnels), Smokescreen's pinned loopback (6 correct denials).
-**Neither run actually exercised a rebind.**
+**Squid never re-resolves, so it was never offered the rebind.** Its
+ipcache pinned the address it validated: a single lookup served six
+CONNECTs to the same name, and a separate probe confirmed the entry
+survives **at least 68 seconds** of repeated requests despite the fixture
+answering with TTL 0. That is a legitimate and arguably stronger defense —
+you cannot follow a rebind you never observe — but it is a different
+mechanism, and it is worth knowing that Squid's `positive_dns_ttl`
+defaults to six hours, so the address it connects to can be that stale.
 
-This is exactly why the check is graded `record`, and why it stays that
-way: each `rbndr.us` query is an independent random draw, so nothing the
-checker resolves can attribute the engine's outcome. The current tooling
-makes the ambiguity visible rather than implicit — fresh hostname per
-attempt, each attempt's local resolution recorded, and an explicit note
-when a caching resolver flattened the fixture. Making the row *conclusive*
-needs the local DNS fixture (TODO.md §3). The evidence that the engines
-block loopback-behind-a-hostname is `dns-private-ipv4`/`ipv6`, not this
-row.
+Both designs pass. Neither is a weaker result than the other, but they are
+not the same result, and the row now says which one an engine has instead
+of reporting an aggregate that meant nothing. The 2026-08-17 `denied=0
+established=6` / `denied=6 established=0` output that started all this was,
+as suspected, a cached answer on each side rather than a difference in
+defense.
 
 ### 4. Denial status codes are engine-specific
 
@@ -490,7 +503,8 @@ docs/security.md rather than in a silent expectation override.
 
 ## Not yet measured
 
-* Squid and the DNS fixture on the **Docker** backend. Its build is an ordinary Dockerfile and
+* Squid and the DNS fixture (both the mixed-answer records and the
+  rebinding zone, including the trap listener) on the **Docker** backend. Its build is an ordinary Dockerfile and
   its runtime is one read-only bind mount, so nothing about it is
   backend-specific, but that is reasoning rather than a measurement.
 * Crash → fail-closed (kill the container, confirm the sandbox loses

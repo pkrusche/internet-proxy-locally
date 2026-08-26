@@ -96,16 +96,18 @@ shape untranslated so a hand-written regex shows up as drift.
 ## Test policy
 
 `config/*.test.yaml` and `config/squid.test.conf` additionally allowlist
-`*.nip.io`, `*.sslip.io` and `*.rbndr.us` — wildcard DNS services whose
-hostnames resolve to attacker-chosen IPs — plus the three
-`*.fixture.test` names served by the local DNS fixture. They exist **only**
+`*.nip.io` and `*.sslip.io` — wildcard DNS services whose hostnames
+resolve to attacker-chosen IPs — plus the names served by the local DNS
+fixture: three `*.fixture.test` records for mixed answers, and the
+`*.rebind.fixture.test` zone for rebinding. They exist **only**
 so `./run.py check --full` can prove that the IP-layer SSRF floors hold
 even for allowlisted hostnames. Start them with
 `./run.py up --test-policy`, which also starts the fixture; a normal
 `./run.py up` returns to the real policy and removes it.
 
 The fixture names must stay in sync three ways: the records in
-`config/dns-fixture.hosts`, the `MIXED_FIXTURE_*` constants in
-`checks/egress.py`, and the allowlists in all three test policies. A test
-checks the first two against each other, and the allowlist-sync check
-covers the third.
+`config/dns-fixture.hosts` (and the `rebind.fixture.test` zone in
+`images/dnsfixture/rebind.py`), the `MIXED_FIXTURE_*` / `REBIND_ZONE`
+constants in `checks/egress.py`, and the allowlists in all three test
+policies. A test checks the records against the checker's constants, and
+the allowlist-sync check covers the third.

@@ -1,7 +1,8 @@
 # TEST POLICY — NEVER use for normal operation.
 #
 # Identical to config/smokescreen.yaml plus wildcard DNS fixture domains
-# (nip.io / sslip.io / rbndr.us) whose hostnames resolve to arbitrary,
+# (nip.io / sslip.io), plus the names the local DNS fixture serves
+# (services/dnsfixture.toml). All of them resolve to arbitrary,
 # attacker-chosen IPs. Allowlisting them is the point of the test: with
 # the hostname allowed, Smokescreen's built-in IP-range blocking must
 # still deny private/loopback/link-local/metadata destinations.
@@ -28,8 +29,11 @@ default:
     # --- DNS fixtures for the adversarial suite only ---
     - "*.nip.io"
     - "*.sslip.io"
-    - "*.rbndr.us"
-    # --- mixed-answer fixture (config/dns-fixture.hosts) ---
+    # --- local DNS fixture (services/dnsfixture.toml) ---
+    # Mixed public+private answer sets, from config/dns-fixture.hosts:
     - public-only.fixture.test
     - mixed-public-first.fixture.test
     - mixed-private-first.fixture.test
+    # Rebinding zone, answered by images/dnsfixture/rebind.py. Allowlisted
+    # so that a denial can only come from the address it was handed:
+    - "*.rebind.fixture.test"

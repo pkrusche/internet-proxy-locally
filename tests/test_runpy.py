@@ -137,7 +137,7 @@ class RunPyCliTest(unittest.TestCase):
         # tests that need a pin set one explicitly.
         self.unpin("pipelock", "digest")
         self.unpin("smokescreen", "ref")
-        self.unpin("squid", "package_version")
+        self.unpin("squid", "squid")
         (self.tmp / "checks").mkdir()
         shutil.copy(REPO_ROOT / "checks" / "egress.py", self.tmp / "checks" / "egress.py")
 
@@ -297,7 +297,7 @@ class RunPyCliTest(unittest.TestCase):
         # than run a permissive default.
         version = "6.12-r0"
         toml = self.tmp / "services" / "squid.toml"
-        toml.write_text(re.sub(r'^package_version = ""$', f'package_version = "{version}"',
+        toml.write_text(re.sub(r'^squid = ""$', f'squid = "{version}"',
                                toml.read_text(), flags=re.M))
         self.fake_image(f"internet-proxy-locally/squid:{version}")
         up = self.run_cli("--backend", "docker", "--engine", "squid", "up")
@@ -311,7 +311,7 @@ class RunPyCliTest(unittest.TestCase):
 
     def test_up_squid_refuses_unbuilt_image(self) -> None:
         toml = self.tmp / "services" / "squid.toml"
-        toml.write_text(re.sub(r'^package_version = ""$', 'package_version = "6.12-r0"',
+        toml.write_text(re.sub(r'^squid = ""$', 'squid = "6.12-r0"',
                                toml.read_text(), flags=re.M))
         proc = self.run_cli("--backend", "docker", "--engine", "squid", "up")
         self.assertEqual(proc.returncode, 1)
@@ -319,7 +319,7 @@ class RunPyCliTest(unittest.TestCase):
         self.assertIn("--engine squid setup", proc.stderr)
 
     def fake_dns_fixture_image(self) -> None:
-        self.fake_image("internet-proxy-locally/dnsmasq:2.91-r1")
+        self.fake_image("internet-proxy-locally/dnsfixture:2.91-r1")
 
     def test_test_policy_starts_the_dns_fixture_and_points_the_engine_at_it(self) -> None:
         self.pin_pipelock()
@@ -586,7 +586,7 @@ class RunPyUnitTest(unittest.TestCase):
         kinds = {engine: self.run_mod.ServiceSpec.load(engine).pin_kind
                  for engine in self.run_mod.PINNABLE}
         self.assertEqual(kinds, {"pipelock": "digest", "smokescreen": "source",
-                                 "squid": "package", "dnsmasq": "package"})
+                                 "squid": "package", "dnsfixture": "package"})
 
     def test_dns_fixture_is_not_an_engine(self) -> None:
         # It is pinned and built like one, but `--engine dnsmasq` must not
@@ -658,9 +658,17 @@ class RunPyUnitTest(unittest.TestCase):
 
     def test_squid_image_ref_is_the_pinned_package_version(self) -> None:
         spec = self.run_mod.ServiceSpec.load("squid")
+        self.assertEqual(spec.packages.get("squid"), spec.primary_package_version)
         self.assertEqual(spec.run_image_ref(),
-                         f"{spec.image_repository}:{spec.package_version}")
-        self.assertTrue(spec.package_version, "services/squid.toml must pin a version")
+                         f"{spec.image_repository}:{spec.primary_package_version}")
+        self.assertTrue(spec.primary_package_version,
+                        "services/squid.toml must pin a version")
+
+    def test_every_pinned_package_has_a_version(self) -> None:
+        for engine in self.run_mod.PINNABLE:
+            spec = self.run_mod.ServiceSpec.load(engine)
+            for name, version in spec.packages.items():
+                self.assertTrue(version, f"services/{engine}.toml: {name} is unpinned")
 
 
 if __name__ == "__main__":

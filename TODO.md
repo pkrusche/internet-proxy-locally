@@ -36,9 +36,11 @@ The re-run corrected three things the offline implementation got wrong:
   (`dns-private-ipv4` read as `metadata` when three of four attempts were
   `private-ip`). Attempts are classified individually now and combined.
 
-`dns-rebinding` stays `record`. `rbndr.us` no longer resolves at all, so
-the row is six `dns-failure`s on both engines — legible, but not a
-measurement. Only the local fixture in §3 can make it graded.
+`dns-rebinding` was `record` for exactly this reason: `rbndr.us` stopped
+resolving, so the row was six `dns-failure`s on every engine — legible, but
+not a measurement. **Resolved 2026-08-26** by the local fixture (§3): the
+row is graded, and all three engines pass by two different mechanisms
+(docs/comparison.md finding 3).
 
 ### What went wrong
 
@@ -170,6 +172,16 @@ scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
       ends are not re-explored.
 * [ ] Crash → fail-closed: kill the container mid-session and confirm the
       sandbox loses Internet rather than gaining unfiltered access.
+
+* [ ] Squid's ipcache pins a validated address for far longer than the
+      answer's TTL — measured at 68+ seconds against a TTL-0 fixture, and
+      `positive_dns_ttl` defaults to six hours (docs/comparison.md
+      finding 3). That is why it is never offered a rebind, so it is a
+      defense here, but it also means Squid can keep connecting to an
+      address that has since moved. Worth deciding whether the shipped
+      config should lower it, and worth a check that distinguishes "did
+      not re-resolve" from "re-resolved and refused" — the current row
+      reports which happened but grades them the same.
 * [ ] `./run.py restart` behavior under load.
 * [ ] Record operational observations in docs/comparison.md: startup time,
       image size, log quality, resource usage, upgrade friction.
@@ -198,9 +210,11 @@ scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
 * [x] Pipelock confirmed as default (`DEFAULT_ENGINE` in `run.py`) on the
       strength of its CONNECT-tunnel controls. Squid does not change this:
       it matches Smokescreen at the tunnel layer (finding 8).
-* [ ] Revisit if the §3 DNS fixture makes rebinding conclusive and the
-      engines then differ there. (§1's evidence makes the `rbndr.us` row
-      readable, not gradable.)
+* [x] Rebinding is conclusive as of 2026-08-26, and the engines **do**
+      differ — but not in a way that changes the decision. Pipelock and
+      Smokescreen re-resolve and refuse the rebound address; Squid never
+      re-resolves, so it cannot follow one. Both are defenses; neither is
+      a reason to move off Pipelock (docs/comparison.md finding 3).
 
 ## 5. Smaller items
 

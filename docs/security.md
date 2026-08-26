@@ -66,9 +66,8 @@ that client can connect:
 `checks/egress.py` runs identically against every engine and emits
 comparable text or `--json` results. The full suite covers private
 IPv4/IPv6, metadata, DNS-resolved private targets (nip.io / sslip.io
-fixtures), mixed public+private answer sets (a local dnsmasq fixture, see
-below), DNS rebinding (rbndr.us, recorded with per-attempt evidence), SNI
-mismatch, raw bytes inside a CONNECT tunnel, IP-form CONNECT, and a
+fixtures), mixed public+private answer sets and DNS rebinding (both from
+the local fixture, see below), SNI mismatch, raw bytes inside a CONNECT tunnel, IP-form CONNECT, and a
 concurrency sanity check. Nothing skips any more: every row is graded or
 deliberately recorded.
 
@@ -76,8 +75,9 @@ Each result carries, where relevant: a best-effort denial-cause
 classification (`hostname-not-allowlisted`, `private-ip`, `metadata`,
 `sni-mismatch`, `non-tls-in-tunnel`, `port-not-allowed`, `dns-failure`,
 `unparseable-destination`, `timeout`, `unknown`), timing,
-per-attempt evidence including what the checker itself resolved each DNS
-fixture hostname to, response headers on the allow-path checks, decoded
+per-attempt evidence — what the checker itself resolved each public DNS
+fixture hostname to, and for the local fixture, the addresses it actually
+handed the engine — response headers on the allow-path checks, decoded
 TLS alert records instead of raw bytes for the tunnel-abuse checks, and
 (when run via `./run.py check`, which wires it automatically) the
 engine's own log lines for that test's exact window. `checks/egress.py
@@ -90,18 +90,14 @@ Pipelock and Smokescreen, and Squid was measured on 2026-08-25. Two gaps
 the original run exposed are addressed at the tooling level:
 
 * **The rebinding check.** It used to report an aggregate `denied=N
-  established=M` with no way to tell a cached DNS answer from a real
-  defence. It now issues a fresh, cache-busted hostname per attempt and
-  resolves it locally alongside the CONNECT, so the output says whether
-  the fixture varied at all — uniform local answers across six fresh
-  hostnames mean a caching resolver, and a uniform engine result is then
-  evidence of nothing. It stays `record` rather than graded: `rbndr.us`
-  answers each query with one of its two IPs at random, so the checker's
-  lookup and the engine's are independent draws and neither an
-  established tunnel nor a denial attributes to what the engine resolved.
-  A conclusive rebinding grade needs the local DNS fixture below, not
-  `rbndr.us`; the graded proof that an allowlisted hostname cannot reach a
-  private address remains `dns-private-ipv4`/`ipv6`.
+  established=M` against `rbndr.us`, with no way to tell a cached DNS
+  answer from a real defence — that fixture answered each query with one
+  of its two addresses at random, so the checker's lookup and the engine's
+  were independent draws and neither outcome attributed to anything. It is
+  now graded against the local fixture below, which hands out a private
+  address on the second lookup and listens on it, so the grade rests on
+  whether the engine connected there rather than on what the checker
+  guessed it resolved.
 * **A denial's cause.** `classify_denial()` gives a best-effort taxonomy
   bucket per denial (see above) instead of only a status code. Its
   accuracy against each engine's real wording is pinned by
@@ -138,19 +134,39 @@ looking inside the tunnel.
 
 ### The local DNS fixture
 
-Public wildcard-DNS services cannot serve mixed public+private answer
-sets, so `dns-mixed-answers` runs against a dnsmasq container this
-repository builds and starts. `./run.py up --test-policy` brings it up,
+Public DNS cannot serve either of the two fixtures the suite needs — a
+mixed public+private answer set, or an answer that changes between
+lookups — so both run against a container this repository builds and
+starts. `./run.py up --test-policy` brings it up,
 reads its address, and starts the engine with `--dns <that address>`; a
 normal `./run.py up` removes it. It publishes no host port and is never
 running under the real policy.
 
-The records live in `config/dns-fixture.hosts` — a control name with one
-public address, and two names carrying one public and one private address
-in both orderings, so an engine that validates only the first answer is
-distinguished from one that validates all of them. The control must
-establish before anything is graded; without it, a denial could not be
-attributed to mixed-answer handling and the row skips.
+**Mixed answers.** The records live in `config/dns-fixture.hosts`, served
+by dnsmasq — a control name with one public address, and two names
+carrying one public and one private address in both orderings, so an
+engine that validates only the first answer is distinguished from one that
+validates all of them. The control must establish before anything is
+graded; without it, a denial could not be attributed to mixed-answer
+handling and the row skips.
+
+**Rebinding.** dnsmasq delegates `rebind.fixture.test` to a small stdlib
+responder (`images/dnsfixture/rebind.py`), which answers the *first* lookup
+of a name with a public address and every later one with the fixture's own
+private address — where it also listens. Each name is probed twice, with a
+pause between the passes, so the second answer is actually handed out; two
+probes in the same second are served from one lookup by any resolver cache
+with second granularity, and the rebind never happens.
+
+That listener is the point. `dns-rebinding` grades on one thing: whether
+anything connected to the trap. "Did the engine reach a private address"
+stops being an inference from counts — which is what made the old
+`rbndr.us` row ungradable — and becomes an observation by the thing that
+would have received the connection. A repeat probe that succeeds while the
+trap stays silent is *not* a failure: it means the engine reused the
+address it had already validated, which is a legitimate defense. Both
+behaviors are recorded, because the engines split on exactly this
+(docs/comparison.md finding 3).
 
 Two things about this are worth knowing before changing it:
 

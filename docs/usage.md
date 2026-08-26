@@ -103,9 +103,13 @@ reason), `error` (the test itself could not run). Exit code is 1 if any
 
 The `--full` DNS fixtures require `up --test-policy`; the suite
 auto-detects this and skips them with an explanatory reason otherwise.
-`dns-mixed-answers` additionally probes a control name before grading, so
-that a missing or unreachable fixture skips the row instead of turning
-into a pass it did not earn.
+`dns-mixed-answers` and `dns-rebinding` additionally prove the fixture is
+live before grading — a control probe, and the fixture's own record of the
+lookups it answered — so that a missing or unreachable fixture skips the
+row instead of turning into a pass it did not earn. `run.py check` passes
+the fixture's container through with `--fixture-container` when it is
+running; a standalone `checks/egress.py` invocation without that flag skips
+`dns-rebinding`.
 
 `--json` results are schema-versioned (`schema_version`) and, per check,
 may include: `cause` (best-effort denial classification), `elapsed_ms`,

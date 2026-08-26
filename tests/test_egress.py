@@ -477,75 +477,147 @@ class LogCaptureTest(unittest.TestCase):
         self.assertTrue(all(r.engine_logs == [] for r in results))
 
 
-class DnsRebindEvidenceTest(unittest.TestCase):
-    """`test_dns_rebind`'s per-attempt evidence (TODO.md §1). The outcome
-    stays `record` — each rbndr.us query is an independent random draw, so
-    the checker's own resolution cannot grade the engine's — but the detail
-    must say whether the fixture varied or a cache flattened it. Driven
-    through monkeypatched `resolve_locally` since real DNS is unavailable
-    here."""
+class ParseFixtureLogTest(unittest.TestCase):
+    """The fixture's own transcript is what grades dns-rebinding, so
+    reading it has to be exact."""
+
+    LINES = [
+        "IPL-FIXTURE starting address=192.168.64.60 public=9.9.9.9",
+        "IPL-FIXTURE dns name=a0-ab12cd.rebind.fixture.test query=1 answer=9.9.9.9",
+        "dnsmasq: query[A] something.else from 192.168.64.1",
+        "IPL-FIXTURE dns name=a0-ab12cd.rebind.fixture.test query=2 answer=192.168.64.60",
+        "IPL-FIXTURE trap connect from=192.168.64.47:51102",
+    ]
+
+    def test_collects_answers_in_order_and_trap_hits(self) -> None:
+        answers, trap = egress.parse_fixture_log(self.LINES)
+        self.assertEqual(answers["a0-ab12cd.rebind.fixture.test"],
+                         ["9.9.9.9", "192.168.64.60"])
+        self.assertEqual(trap, ["192.168.64.47:51102"])
+
+    def test_ignores_unrelated_lines(self) -> None:
+        answers, trap = egress.parse_fixture_log(
+            ["dnsmasq: started", "random noise", ""])
+        self.assertEqual((answers, trap), ({}, []))
+
+
+class DnsRebindTest(unittest.TestCase):
+    """`dns-rebinding` grades on one thing: whether the fixture saw a
+    connection. The mock proxy stands in for the engine's verdict on each
+    CONNECT; the fixture transcript is supplied directly, since the real
+    one is read from a container's log stream (docs/comparison.md
+    finding 3)."""
 
     def setUp(self) -> None:
-        self._orig_resolve = egress.resolve_locally
-        self.addCleanup(lambda: setattr(egress, "resolve_locally", self._orig_resolve))
+        self._source = egress.FIXTURE_LOG_SOURCE
+        self.addCleanup(lambda: setattr(egress, "FIXTURE_LOG_SOURCE", self._source))
+        # The gap exists to defeat second-granularity resolver caches. No
+        # real resolver is involved here, so don't pay for it.
+        self._gap = egress.REBIND_TTL_GAP
+        egress.REBIND_TTL_GAP = 0.0
+        self.addCleanup(lambda: setattr(egress, "REBIND_TTL_GAP", self._gap))
+        self.asked: list[str] = []
 
-    @staticmethod
-    def _hostnames() -> set[str]:
-        return {egress._rebind_target(i)[0] for i in range(6)}
-
-    def test_every_attempt_uses_a_fresh_hostname(self) -> None:
-        self.assertEqual(len(self._hostnames()), 6)
-
-    def test_established_attempts_are_recorded_not_failed(self) -> None:
+    def client(self, allow: bool) -> "egress.ProxyClient":
+        """A mock that records every host it is asked about, so a
+        transcript can be built for exactly the names the check invented."""
         port = free_port()
-        allowed = set(mock_proxy.DEFAULT_ALLOWED) | self._hostnames()
-        server = mock_proxy.start_in_thread(port, allowed=allowed, mode="strict")
-        self.addCleanup(server.shutdown)
-        egress.resolve_locally = lambda host: ["127.0.0.9"]
-        client = egress.ProxyClient("127.0.0.1", port)
+        server = mock_proxy.start_in_thread(port, mode="strict")
+        asked = self.asked
 
+        def host_allowed(host: str) -> bool:
+            asked.append(host)
+            return allow
+
+        server.host_allowed = host_allowed  # type: ignore[method-assign]
+        self.addCleanup(server.shutdown)
+        return egress.ProxyClient("127.0.0.1", port)
+
+    def transcript(self, lookups_per_name: int, trap: "list[str]" = ()) -> "list[str]":
+        lines = []
+        for name in sorted(set(self.asked)):
+            answers = ["9.9.9.9", "192.168.64.60"][:lookups_per_name]
+            for i, answer in enumerate(answers, start=1):
+                lines.append(f"IPL-FIXTURE dns name={name} query={i} answer={answer}")
+        return lines + [f"IPL-FIXTURE trap connect from={peer}" for peer in trap]
+
+    def test_trap_hit_fails_even_when_every_probe_was_denied(self) -> None:
+        """The decisive signal is the fixture's, not the proxy's: a denial
+        of the CONNECT the checker made says nothing about a connection the
+        engine opened for itself."""
+        client = self.client(allow=False)
+        # The hit appears only once probing has started, as it would in a
+        # live fixture — the check subtracts whatever was already there.
+        egress.FIXTURE_LOG_SOURCE = lambda: self.transcript(
+            2, ["192.168.64.47:51102"] if self.asked else [])
         raw = egress.test_dns_rebind(client)
-        self.assertEqual(raw.outcome, "record")
-        self.assertEqual(len(raw.attempts), 6)
+        self.assertEqual(raw.outcome, "fail", raw.detail)
+        self.assertIn("192.168.64.47", raw.detail)
+
+    def test_a_pre_existing_trap_hit_is_not_blamed_on_this_run(self) -> None:
+        """The fixture container outlives a single check, so trap hits
+        accumulate. Only the ones this run produced may fail it."""
+        client = self.client(allow=False)
+        egress.FIXTURE_LOG_SOURCE = lambda: self.transcript(2, ["10.9.9.9:4242"])
+        raw = egress.test_dns_rebind(client)
+        self.assertEqual(raw.outcome, "pass", raw.detail)
+
+    def test_passes_when_the_rebind_was_offered_and_refused(self) -> None:
+        client = self.client(allow=False)
+        egress.FIXTURE_LOG_SOURCE = lambda: self.transcript(2)
+        raw = egress.test_dns_rebind(client)
+        self.assertEqual(raw.outcome, "pass", raw.detail)
+        self.assertIn(f"{egress.REBIND_NAMES}/{egress.REBIND_NAMES} names", raw.detail)
+        self.assertNotIn("did not exercise", raw.detail)
+
+    def test_pass_says_so_when_no_rebind_was_offered(self) -> None:
+        """One lookup per name means the engine pinned the first answer and
+        was never handed the private one. Still a pass — nothing reached
+        the trap — but the detail must not imply a rebind was survived."""
+        client = self.client(allow=True)
+        egress.FIXTURE_LOG_SOURCE = lambda: self.transcript(1)
+        raw = egress.test_dns_rebind(client)
+        self.assertEqual(raw.outcome, "pass", raw.detail)
+        self.assertIn("did not exercise", raw.detail)
+
+    def test_skips_when_the_fixture_saw_nothing(self) -> None:
+        client = self.client(allow=False)
+        egress.FIXTURE_LOG_SOURCE = lambda: []
+        raw = egress.test_dns_rebind(client)
+        self.assertEqual(raw.outcome, "skip", raw.detail)
+        self.assertIn("no lookups", raw.detail)
+
+    def test_each_name_is_probed_twice(self) -> None:
+        client = self.client(allow=True)
+        egress.FIXTURE_LOG_SOURCE = lambda: self.transcript(1)
+        raw = egress.test_dns_rebind(client)
+        self.assertEqual(len(raw.attempts), 2 * egress.REBIND_NAMES)
+        targets = [a.target for a in raw.attempts]
+        first_pass, second_pass = targets[:egress.REBIND_NAMES], targets[egress.REBIND_NAMES:]
+        self.assertEqual(first_pass, second_pass)
+        self.assertEqual(len(set(first_pass)), egress.REBIND_NAMES)
+
+    def test_names_are_unique_per_run(self) -> None:
+        """The fixture counts lookups per name and rebinds from the second
+        onward, so a name reused by a later run would begin already
+        rebound — and the fixture container outlives individual runs."""
+        client = self.client(allow=True)
+        egress.FIXTURE_LOG_SOURCE = lambda: self.transcript(1)
+        first = {a.target for a in egress.test_dns_rebind(client).attempts}
+        self.asked.clear()
+        second = {a.target for a in egress.test_dns_rebind(client).attempts}
+        self.assertFalse(first & second, "names must not repeat between runs")
+
+    def test_only_the_trap_decides_the_grade(self) -> None:
+        """A repeat probe that establishes, with the trap silent, means the
+        engine reused the address it had already validated. That is a
+        defense, not a failure."""
+        client = self.client(allow=True)
+        egress.FIXTURE_LOG_SOURCE = lambda: self.transcript(2)
+        raw = egress.test_dns_rebind(client)
+        self.assertEqual(raw.outcome, "pass", raw.detail)
         self.assertTrue(all(a.outcome == "established" for a in raw.attempts))
-        self.assertIn("6 established", raw.detail)
-        self.assertIn("caching resolver", raw.detail)
-
-    def test_denied_attempts_are_recorded_not_passed(self) -> None:
-        port = free_port()
-        server = mock_proxy.start_in_thread(port, mode="strict")  # default allowlist: hostnames denied
-        self.addCleanup(server.shutdown)
-        egress.resolve_locally = lambda host: ["127.0.0.9"]
-        client = egress.ProxyClient("127.0.0.1", port)
-
-        raw = egress.test_dns_rebind(client)
-        self.assertEqual(raw.outcome, "record")
-        self.assertTrue(all(a.outcome == "denied" for a in raw.attempts))
-        self.assertIn("6 denied", raw.detail)
-
-    def test_varying_resolution_is_reported_as_such(self) -> None:
-        port = free_port()
-        server = mock_proxy.start_in_thread(port, mode="strict")
-        self.addCleanup(server.shutdown)
-        answers = iter(["1.1.1.1", "127.0.0.2"] * 3)
-        egress.resolve_locally = lambda host: [next(answers)]
-        client = egress.ProxyClient("127.0.0.1", port)
-
-        raw = egress.test_dns_rebind(client)
-        self.assertEqual(raw.outcome, "record")
-        self.assertIn("did vary", raw.detail)
-
-    def test_unresolvable_fixture_is_called_unattributable(self) -> None:
-        port = free_port()
-        server = mock_proxy.start_in_thread(port, mode="strict")
-        self.addCleanup(server.shutdown)
-        egress.resolve_locally = lambda host: []
-        client = egress.ProxyClient("127.0.0.1", port)
-
-        raw = egress.test_dns_rebind(client)
-        self.assertEqual(raw.outcome, "record")
-        self.assertIn("unattributable", raw.detail)
-        self.assertTrue(all(a.local_resolved == [] for a in raw.attempts))
+        self.assertIn("reused the address", raw.detail)
 
 
 class DiffModeTest(unittest.TestCase):
