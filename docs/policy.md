@@ -61,6 +61,13 @@ trusted. `validate_policy_file()` rejects a Squid policy that
 * omits any of the required ranges in `REQUIRED_SQUID_DENY_RANGES`
   (RFC1918, loopback, link-local, the metadata address, IPv6
   loopback/ULA/link-local);
+* places `http_access deny ip_literal` after the first `http_access allow`,
+  or omits it. Squid retries a `dstdomain` miss as a **reverse** lookup, so
+  an address-form destination that matches nothing gets a second chance
+  under whatever name its PTR claims. Refusing address-form destinations
+  before the allowlist is the only fix Squid offers, and it costs nothing:
+  this policy allowlists by hostname and never by address
+  (docs/comparison.md);
 * enables `ssl_bump ... bump` (TLS interception);
 * drops `cache deny all`.
 

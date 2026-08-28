@@ -13,7 +13,7 @@ that client can connect:
   mixed answers). **Smokescreen is measured as non-compliant on the
   mixed-answer case**: given a name resolving to both a public and a
   private address it connects to the public one rather than refusing the
-  name (docs/comparison.md findings 9 and 11). It does not connect to the
+  name (docs/comparison.md, "Mixed DNS answers"). It does not connect to the
   private address, so this is a weaker guarantee rather than an open door,
   but it is a difference worth knowing before choosing that engine;
 * no CONNECT tunnel abuse **where the engine supports detecting it**
@@ -51,6 +51,11 @@ that client can connect:
   `--unsafe-allow-private-ranges`, `tls_interception.enabled: true`,
   non-`strict` Pipelock modes, `http_access allow all` and
   `ssl_bump ... bump` for Squid).
+* A destination written as a bare address is refused by Squid before the
+  allowlist is consulted, because Squid would otherwise retry the miss as
+  a reverse lookup and match whatever name the address's PTR record claims
+  — a bypass measured and then closed (docs/comparison.md). `ptr-allowlist`
+  in the suite guards it, and `up` refuses a policy that drops the rule.
 * For Squid, where the SSRF floors are configuration rather than engine
   code, `up` additionally refuses a policy that has lost a required deny
   range or that places the allowlist above those denies — `http_access` is
@@ -67,7 +72,7 @@ that client can connect:
 comparable text or `--json` results. The full suite covers private
 IPv4/IPv6, metadata, DNS-resolved private targets (nip.io / sslip.io
 fixtures), mixed public+private answer sets and DNS rebinding (both from
-the local fixture, see below), SNI mismatch, raw bytes inside a CONNECT tunnel, IP-form CONNECT, and a
+the local fixture, see below), reverse-DNS allowlist bypass, SNI mismatch, raw bytes inside a CONNECT tunnel, IP-form CONNECT, and a
 concurrency sanity check. Nothing skips any more: every row is graded or
 deliberately recorded.
 
@@ -166,7 +171,7 @@ would have received the connection. A repeat probe that succeeds while the
 trap stays silent is *not* a failure: it means the engine reused the
 address it had already validated, which is a legitimate defense. Both
 behaviors are recorded, because the engines split on exactly this
-(docs/comparison.md finding 3).
+(docs/comparison.md, "DNS rebinding").
 
 Two things about this are worth knowing before changing it:
 
@@ -184,7 +189,7 @@ Two things about this are worth knowing before changing it:
 
 The measured outcome — Pipelock and Squid refuse both orderings,
 Smokescreen connects to the public address instead of refusing the name —
-is docs/comparison.md finding 9.
+is docs/comparison.md, "Mixed DNS answers".
 
 ## Endpoint exposure
 

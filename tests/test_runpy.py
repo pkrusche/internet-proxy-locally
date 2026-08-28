@@ -423,7 +423,7 @@ class RunPyUnitTest(unittest.TestCase):
 
         Such a probe is accepted and then closed with no reply. Treating
         that as a verdict failed `up` on a healthy proxy; it must be
-        retried instead (docs/comparison.md, "Not yet measured").
+        retried instead (docs/comparison.md, "Corrections to earlier runs").
         """
         port = self._serve_once(lambda conn: conn.close())
         healthy, _, retryable = self.run_mod.probe_proxy("127.0.0.1", port, timeout=2.0)

@@ -87,6 +87,14 @@ REBIND_NAMES = 3          # probed twice each, either side of REBIND_TTL_GAP
 # pass costs one gap for the whole check rather than one per name.
 REBIND_TTL_GAP = 1.5
 
+# Reverse-DNS fixture: the local resolver answers PTR for this address with
+# an allowlisted hostname. Keep in sync with PTR_ADDRESS / PTR_CLAIMS in
+# images/dnsfixture/rebind.py. The address is public — so the SSRF floors
+# stay out of it and the hostname allowlist really is the rule under test —
+# and no other check connects to it.
+PTR_FIXTURE_ADDRESS = "1.0.0.1"
+PTR_FIXTURE_CLAIMS = "pypi.org"
+
 # The fixture's log stream, set by run_suite when `run.py check` passes
 # --fixture-container. Kept as a module-level hook so the rebinding test
 # can read it without every test function growing a parameter, and so the
@@ -234,6 +242,12 @@ _TAXONOMY: list[tuple[str, re.Pattern]] = [
     ("unparseable-destination", re.compile(r"destination host cannot be determined|"
                                             r"invalid domain|invalid label|\bidna\b|"
                                             r"could not parse (the )?(destination|host)", re.I)),
+    # Squid: "the destination is a bare IP address" (config/squid.conf
+    # refuses address-form destinations so that `dstdomain` can never fall
+    # back to a PTR lookup). Distinct from a plain allowlist miss, because
+    # the point is that the name was never consulted.
+    ("ip-literal-destination", re.compile(r"bare ip address|"
+                                           r"allowlists? destinations by hostname", re.I)),
     # Squid: "CONNECT to this port is not allowed" (config/squid.conf
     # restricts tunnels to 443). Not a hostname verdict — the destination
     # may well be allowlisted — so it gets its own bucket.
@@ -694,7 +708,8 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
     so the trap could not fire even against a vulnerable engine and the row
     would pass while testing nothing — the failure mode that made
     `dns-private-ipv6` vacuous for two measurement rounds
-    (docs/comparison.md finding 6). Two probes in the same second are no
+    (docs/comparison.md, "Corrections to earlier runs"). Two probes in the
+    same second are no
     better against a resolver cache with second granularity, which is why
     the passes are separated rather than interleaved.
 
@@ -707,7 +722,7 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
     This replaced `rbndr.us`, which stopped resolving in 2026-08 and had
     always been ungradable: it answered each query with one of its two
     addresses at random, so nothing the checker observed could attribute
-    what the engine did (docs/comparison.md finding 3).
+    what the engine did (docs/comparison.md, "DNS rebinding").
     """
     _, before_trap = parse_fixture_log(FIXTURE_LOG_SOURCE())
     token = os.urandom(3).hex()
@@ -764,6 +779,64 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
                    "reused the address it had already validated rather than following "
                    "the new answer")
     return RawOutcome("pass", detail, attempts=attempts)
+
+
+def test_ptr_allowlist(client: ProxyClient) -> RawOutcome:
+    """A bare address must not inherit an allowlisted name through its PTR
+    record.
+
+    Squid resolves `dstdomain` with a documented fallback: "a reverse
+    lookup is tried if a IP based URL is used and no match is found". PTR
+    records belong to whoever holds the address block and Squid does not
+    forward-confirm them, so an agent exfiltrating to a host its operator
+    controls only has to point that host's PTR at an allowlisted name.
+    Measured before the fix: `CONNECT 1.1.1.1:443` was allowed under the
+    real policy while `CONNECT 9.9.9.9:443` was refused, the PTR record
+    being the only difference (docs/comparison.md).
+
+    The local fixture answers PTR for `PTR_FIXTURE_ADDRESS` with
+    `PTR_FIXTURE_CLAIMS`, which is on the allowlist. The destination is an
+    address, so no forward lookup is involved and the only way to reach it
+    is through that fallback.
+
+    Whether the engine actually asked is recorded but not graded. Pipelock
+    and Smokescreen never reverse-resolve, and a correctly configured Squid
+    refuses address-form destinations before any `dstdomain` rule is
+    reached — so on a healthy engine no PTR query is expected, and the
+    detail says as much rather than implying a fallback was survived.
+    """
+    fixture_lines = FIXTURE_LOG_SOURCE()
+    if not any("IPL-FIXTURE" in line for line in fixture_lines):
+        return RawOutcome("skip", (
+            "the local DNS fixture is not observable from here, so the PTR claim "
+            f"for {PTR_FIXTURE_ADDRESS} cannot be known to be live. Run "
+            "`./run.py up --test-policy` and `./run.py check --full`, which wires "
+            "the fixture's container through automatically"))
+
+    target = f"{PTR_FIXTURE_ADDRESS}:443"
+    attempt = _connect_attempt(client, 0, target, PTR_FIXTURE_ADDRESS, resolve=False)
+    asked = _ptr_queries(FIXTURE_LOG_SOURCE(), PTR_FIXTURE_ADDRESS) - \
+        _ptr_queries(fixture_lines, PTR_FIXTURE_ADDRESS)
+
+    if attempt.outcome == "established":
+        return RawOutcome("fail", (
+            f"{target} was reached even though only {PTR_FIXTURE_CLAIMS} is "
+            f"allowlisted — the address inherited an allowlisted name from its "
+            f"reverse record"), attempts=[attempt])
+
+    detail = f"denied: {attempt.detail}"
+    detail += (f"; the engine made {asked} reverse lookup(s) for it and refused anyway"
+               if asked else
+               "; the engine performed no reverse lookup, so the allowlist was never "
+               "offered the PTR name")
+    return RawOutcome("pass", detail, attempts=[attempt])
+
+
+def _ptr_queries(lines: "list[str]", address: str) -> int:
+    """How many PTR lookups for `address` the fixture logged. dnsmasq's
+    `--log-queries` writes `query[PTR] <reversed>.in-addr.arpa from ...`."""
+    reversed_name = ".".join(reversed(address.split("."))) + ".in-addr.arpa"
+    return sum(1 for line in lines if "query[PTR]" in line and reversed_name in line)
 
 
 def test_dns_mixed(client: ProxyClient) -> RawOutcome:
@@ -862,6 +935,7 @@ TESTS = [
     ("dns-private-ipv6",     "full",  "deny",   test_dns_private_v6,       True),
     ("dns-rebinding",        "full",  "deny",   test_dns_rebind,           True),
     ("dns-mixed-answers",    "full",  "deny",   test_dns_mixed,            True),
+    ("ptr-allowlist",        "full",  "deny",   test_ptr_allowlist,        True),
     ("connect-sni-mismatch", "full",  "record", test_sni_mismatch,         False),
     ("connect-raw-tunnel",   "full",  "record", test_raw_tunnel,           False),
     ("concurrency-sanity",   "full",  "record", test_concurrency,          False),

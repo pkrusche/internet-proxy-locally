@@ -63,7 +63,8 @@ first to separate them on enforcement rather than grading: given a
 hostname resolving to both a public and a private address, Pipelock and
 Squid refuse the name and **Smokescreen connects to the public address**,
 so `check --full` exits 1 on Smokescreen. It does not reach the private
-address; the finding and the decision it forces are findings 9 and 11.
+address; the evidence and the decision it forces are under "Mixed DNS
+answers" in docs/comparison.md.
 
 Pipelock stays the default because it enforces inside CONNECT tunnels
 (SNI verification, TLS-required) where Smokescreen and Squid do not.

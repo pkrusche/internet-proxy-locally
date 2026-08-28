@@ -32,7 +32,8 @@
 # `direct-ip-connect` into a failure (measured 2026-08-25). Keeping the two
 # addresses disjoint confines the fixture's PTR side effect to names no
 # other check touches. The Squid behavior it exposed is real and is written
-# up as finding 10 in docs/comparison.md.
+# up in docs/comparison.md, "Squid: a bare IP can satisfy the allowlist
+# through a reverse lookup".
 #
 # Keep the three names in sync with MIXED_FIXTURE_* in checks/egress.py and
 # with the allowlists in config/*.test.yaml and config/squid.test.conf.

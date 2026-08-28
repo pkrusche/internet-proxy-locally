@@ -346,6 +346,9 @@ class ClassifyDenialRealWordingTest(unittest.TestCase):
         ("HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
          "CONNECT to this port is not allowed, tunnels are permitted to port 443 only.",
          "port-not-allowed"),
+        ("HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
+         "the destination is a bare IP address, and this proxy allowlists destinations by "
+         "hostname only.", "ip-literal-destination"),
         ("HTTP/1.1 503 Service Unavailable — ERROR: The requested URL could not be retrieved "
          "The following error was encountered while trying to retrieve the URL: "
          "https://01010101.7f000002.rbndr.us/* Unable to determine IP address from host name "
@@ -501,12 +504,91 @@ class ParseFixtureLogTest(unittest.TestCase):
         self.assertEqual((answers, trap), ({}, []))
 
 
+class PtrAllowlistTest(unittest.TestCase):
+    """`ptr-allowlist` guards a bypass the rest of the suite cannot see:
+    Squid retries a `dstdomain` miss as a reverse lookup, so an address
+    whose PTR names an allowlisted host is allowed through. Measured before
+    the fix (docs/comparison.md), and `direct-ip-connect` passed throughout
+    — it uses an address with no PTR claim."""
+
+    def setUp(self) -> None:
+        self._source = egress.FIXTURE_LOG_SOURCE
+        self.addCleanup(lambda: setattr(egress, "FIXTURE_LOG_SOURCE", self._source))
+        self.asked = False
+        egress.FIXTURE_LOG_SOURCE = lambda: ["IPL-FIXTURE trap listening on 10.0.0.2:443"]
+
+    def client(self, allow: bool) -> "egress.ProxyClient":
+        port = free_port()
+        server = mock_proxy.start_in_thread(port, mode="strict")
+
+        def host_allowed(host: str) -> bool:
+            self.asked = True
+            return allow
+
+        server.host_allowed = host_allowed  # type: ignore[method-assign]
+        self.addCleanup(server.shutdown)
+        return egress.ProxyClient("127.0.0.1", port)
+
+    def test_fails_when_the_address_is_reachable(self) -> None:
+        raw = egress.test_ptr_allowlist(self.client(allow=True))
+        self.assertEqual(raw.outcome, "fail", raw.detail)
+        self.assertIn(egress.PTR_FIXTURE_ADDRESS, raw.detail)
+        self.assertIn("reverse record", raw.detail)
+
+    def test_passes_when_denied(self) -> None:
+        raw = egress.test_ptr_allowlist(self.client(allow=False))
+        self.assertEqual(raw.outcome, "pass", raw.detail)
+
+    def test_reports_whether_a_reverse_lookup_happened(self) -> None:
+        """An engine that never reverse-resolves passes without the
+        fallback having been offered. The detail must not imply otherwise."""
+        raw = egress.test_ptr_allowlist(self.client(allow=False))
+        self.assertIn("no reverse lookup", raw.detail)
+
+        # The query line appears only once the probe has been made, as it
+        # would in a live fixture — the check subtracts what was already
+        # there so an earlier run's lookups are not counted as this one's.
+        reversed_name = ".".join(reversed(egress.PTR_FIXTURE_ADDRESS.split("."))) + ".in-addr.arpa"
+        self.asked = False
+        egress.FIXTURE_LOG_SOURCE = lambda: (
+            ["IPL-FIXTURE trap listening on 10.0.0.2:443"]
+            + ([f"dnsmasq: query[PTR] {reversed_name} from 192.168.64.1"] if self.asked else []))
+        raw = egress.test_ptr_allowlist(self.client(allow=False))
+        self.assertIn("1 reverse lookup(s)", raw.detail)
+
+    def test_a_previous_runs_lookup_is_not_counted(self) -> None:
+        reversed_name = ".".join(reversed(egress.PTR_FIXTURE_ADDRESS.split("."))) + ".in-addr.arpa"
+        egress.FIXTURE_LOG_SOURCE = lambda: [
+            "IPL-FIXTURE trap listening on 10.0.0.2:443",
+            f"dnsmasq: query[PTR] {reversed_name} from 192.168.64.1",
+        ]
+        raw = egress.test_ptr_allowlist(self.client(allow=False))
+        self.assertIn("no reverse lookup", raw.detail)
+
+    def test_skips_without_an_observable_fixture(self) -> None:
+        # Without the fixture the PTR claim is not live, and the address
+        # would be denied for the ordinary reason — a pass proving nothing.
+        egress.FIXTURE_LOG_SOURCE = lambda: []
+        raw = egress.test_ptr_allowlist(self.client(allow=False))
+        self.assertEqual(raw.outcome, "skip", raw.detail)
+
+    def test_the_fixture_address_is_public_and_unused_elsewhere(self) -> None:
+        import ipaddress
+        address = ipaddress.ip_address(egress.PTR_FIXTURE_ADDRESS)
+        self.assertFalse(address.is_private or address.is_loopback or address.is_link_local,
+                         "a private address would trip the SSRF floors instead of the allowlist")
+        source = (REPO_ROOT / "checks" / "egress.py").read_text()
+        # It must not collide with an address another check connects to, or
+        # the fixture's PTR claim would leak into that check's result.
+        self.assertNotIn(f'"{egress.PTR_FIXTURE_ADDRESS}:', source)
+
+
 class DnsRebindTest(unittest.TestCase):
     """`dns-rebinding` grades on one thing: whether the fixture saw a
     connection. The mock proxy stands in for the engine's verdict on each
     CONNECT; the fixture transcript is supplied directly, since the real
     one is read from a container's log stream (docs/comparison.md
-    finding 3)."""
+    "DNS rebinding")."""
 
     def setUp(self) -> None:
         self._source = egress.FIXTURE_LOG_SOURCE

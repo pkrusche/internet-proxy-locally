@@ -40,7 +40,7 @@ The re-run corrected three things the offline implementation got wrong:
 resolving, so the row was six `dns-failure`s on every engine — legible, but
 not a measurement. **Resolved 2026-08-26** by the local fixture (§3): the
 row is graded, and all three engines pass by two different mechanisms
-(docs/comparison.md finding 3).
+(docs/comparison.md, "DNS rebinding").
 
 ### What went wrong
 
@@ -109,15 +109,16 @@ row is graded, and all three engines pass by two different mechanisms
 
 **Met (2026-08-19).** Every row in docs/comparison.md is self-explanatory;
 no row needs "verify engine logs" or "unattributed". The two notes that
-remained are resolved rather than deferred: finding 5 (200 vs 301) is
-attributed to the upstream tier by the captured headers, and finding 3
+remained are resolved rather than deferred: the 200-vs-301 difference is
+attributed to the upstream tier by the captured headers, and rebinding
 (rebinding) states plainly that the fixture is unreachable instead of
 implying a result.
 
 The evidence also caught a bug it was not looking for: `dns-private-ipv6`
 used `--1.sslip.io`, an invalid IDNA label that both engines rejected by
 name, so the IPv6-loopback SSRF case had never actually run while still
-scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
+scoring `pass` (docs/comparison.md, "Corrections to earlier runs").
+Fixed to `0--1.sslip.io`.
 
 ---
 
@@ -162,7 +163,7 @@ scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
       suite's last unconditional `skip`; nothing skips now. It immediately
       earned its keep: **Smokescreen fails it**, connecting to the public
       address of a mixed answer instead of refusing the name
-      (docs/comparison.md findings 9 and 11).
+      (docs/comparison.md, "Mixed DNS answers").
 
       A bind-mounted `/etc/hosts` was tried first and does not work — both
       resolvers collapse duplicate names to one address — and the
@@ -176,7 +177,7 @@ scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
 * [ ] Squid's ipcache pins a validated address for far longer than the
       answer's TTL — measured at 68+ seconds against a TTL-0 fixture, and
       `positive_dns_ttl` defaults to six hours (docs/comparison.md
-      finding 3). That is why it is never offered a rebind, so it is a
+      "DNS rebinding"). That is why it is never offered a rebind, so it is a
       defense here, but it also means Squid can keep connecting to an
       address that has since moved. Worth deciding whether the shipped
       config should lower it, and worth a check that distinguishes "did
@@ -193,15 +194,18 @@ scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
       override the expectation to `record` for that engine. This is a
       policy call, not a code change.
 
-* [ ] Close Squid's reverse-lookup allowlist bypass (docs/comparison.md
-      finding 10). For `dstdomain`/`dstdom_regex`, Squid falls back to a
-      reverse lookup when the destination is an IP literal, so a bare-IP
-      CONNECT can match the allowlist if that IP's PTR resolves to an
-      allowlisted name — and PTR records belong to whoever holds the
-      address block. Squid has no switch to disable the fallback, so the
-      fix is to reject IP-literal destinations with a `dst`-based rule
-      placed before the allowlist. Worth a suite check of its own: a
-      CONNECT to an address whose PTR is allowlisted must still be denied.
+* [x] Squid's reverse-lookup allowlist bypass is **closed** (2026-08-26).
+      `config/squid.conf` refuses address-form destinations before any
+      `dstdomain` rule is reached, `validate_policy_file()` requires that
+      rule ahead of the allowlist, and `ptr-allowlist` grades it — verified
+      to fail against the unfixed config and pass against the fixed one
+      (docs/comparison.md).
+
+      The lesson is worth more than the fix: `direct-ip-connect` passed
+      throughout, because it uses an address with no PTR claim. The suite
+      could not see the bug, and it was found by accident while building an
+      unrelated fixture. Squid brings behavior nobody asked for, and the
+      remaining ways that could bite have not been enumerated.
 
 ## 4. Default-engine decision
 
@@ -209,12 +213,13 @@ scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
       (docs/comparison.md).
 * [x] Pipelock confirmed as default (`DEFAULT_ENGINE` in `run.py`) on the
       strength of its CONNECT-tunnel controls. Squid does not change this:
-      it matches Smokescreen at the tunnel layer (finding 8).
+      it matches Smokescreen at the tunnel layer ("Rejected: tunnel
+      peeking on Squid").
 * [x] Rebinding is conclusive as of 2026-08-26, and the engines **do**
       differ — but not in a way that changes the decision. Pipelock and
       Smokescreen re-resolve and refuse the rebound address; Squid never
       re-resolves, so it cannot follow one. Both are defenses; neither is
-      a reason to move off Pipelock (docs/comparison.md finding 3).
+      a reason to move off Pipelock (docs/comparison.md, "DNS rebinding").
 
 ## 5. Smaller items
 
@@ -224,7 +229,7 @@ scoring `pass` (docs/comparison.md finding 6). Fixed to `0--1.sslip.io`.
       origin (`Server: gunicorn`). CDN variation, not a proxy feature.
       One residual: confirm Pipelock does not normalize the upstream
       request, since `200` over plain HTTP from a Fastly-fronted host is
-      unusual (docs/comparison.md finding 5).
+      unusual (docs/comparison.md, "Corrections to earlier runs").
 * [ ] Consider surfacing Smokescreen's `407` denials more usefully to
       clients — some HTTP clients treat it as a credentials prompt and
       retry-loop instead of surfacing the block. Upstream behavior; may

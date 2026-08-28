@@ -542,7 +542,12 @@ def validate_policy_file(engine: str, path: Path) -> list[str]:
         # let an allowlisted hostname reach a private address.
         first_allow = next((i for i, rule in enumerate(rules)
                             if rule.startswith("http_access allow")), len(rules))
-        for acl in ("metadata_ip", "private_ip"):
+        # `ip_literal` is here for the same reason as the SSRF floors but a
+        # different failure: Squid retries a `dstdomain` miss as a reverse
+        # lookup, so an address-form destination reaches the allowlist under
+        # whatever name its PTR claims. Refusing it earlier is the only fix
+        # Squid offers (docs/comparison.md).
+        for acl in ("metadata_ip", "private_ip", "ip_literal"):
             index = next((i for i, rule in enumerate(rules)
                           if rule == f"http_access deny {acl}"), None)
             _require(index is not None and index < first_allow, path,

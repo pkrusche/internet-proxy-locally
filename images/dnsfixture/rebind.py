@@ -37,6 +37,17 @@ import threading
 
 REBIND_ZONE = "rebind.fixture.test"
 PUBLIC_ANSWER = "9.9.9.9"          # matches config/dns-fixture.hosts
+
+# Reverse-DNS claim for the `ptr-allowlist` check: this address asserts a
+# PTR of an allowlisted hostname. An engine that resolves a bare-IP
+# destination backwards and matches the answer against its hostname
+# allowlist will let it through — which is exactly what Squid used to do
+# (docs/comparison.md). Keep in sync with PTR_FIXTURE_* in
+# checks/egress.py. The address is public, so the SSRF floors do not fire
+# and the allowlist is genuinely the rule under test; it is deliberately
+# none of the addresses any other check connects to.
+PTR_ADDRESS = "1.0.0.1"
+PTR_CLAIMS = "pypi.org"
 TRAP_PORT = 443
 RESPONDER_PORT = 5353
 
@@ -53,6 +64,9 @@ DNSMASQ = [
     # A cache would defeat the whole fixture: the second lookup has to
     # reach the responder to be answered differently from the first.
     "--cache-size=0",
+    # PTR_ADDRESS claims to be an allowlisted host. `1.0.0.1` reversed is
+    # itself, which is why this literal looks odd but is correct.
+    f"--ptr-record={'.'.join(reversed(PTR_ADDRESS.split('.')))}.in-addr.arpa,{PTR_CLAIMS}",
 ]
 
 
