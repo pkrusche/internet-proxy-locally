@@ -134,7 +134,9 @@ class RunPyCliTest(unittest.TestCase):
         # config/ from them, so a copy missing either would fail before it
         # reached the behavior under test.
         shutil.copy(REPO_ROOT / "config.toml", self.tmp / "config.toml")
-        for sub in ("services", "config", "templates"):
+        # images/ comes too: a rendered squid.conf is only valid if every
+        # `deny_info` page it names exists in images/squid/errors.
+        for sub in ("services", "config", "templates", "images"):
             shutil.copytree(REPO_ROOT / sub, self.tmp / sub)
         # Start from unpinned service specs regardless of what the checkout
         # currently pins, so the fail-closed tests stay meaningful and the
@@ -333,7 +335,8 @@ class RunPyCliTest(unittest.TestCase):
     def test_check_wires_engine_log_capture(self) -> None:
         # `check` should pass --backend-bin/--container through to
         # checks/egress.py so each result's `engine_logs` is populated
-        # from the running container's own log stream (TODO.md §1).
+        # from the running container's own log stream (docs/security.md,
+        # "The adversarial suite").
         self.pin_pipelock()
         up = self.run_cli("--backend", "docker", "up")
         self.assertEqual(up.returncode, 0, up.stderr)
@@ -494,7 +497,7 @@ class RunPyUnitTest(unittest.TestCase):
 
         Such a probe is accepted and then closed with no reply. Treating
         that as a verdict failed `up` on a healthy proxy; it must be
-        retried instead (docs/comparison.md, "Corrections to earlier runs").
+        retried instead (docs/engines.md, "Corrections to earlier runs").
         """
         port = self._serve_once(lambda conn: conn.close())
         healthy, _, retryable = self.run_mod.probe_proxy("127.0.0.1", port, timeout=2.0)
@@ -598,6 +601,40 @@ class RunPyUnitTest(unittest.TestCase):
         path = self.write(text + "\nssl_bump bump all\n")
         problems = self.run_mod.validate_policy_file("squid", path)
         self.assertTrue(any("ssl_bump" in p for p in problems), problems)
+
+    def test_squid_policy_rejects_a_deny_info_for_an_undefined_acl(self) -> None:
+        """The failure mode this closes: an ACL is renamed, `deny_info` is
+        not, Squid starts happily, and every SSRF denial falls back to the
+        stock page and classifies as `unknown`."""
+        text = (REPO_ROOT / "config" / "squid.conf").read_text()
+        text = re.sub(r"^acl private_ip ", "acl private_ipv4 ", text, flags=re.M)
+        text = text.replace("http_access deny private_ip\n",
+                            "http_access deny private_ipv4\n")
+        problems = self.run_mod.validate_policy_file("squid", self.write(text))
+        self.assertTrue(any("does not define" in p for p in problems), problems)
+
+    def test_squid_policy_requires_a_page_for_every_cause(self) -> None:
+        for acl, page in self.run_mod.REQUIRED_SQUID_DENY_INFO.items():
+            text = (REPO_ROOT / "config" / "squid.conf").read_text()
+            text = text.replace(f"deny_info {page} {acl}\n", "")
+            problems = self.run_mod.validate_policy_file("squid", self.write(text))
+            self.assertTrue(any(page in p and "missing" in p for p in problems),
+                            f"{acl}: {problems}")
+
+    def test_squid_policy_rejects_two_pages_for_one_acl(self) -> None:
+        # Only one can ever be shown, so the file no longer says which.
+        text = (REPO_ROOT / "config" / "squid.conf").read_text()
+        text += "\ndeny_info ERR_IPL_NOT_ALLOWLISTED private_ip\n"
+        problems = self.run_mod.validate_policy_file("squid", self.write(text))
+        self.assertTrue(any("two denial pages" in p for p in problems), problems)
+
+    def test_squid_denial_pages_exist_in_the_image(self) -> None:
+        squid_conf = REPO_ROOT / "config" / "squid.conf"
+        text = squid_conf.read_text()
+        self.assertEqual(self.run_mod.check_squid_error_pages(text, squid_conf), [])
+        broken = text.replace("deny_info ERR_IPL_METADATA", "deny_info ERR_IPL_TYPO")
+        problems = self.run_mod.check_squid_error_pages(broken, squid_conf)
+        self.assertTrue(any("ERR_IPL_TYPO" in p for p in problems), problems)
 
     def test_squid_allowlist_normalizes_to_the_shared_forms(self) -> None:
         # `*.d` is an anchored dstdom_regex in Squid; it has to read back as
@@ -817,6 +854,32 @@ class RunPyUnitTest(unittest.TestCase):
         self.assertEqual(fake(apple).container_ip("x"), "192.168.64.38")
         self.assertEqual(fake("", returncode=1).container_ip("x"), "")
 
+    def test_published_ports_parses_docker_and_apple_shapes(self) -> None:
+        """The loopback binding is one `--publish` argument, and reading it
+        back is how scripts/verify_loopback.py asserts it instead of
+        trusting it (docs/backends.md)."""
+        Backend = self.run_mod.Backend
+
+        def fake(payload, returncode=0):
+            backend = Backend("docker")
+            backend._run = lambda *a, **k: CompletedProcess(  # type: ignore[method-assign]
+                a, returncode, stdout=payload, stderr="")
+            return backend
+
+        docker = json.dumps([{"HostConfig": {"PortBindings": {
+            "8888/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]}}}])
+        apple = json.dumps([{"configuration": {"publishedPorts": [
+            {"containerPort": 8888, "hostAddress": "127.0.0.1",
+             "hostPort": 18080, "proto": "tcp"}]}}])
+        # The shape this exists to catch: bound to every interface.
+        wide = json.dumps([{"HostConfig": {"PortBindings": {
+            "8888/tcp": [{"HostIp": "", "HostPort": "18080"}]}}}])
+        self.assertEqual(fake(docker).published_ports("x"), [("127.0.0.1", 18080, 8888)])
+        self.assertEqual(fake(apple).published_ports("x"), [("127.0.0.1", 18080, 8888)])
+        self.assertEqual(fake(wide).published_ports("x"), [("", 18080, 8888)])
+        self.assertEqual(fake("", returncode=1).published_ports("x"), [])
+        self.assertEqual(fake(json.dumps([{}])).published_ports("x"), [])
+
     def test_pin_kind_per_service(self) -> None:
         kinds = {engine: self.run_mod.ServiceSpec.load(engine).pin_kind
                  for engine in self.run_mod.PINNABLE}
@@ -828,6 +891,217 @@ class RunPyUnitTest(unittest.TestCase):
         # exist and `down`/`status` must not treat it as a proxy.
         self.assertNotIn(self.run_mod.DNS_FIXTURE, self.run_mod.ENGINES)
         self.assertIn(self.run_mod.DNS_FIXTURE, self.run_mod.PINNABLE)
+
+    # -- [fixture] in config.toml -------------------------------------------
+
+    def fixture_config(self, **overrides) -> Path:
+        """A complete config.toml whose `[fixture]` table can be perturbed."""
+        tmp = Path(tempfile.mkdtemp(prefix="ipl-fixture-toml-test-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        table = {
+            "control": '"public-only.fixture.test"',
+            "rebind_zone": '"rebind.fixture.test"',
+            "ptr_address": '"1.0.0.1"',
+            "ptr_claims": '"pypi.org"',
+            "records": {
+                "public-only.fixture.test": '["9.9.9.9"]',
+                "mixed-public-first.fixture.test": '["9.9.9.9", "10.0.0.1"]',
+                "mixed-private-first.fixture.test": '["10.0.0.1", "9.9.9.9"]',
+            },
+            "allow": ["pypi.org"],
+            "allow_test": ["public-only.fixture.test",
+                           "mixed-public-first.fixture.test",
+                           "mixed-private-first.fixture.test",
+                           "*.rebind.fixture.test"],
+        }
+        table.update(overrides)
+        body = "[policy]\nallow = [\n"
+        body += "".join(f'    "{entry}",\n' for entry in table["allow"])
+        body += "]\n\n[policy.test]\nallow = [\n"
+        body += "".join(f'    "{entry}",\n' for entry in table["allow_test"])
+        body += "]\n\n[fixture]\n"
+        for key in ("control", "rebind_zone", "ptr_address", "ptr_claims"):
+            if table[key] is not None:
+                body += f"{key} = {table[key]}\n"
+        body += "\n[fixture.records]\n"
+        for name, addresses in table["records"].items():
+            body += f'"{name}" = {addresses}\n'
+        path = tmp / "config.toml"
+        path.write_text(body)
+        return path
+
+    def test_fixture_table_is_required(self) -> None:
+        # Without it `up --test-policy` has no records to serve, and
+        # config/dns-fixture.hosts could not be rendered at all.
+        path = self.policy_config(["github.com"])
+        with self.assertRaises(self.run_mod.Fail) as ctx:
+            self.run_mod.load_policy_config(path)
+        self.assertIn("[fixture]", str(ctx.exception))
+
+    def test_fixture_config_round_trips(self) -> None:
+        config = self.run_mod.load_policy_config(self.fixture_config())
+        fixture = config.fixture
+        self.assertEqual(fixture.control, "public-only.fixture.test")
+        self.assertEqual(set(fixture.targets), {"mixed-public-first.fixture.test",
+                                                "mixed-private-first.fixture.test"})
+        self.assertEqual(fixture.addresses("mixed-private-first.fixture.test"),
+                         ("10.0.0.1", "9.9.9.9"))
+
+    def test_fixture_rejects_a_record_the_test_policy_does_not_allowlist(self) -> None:
+        """The failure this closes: the record resolves, the engine denies it
+        by *name*, and the row grades the allowlist instead of the address
+        check it is named after."""
+        path = self.fixture_config(allow_test=["mixed-public-first.fixture.test",
+                                               "mixed-private-first.fixture.test",
+                                               "*.rebind.fixture.test"])
+        with self.assertRaises(self.run_mod.Fail) as ctx:
+            self.run_mod.load_policy_config(path)
+        self.assertIn("not allowlisted", str(ctx.exception))
+
+    def test_fixture_names_are_refused_in_the_real_allowlist(self) -> None:
+        """A fixture name in [policy].allow would ship an allowlist entry
+        for a name the fixture answers with a private address."""
+        Fail = self.run_mod.Fail
+        record = self.fixture_config(
+            allow=["pypi.org", "public-only.fixture.test"],
+            allow_test=["mixed-public-first.fixture.test",
+                        "mixed-private-first.fixture.test",
+                        "*.rebind.fixture.test"])
+        with self.assertRaises(Fail) as ctx:
+            self.run_mod.load_policy_config(record)
+        self.assertIn("[policy].allow permits the fixture name", str(ctx.exception))
+
+        # And the rebinding zone, whose answers end at a private address.
+        zone = self.fixture_config(
+            allow=["pypi.org", "*.rebind.fixture.test"],
+            allow_test=["public-only.fixture.test",
+                        "mixed-public-first.fixture.test",
+                        "mixed-private-first.fixture.test"])
+        with self.assertRaises(Fail) as ctx:
+            self.run_mod.load_policy_config(zone)
+        self.assertIn("rebinding zone", str(ctx.exception))
+
+    def test_fixture_rejects_a_test_policy_name_with_no_record(self) -> None:
+        """The other direction: an allowlisted `.test` name nothing serves
+        resolves to NXDOMAIN, and its check skips instead of failing."""
+        path = self.fixture_config(
+            allow_test=["public-only.fixture.test", "mixed-public-first.fixture.test",
+                        "mixed-private-first.fixture.test", "typo.fixture.test",
+                        "*.rebind.fixture.test"])
+        with self.assertRaises(self.run_mod.Fail) as ctx:
+            self.run_mod.load_policy_config(path)
+        self.assertIn("typo.fixture.test", str(ctx.exception))
+
+    def test_fixture_rejects_a_control_that_proves_nothing(self) -> None:
+        Fail = self.run_mod.Fail
+        # More than one address: it would no longer isolate reachability
+        # from mixed-answer handling.
+        two = self.fixture_config(records={
+            "public-only.fixture.test": '["9.9.9.9", "10.0.0.1"]',
+            "mixed-public-first.fixture.test": '["9.9.9.9", "10.0.0.1"]',
+            "mixed-private-first.fixture.test": '["10.0.0.1", "9.9.9.9"]'})
+        with self.assertRaises(Fail) as ctx:
+            self.run_mod.load_policy_config(two)
+        self.assertIn("exactly one address", str(ctx.exception))
+
+        # A private control could never establish, so every mixed denial
+        # below it would be unattributable.
+        private = self.fixture_config(records={
+            "public-only.fixture.test": '["10.0.0.2"]',
+            "mixed-public-first.fixture.test": '["9.9.9.9", "10.0.0.1"]',
+            "mixed-private-first.fixture.test": '["10.0.0.1", "9.9.9.9"]'})
+        with self.assertRaises(Fail) as ctx:
+            self.run_mod.load_policy_config(private)
+        self.assertIn("public address", str(ctx.exception))
+
+    def test_fixture_requires_a_mixture_and_both_orderings(self) -> None:
+        Fail = self.run_mod.Fail
+        unmixed = self.fixture_config(records={
+            "public-only.fixture.test": '["9.9.9.9"]',
+            "mixed-public-first.fixture.test": '["9.9.9.9", "8.8.8.8"]',
+            "mixed-private-first.fixture.test": '["10.0.0.1", "9.9.9.9"]'})
+        with self.assertRaises(Fail) as ctx:
+            self.run_mod.load_policy_config(unmixed)
+        self.assertIn("mix one public and one private", str(ctx.exception))
+
+        one_ordering = self.fixture_config(records={
+            "public-only.fixture.test": '["9.9.9.9"]',
+            "mixed-public-first.fixture.test": '["9.9.9.9", "10.0.0.1"]',
+            "mixed-private-first.fixture.test": '["9.9.9.9", "10.0.0.2"]'})
+        with self.assertRaises(Fail) as ctx:
+            self.run_mod.load_policy_config(one_ordering)
+        self.assertIn("both answer orderings", str(ctx.exception))
+
+    def test_fixture_rejects_a_ptr_claim_the_real_policy_does_not_allow(self) -> None:
+        # `ptr-allowlist` asks whether a PTR record can satisfy the real
+        # allowlist; claiming a name that is not on it tests nothing.
+        path = self.fixture_config(ptr_claims='"example.com"')
+        with self.assertRaises(self.run_mod.Fail) as ctx:
+            self.run_mod.load_policy_config(path)
+        self.assertIn("ptr_claims", str(ctx.exception))
+
+    def test_fixture_rejects_a_ptr_address_it_also_serves(self) -> None:
+        # dnsmasq synthesizes PTR records from the records, so sharing an
+        # address is what turned `direct-ip-connect` into a failure.
+        path = self.fixture_config(ptr_address='"9.9.9.9"')
+        with self.assertRaises(self.run_mod.Fail) as ctx:
+            self.run_mod.load_policy_config(path)
+        self.assertIn("ptr_address", str(ctx.exception))
+
+    def test_fixture_rejects_an_unallowlisted_rebind_zone(self) -> None:
+        path = self.fixture_config(rebind_zone='"other.fixture.test"')
+        with self.assertRaises(self.run_mod.Fail) as ctx:
+            self.run_mod.load_policy_config(path)
+        self.assertIn("rebind_zone", str(ctx.exception))
+
+    def test_fixture_hosts_is_generated_from_config_toml(self) -> None:
+        """The hosts file is rendered like every other config, so the
+        records and the test allowlist cannot drift apart by hand."""
+        hosts = REPO_ROOT / "config" / "dns-fixture.hosts"
+        rendered = self.run_mod.render_policies()
+        self.assertIn(hosts, rendered)
+        self.assertEqual(hosts.read_text(encoding="utf-8"), rendered[hosts],
+                         "run `./run.py policy` and commit config/dns-fixture.hosts")
+        self.assertIn("GENERATED FILE", rendered[hosts])
+        config = self.run_mod.load_policy_config()
+        for name, addresses in config.fixture.records:
+            for address in addresses:
+                self.assertRegex(rendered[hosts], rf"(?m)^{re.escape(address)}\s+{re.escape(name)}$")
+
+    def test_checker_constants_match_config_toml(self) -> None:
+        """checks/egress.py names the fixture records in its own constants;
+        config.toml is what the fixture actually serves."""
+        egress = load_module("egress_constants", REPO_ROOT / "checks" / "egress.py")
+        fixture = self.run_mod.load_policy_config().fixture
+        self.assertEqual(egress.MIXED_FIXTURE_CONTROL, fixture.control)
+        self.assertEqual(set(egress.MIXED_FIXTURE_TARGETS), set(fixture.targets))
+        self.assertEqual(egress.REBIND_ZONE, fixture.rebind_zone)
+        self.assertEqual(egress.PTR_FIXTURE_ADDRESS, fixture.ptr_address)
+        self.assertEqual(egress.PTR_FIXTURE_CLAIMS, fixture.ptr_claims)
+
+    def test_rebind_responder_constants_match_config_toml(self) -> None:
+        """images/dnsfixture/rebind.py serves the rebinding zone and the PTR
+        claim from its own literals; they must be the same ones.
+
+        Parsed rather than imported: importing it would start dnsmasq.
+        """
+        import ast
+        source = (REPO_ROOT / "images" / "dnsfixture" / "rebind.py").read_text()
+        literals = {}
+        for node in ast.parse(source).body:
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        literals[target.id] = node.value.value
+        fixture = self.run_mod.load_policy_config().fixture
+        self.assertEqual(literals["REBIND_ZONE"], fixture.rebind_zone)
+        self.assertEqual(literals["PTR_ADDRESS"], fixture.ptr_address)
+        self.assertEqual(literals["PTR_CLAIMS"], fixture.ptr_claims)
+        # The first answer of a rebind is the same public address the
+        # control resolves to, so a name that never rebinds behaves exactly
+        # like the control.
+        self.assertEqual(literals["PUBLIC_ANSWER"],
+                         fixture.addresses(fixture.control)[0])
 
     def test_dns_fixture_records_cover_the_checker_names(self) -> None:
         """The fixture file and checks/egress.py must agree, and the mixed

@@ -2,9 +2,10 @@
 
 One logical policy, written once. **`config.toml` at the repository root
 is the source of truth**; `config/pipelock.yaml`, `config/smokescreen.yaml`
-and `config/squid.conf` (and the three `.test` variants) are rendered from
-it by `./run.py` through the templates in `templates/`, and carry a
-"GENERATED FILE — do not edit" banner saying so.
+and `config/squid.conf` (and the three `.test` variants), plus
+`config/dns-fixture.hosts`, are rendered from it by `./run.py` through the
+templates in `templates/`, and carry a "GENERATED FILE — do not edit"
+banner saying so.
 
 `setup`, `up` and `restart` regenerate them first, so the policy a
 container runs is always the one `config.toml` states. The generated text
@@ -103,9 +104,20 @@ trusted. `validate_policy_file()` rejects a Squid policy that
   under whatever name its PTR claims. Refusing address-form destinations
   before the allowlist is the only fix Squid offers, and it costs nothing:
   this policy allowlists by hostname and never by address
-  (docs/comparison.md);
+  (docs/engines.md);
 * enables `ssl_bump ... bump` (TLS interception);
-* drops `cache deny all`.
+* drops `cache deny all`;
+* has a `deny_info` naming an ACL the file does not define, gives one ACL
+  two denial pages, or drops one of the five required page-to-ACL pairs in
+  `REQUIRED_SQUID_DENY_INFO`. Squid says nothing about a `deny_info` whose
+  ACL no longer exists — the page simply never fires and the denial falls
+  back to the stock "Access control configuration prevents your request"
+  page, which carries no reason at all. Renaming `private_ip` without
+  updating its page would therefore turn every SSRF denial into `unknown`
+  while leaving a config that starts, validates and denies exactly the same
+  requests. `check_squid_error_pages()` additionally requires each named
+  page to exist in `images/squid/errors`, since a missing one answers
+  `Internal Error: Missing Template`.
 
 ## Wildcards in Squid
 
@@ -131,8 +143,8 @@ shows up as drift.
 
 1. Add or remove one entry in `[policy].allow` in `config.toml`, with a
    comment saying why.
-2. `./run.py policy` — regenerates all six engine configs (or go straight
-   to step 3, which does it too).
+2. `./run.py policy` — regenerates the six engine configs and the DNS
+   fixture's records (or go straight to step 3, which does it too).
 3. `./run.py up` — regenerates, validates, and recreates the container.
 4. `./run.py check --quick` — confirms allow/deny behavior.
 5. Commit `config.toml` **and** the regenerated `config/*` files. Review
@@ -150,18 +162,62 @@ test policy is a strict superset of the real one by construction rather
 than by care — a test asserts it. They additionally allowlist
 `*.nip.io` and `*.sslip.io` — wildcard DNS services whose hostnames
 resolve to attacker-chosen IPs — plus the names served by the local DNS
-fixture: three `*.fixture.test` records for mixed answers, and the
-`*.rebind.fixture.test` zone for rebinding. They exist **only**
-so `./run.py check --full` can prove that the IP-layer SSRF floors hold
-even for allowlisted hostnames. Start them with
-`./run.py up --test-policy`, which also starts the fixture; a normal
-`./run.py up` returns to the real policy and removes it.
+fixture: the `*.fixture.test` records for mixed answers, and the
+`*.rebind.fixture.test` zone for rebinding. They exist **only** so
+`./run.py check --full` can prove that the IP-layer SSRF floors hold even
+for allowlisted hostnames. Start them with `./run.py up --test-policy`,
+which also starts the fixture; a normal `./run.py up` returns to the real
+policy and removes it.
 
-The fixture names must stay in sync three ways: the records in
-`config/dns-fixture.hosts` (and the `rebind.fixture.test` zone in
-`images/dnsfixture/rebind.py`), the `MIXED_FIXTURE_*` / `REBIND_ZONE`
-constants in `checks/egress.py`, and `[policy.test].allow` in
-`config.toml`. The third is now one list instead of three, but it is still
-hand-synced against the first two: a test checks the records against the
-checker's constants, and nothing yet checks either against `config.toml`
-(TODO.md §3).
+### The fixture records
+
+`[fixture]` in `config.toml` is the source of truth for what the local DNS
+fixture serves, and `config/dns-fixture.hosts` is rendered from it like
+every other generated file:
+
+```toml
+[fixture]
+control     = "public-only.fixture.test"   # one public address; must establish
+rebind_zone = "rebind.fixture.test"        # served by images/dnsfixture/rebind.py
+ptr_address = "1.0.0.1"                    # answers PTR with ptr_claims
+ptr_claims  = "pypi.org"
+
+[fixture.records]
+"public-only.fixture.test"         = ["9.9.9.9"]
+"mixed-public-first.fixture.test"  = ["9.9.9.9", "10.0.0.1"]
+"mixed-private-first.fixture.test" = ["10.0.0.1", "9.9.9.9"]
+```
+
+Loading it cross-checks the two lists against each other, because a
+half-landed edit here does not fail loudly — it produces a check that
+silently grades nothing:
+
+* every record name must be allowlisted by `[policy.test].allow`, or the
+  engine would refuse it by *name* and the row would measure the allowlist
+  instead of the address check it is named after;
+* every `.test` name in `[policy.test].allow` must have a record behind it
+  (or be `*.<rebind_zone>`), or it resolves to NXDOMAIN and its check
+  skips;
+* no fixture name — record or rebinding zone — may be reachable from
+  `[policy].allow`, by wildcard or otherwise. In the real policy it would
+  be a shipped allowlist entry for a name that resolves to whatever the
+  fixture says, private addresses included, and `up` without
+  `--test-policy` does not even start the fixture;
+* the control must resolve to exactly one public address — it is the probe
+  that proves the fixture is live, and it cannot do that job if it could
+  fail for any other reason;
+* every other record must mix one public and one private address, and both
+  orderings must appear, or an engine that validates only the first answer
+  would not be distinguished from one that validates all of them;
+* `ptr_claims` must be an exact entry in the *real* `[policy].allow` —
+  `ptr-allowlist` asks whether a PTR record can satisfy the allowlist that
+  actually ships;
+* `ptr_address` must not be one of the record addresses. dnsmasq
+  synthesizes PTR records from the records it serves, and Squid retries an
+  address-form destination as a reverse lookup, so a shared address let a
+  bare-IP CONNECT satisfy the allowlist under a fixture name.
+
+What is left hand-synced is the code that reads these names —
+`MIXED_FIXTURE_*` / `REBIND_ZONE` / `PTR_FIXTURE_*` in `checks/egress.py`
+and the literals in `images/dnsfixture/rebind.py` — and tests assert both
+against `config.toml` rather than against each other.

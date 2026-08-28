@@ -24,32 +24,60 @@ difference in one `Backend` class.
 | resolver override | `run --dns <ip>` | same |
 | build | `build --tag … --file … --build-arg … <ctx>` | same |
 | image inspect | `image inspect <ref>` | same (JSON shape differs; both parsed) |
+| published port (loopback check) | `inspect` → `HostConfig.PortBindings[].HostIp` | `inspect` → `configuration.publishedPorts[].hostAddress` (both parsed) |
 
 ## Parity checklist
 
 Every runtime-affecting feature must be tested or explicitly documented as
-backend-specific.
+backend-specific. The three end-to-end scripts under `scripts/` are what
+fills this table in; each prints a named check per claim, so a row here is
+a pasted result rather than a recollection:
 
-| Feature | Docker (Linux/macOS) | Apple `container` (macOS 26+) |
+```bash
+scripts/verify_backend.py --backend docker --engine squid   # lifecycle + DNS fixture
+scripts/verify_loopback.py                                  # every installed backend
+scripts/verify_loopback.py --running                        # ... or the proxy that is up now
+scripts/report.py --run --backend docker                    # the full engine matrix
+```
+
+Pass `--port 18081` to any of them to leave a proxy already serving 18080
+alone.
+
+| Feature | Docker | Apple `container` |
 | --- | --- | --- |
-| `setup` | ☑ verified (Pipelock, Smokescreen) | ☑ verified (all three) |
-| image pull / build | ☑ verified | ☑ verified (Pipelock pull by digest; local Smokescreen and Squid builds) |
-| `up` | ☑ verified (Pipelock, Smokescreen) | ☑ verified, all three engines |
-| loopback port publication | `--publish 127.0.0.1:18080:…` | ☑ verified; if a future release drops `--publish ip:host:container`, do **not** substitute a broader binding — the endpoint must stay loopback-only |
-| `status` / `logs` / `check` / `down` | ☑ verified (Pipelock, Smokescreen) | ☑ verified (`check --full` on all three) |
+| `setup` | ☑ verified (all three) | ☑ verified (all three) |
+| image pull / build | ☑ verified (Pipelock pull by digest; local Smokescreen, Squid and fixture builds) | ☑ verified (same) |
+| `up` | ☑ verified, all three engines | ☑ verified, all three engines |
+| loopback port publication | ☑ verified (`scripts/verify_loopback.py`) | ☑ verified (`scripts/verify_loopback.py`) |
+| `status` / `logs` / `check` / `down` | ☑ verified (`check --full` on all three) | ☑ verified (`check --full` on all three) |
 | `pin` | ☑ implemented | ☑ verified (`pin squid` resolves the apk version from the base image) |
-| DNS fixture (`up --test-policy`) | ☐ **unverified** — the `NetworkSettings` parsing is unit-tested only | ☑ verified (fixture started, address read, `--dns` honoured, `dns-mixed-answers` graded on all three engines) |
+| DNS fixture (`up --test-policy`) | ☑ verified (`scripts/verify_backend.py`: fixture started, address read from `NetworkSettings`, `--dns` honoured, all fixture checks graded) | ☑ verified (address read from `status.networks[]`, `--dns` honoured, all fixture checks graded) |
 
-Apple `container` was verified on macOS 26.6.1 / arm64: Pipelock and
-Smokescreen on 2026-08-17, Squid on 2026-08-25 (docs/comparison.md).
-Docker was exercised end to end on 2026-08-19 for Pipelock and
-Smokescreen. **Squid and the DNS fixture have not been run on Docker.**
-Nothing in Squid's setup is backend-specific (an ordinary build plus one
-read-only bind mount). The fixture is the one place where a real backend
-difference is load-bearing: `up --test-policy` has to read the fixture
-container's address out of `inspect`, and the two CLIs report it in
-different shapes. Both shapes are parsed and unit-tested, but only the
-Apple path has met a real runtime (TODO.md).
+Recorded runs:
+
+| When | Backend and release | What |
+| --- | --- | --- |
+| 2026-08-17 | Apple `container`, macOS 26.6.1 / arm64 | Pipelock and Smokescreen, end to end |
+| 2026-08-19 | Docker | Pipelock and Smokescreen, end to end |
+| 2026-08-25 | Apple `container` | Squid, and the DNS fixture on all three engines |
+| 2026-08-28 | Docker 29.7.2 (build a7dcaa6) | `scripts/verify_backend.py --engine squid`: 13/13, including the fixture chain; `scripts/verify_loopback.py`: 5/5; `scripts/report.py --run`: all three engines |
+| 2026-08-28 | Apple `container` CLI 1.2.0 (commit 6e65319) | `scripts/verify_loopback.py --running`: 5/5 — `--publish ip:host:container` still honoured on this release |
+
+**Re-run `scripts/verify_loopback.py` after every backend upgrade.** The
+endpoint being loopback-only is one `--publish` argument, and a release
+that stopped honouring the address half would widen it to every interface
+with no error and no visible change in `run.py`'s output. If a release
+fails it, **do not substitute a broader binding** — the endpoint must stay
+loopback-only, and a backend that cannot express that is one this
+repository cannot use.
+
+The DNS fixture is the one place where a real backend difference is
+load-bearing: `up --test-policy` has to read the fixture container's
+address out of `inspect`, and the two CLIs report it in different shapes.
+Both are now exercised against a real runtime, not only unit-tested —
+`scripts/verify_backend.py` asserts the whole chain, ending at "the
+fixture-dependent checks produced verdicts", which they can only do if the
+engine actually resolved through the address it was handed.
 
 The fake-backend tests in `tests/test_runpy.py` pin down the exact CLI
 invocations either backend receives, without needing a runtime.
@@ -96,6 +124,13 @@ image would install. If a base-image bump moves squid, `setup` fails at
 
 After any upgrade: `./run.py up && ./run.py check --quick`, and
 `check --full` (with `up --test-policy`) before relying on it.
+
+Re-validate the Pipelock configuration keys against the new release's
+upstream configuration docs on every version bump. The keys in
+`config/pipelock.yaml` were taken from the docs current at pinning time,
+and an upstream rename would be accepted silently — a key Pipelock no
+longer reads is not an error, it is a control that stopped applying. This
+is enforced socially, not mechanically.
 
 All three engines must work on `amd64` and `arm64` (Apple Silicon): the
 Pipelock upstream image is multi-arch; the Smokescreen and Squid images

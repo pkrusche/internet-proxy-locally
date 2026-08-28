@@ -1,0 +1,368 @@
+"""Tests for the generated comparison and the end-to-end scripts.
+
+The scripts themselves need a container runtime and are not run here; what
+is tested is everything around that — the report generator's pure
+rendering, the invariants it enforces on a result file, and the guard that
+the committed docs/comparison.md is what the committed results render to.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import sys
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+egress = load_module("egress_scripts", REPO_ROOT / "checks" / "egress.py")
+report = load_module("report_scripts", REPO_ROOT / "scripts" / "report.py")
+harness = load_module("harness_scripts", REPO_ROOT / "scripts" / "harness.py")
+
+
+def row(name: str, outcome: str, expectation: str = "deny", cause=None,
+        observed=None, detail: str = "detail") -> dict:
+    return {"name": name, "group": "quick", "expectation": expectation,
+            "outcome": outcome, "detail": detail, "cause": cause,
+            "observed": observed, "elapsed_ms": 1.0, "attempts": [],
+            "headers": {}, "engine_logs": []}
+
+
+def run(engine: str, rows: "list[dict]") -> dict:
+    return {"schema_version": egress.SCHEMA_VERSION, "engine": engine,
+            "proxy": "http://127.0.0.1:18080", "mode": "full",
+            "backend": "docker", "image": f"{engine}:test", "policy": "test",
+            "host": "Darwin test", "generated_at": "2026-08-28T00:00:00Z",
+            "exit_code": 0, "results": rows,
+            "_path": REPO_ROOT / "results" / f"{engine}.json"}
+
+
+class CheckCatalogTest(unittest.TestCase):
+    """Every check must say what it asks, because the generated comparison
+    prints that line and nothing else explains the row."""
+
+    def test_every_check_has_a_purpose(self) -> None:
+        names = {name for name, _, _, _, _ in egress.TESTS}
+        self.assertEqual(names - set(egress.CHECK_PURPOSE), set(),
+                         "a check with no CHECK_PURPOSE entry renders an "
+                         "unexplained section in docs/comparison.md")
+        self.assertEqual(set(egress.CHECK_PURPOSE) - names, set(),
+                         "CHECK_PURPOSE describes a check that no longer exists")
+
+    def test_expectation_overrides_name_real_checks(self) -> None:
+        names = {name for name, _, _, _, _ in egress.TESTS}
+        for engine, overrides in egress.ENGINE_EXPECTATIONS.items():
+            for name in overrides:
+                self.assertIn(name, names, f"{engine} overrides unknown check {name}")
+
+
+class BehaviorTest(unittest.TestCase):
+    """The grade and the behavior are different facts, and the report has to
+    keep them apart: `PASS` on a deny row and `RECORD (denied)` describe the
+    same engine doing the same thing."""
+
+    def test_graded_rows_report_what_the_engine_did(self) -> None:
+        self.assertEqual(report.behavior(row("x", "pass", "deny")), "denied")
+        self.assertEqual(report.behavior(row("x", "fail", "deny")), "allowed")
+        self.assertEqual(report.behavior(row("x", "pass", "allow")), "allowed")
+        self.assertEqual(report.behavior(row("x", "fail", "allow")), "denied")
+
+    def test_recorded_rows_report_the_observation(self) -> None:
+        self.assertEqual(
+            report.behavior(row("x", "record", "record", observed="allowed")),
+            "allowed")
+
+    def test_skip_and_error_are_their_own_answer(self) -> None:
+        self.assertEqual(report.behavior(row("x", "skip", "deny")), "skip")
+
+    def test_a_recorded_deviation_is_not_hidden_as_agreement(self) -> None:
+        """Smokescreen's `record` on dns-mixed-answers must still show up as
+        a behavioral difference — that grade changes the exit code, not the
+        finding."""
+        runs = {
+            "pipelock": run("pipelock", [row("dns-mixed-answers", "pass",
+                                             "deny", cause="private-ip")]),
+            "smokescreen": run("smokescreen", [row("dns-mixed-answers", "record",
+                                                   "record", observed="allowed")]),
+        }
+        self.assertTrue(report.behavior_differs(runs, "dns-mixed-answers"))
+
+    def test_same_behavior_different_cause_is_not_a_behavioral_difference(self) -> None:
+        runs = {
+            "pipelock": run("pipelock", [row("loopback-ipv4", "pass", "deny",
+                                             cause="hostname-not-allowlisted")]),
+            "squid": run("squid", [row("loopback-ipv4", "pass", "deny",
+                                       cause="private-ip")]),
+        }
+        self.assertFalse(report.behavior_differs(runs, "loopback-ipv4"))
+        # ... but it is still a divergence worth listing.
+        self.assertTrue(report.divergences(runs, ["loopback-ipv4"]))
+
+
+class VerdictTest(unittest.TestCase):
+    def test_cause_and_observation_are_both_shown(self) -> None:
+        self.assertEqual(report.verdict(row("x", "pass", "deny", cause="private-ip")),
+                         "PASS [private-ip]")
+        self.assertEqual(
+            report.verdict(row("x", "record", "record", observed="allowed")),
+            "RECORD (allowed)")
+        self.assertEqual(report.verdict(row("x", "pass", "allow")), "PASS")
+
+
+class GradedPoolTest(unittest.TestCase):
+    def test_a_row_recorded_on_one_engine_leaves_the_pool(self) -> None:
+        """Pass counts are only comparable over checks graded the same way
+        everywhere; otherwise a lower count can mean either weaker behavior
+        or a different expectation."""
+        name = egress.TESTS[0][0]
+        other = egress.TESTS[1][0]
+        runs = {
+            "pipelock": run("pipelock", [row(name, "pass", "allow"),
+                                         row(other, "pass", "deny")]),
+            "smokescreen": run("smokescreen", [row(name, "pass", "allow"),
+                                               row(other, "record", "record")]),
+        }
+        self.assertEqual(report.graded_names(runs), [name])
+
+
+class ResultFileTest(unittest.TestCase):
+    """A result file has to state the conditions it was measured under, or
+    the generated conditions table would be a guess."""
+
+    def setUp(self) -> None:
+        import tempfile, shutil
+        self.tmp = Path(tempfile.mkdtemp(prefix="ipl-report-test-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def write(self, engine: str, document: dict) -> None:
+        document = dict(document)
+        document.pop("_path", None)
+        (self.tmp / f"{engine}.json").write_text(json.dumps(document))
+
+    def test_rejects_an_older_schema(self) -> None:
+        stale = run("pipelock", [row("x", "pass")])
+        stale["schema_version"] = 1
+        self.write("pipelock", stale)
+        with self.assertRaises(report.Fail) as ctx:
+            report.load_runs(self.tmp, ("pipelock",))
+        self.assertIn("schema_version", str(ctx.exception))
+
+    def test_rejects_a_quick_run(self) -> None:
+        quick = run("pipelock", [row("x", "pass")])
+        quick["mode"] = "quick"
+        self.write("pipelock", quick)
+        with self.assertRaises(report.Fail) as ctx:
+            report.load_runs(self.tmp, ("pipelock",))
+        self.assertIn("quick", str(ctx.exception))
+
+    def test_rejects_results_for_another_engine(self) -> None:
+        self.write("pipelock", run("squid", [row("x", "pass")]))
+        with self.assertRaises(report.Fail) as ctx:
+            report.load_runs(self.tmp, ("pipelock",))
+        self.assertIn("squid", str(ctx.exception))
+
+    def test_reports_a_missing_engine_with_the_command_to_fix_it(self) -> None:
+        with self.assertRaises(report.Fail) as ctx:
+            report.load_runs(self.tmp, ("pipelock",))
+        self.assertIn("report.py --run", str(ctx.exception))
+
+
+class PolicyDetectionTest(unittest.TestCase):
+    """Which policy was mounted is read back off the rows, not declared."""
+
+    def _results(self, fixture_outcome: str, detail: str) -> "list":
+        made = []
+        for name, group, expectation, _, needs in egress.TESTS:
+            outcome = fixture_outcome if needs else "pass"
+            made.append(egress.Result(name, group, expectation, outcome,
+                                      detail if needs else "ok"))
+        return made
+
+    def test_test_policy_is_recognized(self) -> None:
+        self.assertEqual(egress.policy_in_use(self._results("pass", "graded")), "test")
+
+    def test_real_policy_is_recognized(self) -> None:
+        self.assertEqual(
+            egress.policy_in_use(self._results("skip", egress.FIXTURE_SKIP)), "real")
+
+    def test_quick_run_admits_it_does_not_know(self) -> None:
+        quick = [r for r in self._results("pass", "x") if r.group == "quick"]
+        self.assertEqual(egress.policy_in_use(quick), "unknown")
+
+
+class GeneratedComparisonTest(unittest.TestCase):
+    """The committed docs/comparison.md must be exactly what the committed
+    results render to — the same guard config/ has against config.toml."""
+
+    def test_comparison_matches_the_committed_results(self) -> None:
+        results_dir = REPO_ROOT / "results"
+        if not any(results_dir.glob("*.json")):
+            self.skipTest("no results/ in this checkout")
+        runs = report.load_runs(results_dir, report.ENGINES)
+        body = report.render(runs, results_dir)
+        current = (REPO_ROOT / "docs" / "comparison.md").read_text(encoding="utf-8")
+        self.assertEqual(current, body,
+                         "run `scripts/report.py` and commit docs/comparison.md")
+
+    def test_the_rendering_names_every_check_and_engine(self) -> None:
+        results_dir = REPO_ROOT / "results"
+        if not any(results_dir.glob("*.json")):
+            self.skipTest("no results/ in this checkout")
+        body = report.render(report.load_runs(results_dir, report.ENGINES), results_dir)
+        self.assertIn("GENERATED FILE", body)
+        for name, _, _, _, _ in egress.TESTS:
+            self.assertIn(f"### {name}", body, f"{name} has no section")
+            self.assertIn(egress.check_purpose(name), body)
+        for label in report.LABELS.values():
+            self.assertIn(label, body)
+
+
+class RedirectAuthorizationExperimentTest(unittest.TestCase):
+    """The two policies the redirect experiment renders.
+
+    Its whole validity rests on them differing in exactly one thing — one
+    allows the redirect target, the other does not — so both halves are
+    checked here rather than trusted at runtime, where a silently wrong
+    policy would turn a bypass into a pass.
+    """
+
+    def setUp(self) -> None:
+        import tempfile, shutil
+        fidelity = load_module("fidelity_scripts",
+                               REPO_ROOT / "scripts" / "upstream_fidelity.py")
+        self.fidelity = fidelity
+        self.tmp = Path(tempfile.mkdtemp(prefix="ipl-authz-test-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_the_two_policies_differ_only_in_the_redirect_target(self) -> None:
+        f = self.fidelity
+        control = f._experiment_policy(self.tmp, "pipelock", allow_target=True)
+        narrowed = f._experiment_policy(self.tmp, "pipelock", allow_target=False)
+        control_text = control.read_text()
+        narrowed_text = narrowed.read_text()
+        suffix = f.REDIRECT_TARGET_HOST.split(".", 1)[1]
+        self.assertIn(suffix, control_text)
+        self.assertNotIn(suffix, narrowed_text)
+        # Both must allow the redirect *source*, or the request never gets
+        # far enough to be redirected and the experiment measures nothing.
+        for text in (control_text, narrowed_text):
+            self.assertIn(f.REDIRECT_SOURCE_HOST, text)
+
+    def test_both_policies_are_valid_and_still_default_deny(self) -> None:
+        f = self.fidelity
+        run_mod = f.run_mod
+        for allow_target in (True, False):
+            path = f._experiment_policy(self.tmp, "pipelock", allow_target)
+            self.assertEqual(run_mod.validate_policy_file("pipelock", path), [],
+                             "the experiment must never run the engine on a "
+                             "policy that would fail validation")
+
+    def test_the_redirect_target_is_a_different_host_from_the_source(self) -> None:
+        # If they were the same host the experiment could not distinguish
+        # "re-authorizes each hop" from "authorized the first hop only".
+        f = self.fidelity
+        self.assertNotEqual(f.REDIRECT_SOURCE_HOST, f.REDIRECT_TARGET_HOST)
+        self.assertFalse(f.REDIRECT_TARGET_HOST.endswith(f".{f.REDIRECT_SOURCE_HOST}"))
+
+
+class ResilienceLoadTest(unittest.TestCase):
+    """The load generator's accounting is the whole assertion in
+    `verify_resilience.py`: it decides what counts as a leak."""
+
+    def setUp(self) -> None:
+        self.resilience = load_module(
+            "resilience_scripts", REPO_ROOT / "scripts" / "verify_resilience.py")
+
+    def _tally(self, statuses: "list[int | None]", denied: bool):
+        load = self.resilience.Load(port=0)
+        for status in statuses:
+            load._request = lambda host, s=status: (s, f"HTTP/1.1 {s} X")
+            load.stop.set()          # one pass through the loop body only
+            load.stop.clear()
+            # exercise the accounting directly, without the socket
+            with load._lock:
+                if denied:
+                    if status is not None and status < 400:
+                        load.denied_leaked.append(f"HTTP/1.1 {status} X")
+                    else:
+                        load.denied_refused += 1
+                elif status is not None and status < 400:
+                    load.allowed_ok += 1
+                else:
+                    load.allowed_failed += 1
+        return load
+
+    def test_a_forwarded_denied_request_is_a_leak(self) -> None:
+        load = self._tally([200, 301], denied=True)
+        self.assertEqual(len(load.denied_leaked), 2,
+                         "a 2xx/3xx for a denied host is the failure this "
+                         "script exists to catch")
+
+    def test_refusals_and_outages_are_both_safe_for_a_denied_host(self) -> None:
+        # A connection error during a restart is the *expected* shape of a
+        # fail-closed outage, and must not be counted as a leak.
+        load = self._tally([403, 407, None], denied=True)
+        self.assertEqual(load.denied_leaked, [])
+        self.assertEqual(load.denied_refused, 3)
+
+    def test_an_allowed_host_counts_redirects_as_reachable(self) -> None:
+        # Squid and Smokescreen answer 301 for the allowed probe; treating
+        # that as a failure would make the recovery check unsatisfiable.
+        load = self._tally([200, 301, None, 403], denied=False)
+        self.assertEqual(load.allowed_ok, 2)
+        self.assertEqual(load.allowed_failed, 2)
+
+    def test_wait_gives_up_rather_than_hanging(self) -> None:
+        self.assertFalse(self.resilience._wait(lambda: False, 0.2))
+        self.assertTrue(self.resilience._wait(lambda: True, 0.2))
+
+
+class SandboxIntegrationTest(unittest.TestCase):
+    """The routing detection must not report an integration that is absent —
+    that was the whole reason the item sat open as "unverified"."""
+
+    def setUp(self) -> None:
+        self.sandbox = load_module(
+            "sandbox_scripts", REPO_ROOT / "scripts" / "verify_sandbox.py")
+
+    def test_a_missing_package_is_inconclusive_not_a_pass(self) -> None:
+        routed, notes = self.sandbox.routing_evidence("/nonexistent/project-sandbox")
+        self.assertFalse(routed)
+        self.assertTrue(any("inconclusive" in note for note in notes))
+
+    def test_the_in_sandbox_script_asserts_both_directions(self) -> None:
+        """It has to check that the proxy works *and* that bypassing it does
+        not; either alone is satisfied by a sandbox with no filtering."""
+        script = self.sandbox.SANDBOX_SCRIPT
+        self.assertIn("--proxy", script)
+        self.assertIn("--noproxy", script)
+        for marker in ("proxy-env", "allowlisted-through-proxy",
+                       "blocked-through-proxy", "direct-egress",
+                       "direct-dns"):
+            self.assertIn(marker, script)
+
+
+class ReporterTest(unittest.TestCase):
+    def test_exit_code_follows_the_failures(self) -> None:
+        ok = harness.Reporter("t")
+        ok.check(True, "fine")
+        self.assertEqual(ok.finish(), 0)
+        bad = harness.Reporter("t")
+        bad.check(True, "fine")
+        bad.check(False, "broken", "why it matters")
+        self.assertEqual(bad.finish(), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

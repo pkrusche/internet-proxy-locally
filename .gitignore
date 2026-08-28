@@ -3,5 +3,8 @@
 .devcontainer/
 __pycache__/
 *.pyc
-results/
 .venv/
+
+# results/ is deliberately NOT ignored: docs/comparison.md is generated
+# from those files by scripts/report.py, so a checkout without them
+# cannot re-derive or check the published comparison — only believe it.

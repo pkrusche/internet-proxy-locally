@@ -42,7 +42,7 @@ PUBLIC_ANSWER = "9.9.9.9"          # matches config/dns-fixture.hosts
 # PTR of an allowlisted hostname. An engine that resolves a bare-IP
 # destination backwards and matches the answer against its hostname
 # allowlist will let it through — which is exactly what Squid used to do
-# (docs/comparison.md). Keep in sync with PTR_FIXTURE_* in
+# (docs/engines.md). Keep in sync with PTR_FIXTURE_* in
 # checks/egress.py. The address is public, so the SSRF floors do not fire
 # and the allowlist is genuinely the rule under test; it is deliberately
 # none of the addresses any other check connects to.

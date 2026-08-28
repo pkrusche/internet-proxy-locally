@@ -1,10 +1,4 @@
-# GENERATED FILE — do not edit.
-#
-# Rendered from config.toml by ./run.py, via templates/dns-fixture.hosts.j2.
-# To change the allowlist, edit config.toml and run `./run.py policy`
-# (or just `./run.py up`, which regenerates first). A hand edit here is
-# silently overwritten and is caught by the test suite.
-#
+{% include "_banner.j2" %}
 # TEST FIXTURE — served by the dnsmasq container that
 # `./run.py up --test-policy` starts, and read only through it. Never
 # present in normal operation.
@@ -45,25 +39,27 @@
 # written up in docs/engines.md, "Squid: a bare IP could satisfy the
 # allowlist through a reverse lookup".
 #
-# `rebind.fixture.test` is NOT here: its answers change between the
+# `{{ fixture.rebind_zone }}` is NOT here: its answers change between the
 # first lookup and the next, which no static file can express, so
 # images/dnsfixture/rebind.py serves that zone instead.
+{% for record in fixture_records %}
 
+{% if record.role == "control" %}
 # Control: one public address, nothing else. It must be reachable through
 # the proxy for the check to mean anything — if this is denied, the fixture
 # is not running, not allowlisted, or unreachable, and the mixed results
 # below could not be attributed to mixed-answer handling. checks/egress.py
 # skips on that rather than banking a pass it did not earn.
-9.9.9.9         public-only.fixture.test
-
+{% else %}
+{% if loop.first or fixture_records[loop.index0 - 1].role == "control" %}
 # The mixed answers. Every ordering below is present because an engine that
 # validates only the first address returned would pass one and fail the
 # other, and a single ordering could not tell those apart.
 #
-# Public answer first, private second.
-9.9.9.9         mixed-public-first.fixture.test
-10.0.0.1        mixed-public-first.fixture.test
-
-# Private answer first, public second.
-10.0.0.1        mixed-private-first.fixture.test
-9.9.9.9         mixed-private-first.fixture.test
+{% endif %}
+# {{ record.shape }}.
+{% endif %}
+{% for address in record.addresses %}
+{{ "%-15s"|format(address) }} {{ record.name }}
+{% endfor %}
+{% endfor %}

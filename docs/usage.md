@@ -99,7 +99,7 @@ resolve and can never be allowlisted — and grades the status line:
 A success response is deliberately treated as a failure. Grading on
 `>= 400` rather than a specific code is what lets one check serve every
 engine: Pipelock and Squid deny with `403`, Smokescreen with `407`
-(docs/comparison.md).
+(docs/engines.md).
 
 ### `status`
 
@@ -118,7 +118,8 @@ container log stream and are lost on recreate/remove.
 Runs `checks/egress.py` against the running engine through the stable
 endpoint. `--quick` (default) covers ordinary allow/deny behavior;
 `--full` adds the SSRF/DNS fixtures and CONNECT-abuse tests. `--json`
-emits machine-readable results for docs/comparison.md.
+emits machine-readable results — the input `scripts/report.py` generates
+docs/comparison.md from.
 
 `check` refuses to run when no engine is up, or when `--engine` names an
 engine other than the running one — it will not silently test one engine's
@@ -139,8 +140,14 @@ the fixture's container through with `--fixture-container` when it is
 running; a standalone `checks/egress.py` invocation without that flag skips
 `dns-rebinding`.
 
-`--json` results are schema-versioned (`schema_version`) and, per check,
-may include: `cause` (best-effort denial classification), `elapsed_ms`,
+`--json` results are schema-versioned (`schema_version`). The envelope
+records the conditions of the run — `engine`, `image`, `backend`,
+`policy` (`test` or `real`, read back off the fixture rows rather than
+declared), `host`, `generated_at`, `mode` and `exit_code` — so a result
+file states what it measured without a table beside it. Per check, a row
+may include: `cause` (best-effort denial classification), `observed`
+(what the engine did — `allowed` or `denied` — for rows whose grade is
+`record` and therefore says nothing about direction), `elapsed_ms`,
 `attempts` (per-target evidence — e.g. what `dns-rebinding` and
 `dns-private-ipv4`/`ipv6` actually resolved each fixture hostname to),
 `headers` (full response headers on the allow-path checks), and
@@ -152,12 +159,27 @@ those flags are passed).
 ### `checks/egress.py --diff A.json B.json`
 
 Compares two prior `--json` runs (e.g. one per engine) and prints only
-the checks whose `outcome`/`cause` diverge, instead of transcribing the
-comparison table in docs/comparison.md by hand:
+the checks whose `outcome`/`cause` diverge:
 
 ```bash
-checks/egress.py --diff results/pipelock-20260817.json results/smokescreen-20260817.json
+checks/egress.py --diff results/pipelock.json results/smokescreen.json
 ```
+
+## The end-to-end scripts
+
+`scripts/` holds the things the unit suite cannot do, because they need a
+real container runtime. Each prints one named check per claim and exits
+non-zero if any failed. All of them take `--port` so they can run on a
+machine that already has a proxy on 18080 without taking it down.
+
+| Script | What it settles |
+| --- | --- |
+| `scripts/report.py` | Regenerates docs/comparison.md from `results/*.json`. `--run` measures all three engines first (setup, `up --test-policy`, `check --full --json`, then `down`); `--check` reports drift and exits 1 without writing. |
+| `scripts/verify_backend.py --backend B` | The whole lifecycle on a real backend, ending at the DNS fixture: the fixture's address is parsed out of *that* backend's `inspect` shape, `up` announced it, and the engine actually resolved through it — proved by the fixture-dependent checks producing verdicts instead of skipping. |
+| `scripts/verify_loopback.py` | That the endpoint is bound to loopback and nothing else, from the runtime's own report of the binding and from the endpoint refusing every non-loopback address this host has. `--running` checks the proxy that is already up instead of replacing it. Re-run after a backend upgrade. |
+| `scripts/upstream_fidelity.py` | Whether an engine forwards the request it was given or rewrites it, and whether it hands back the destination's own answer. This is what established that Pipelock follows redirects (docs/engines.md §6). `--redirect-authz` additionally settles whether a followed redirect's target is re-authorized, by narrowing the policy around a real cross-host redirect and running a control alongside it. |
+| `scripts/verify_resilience.py` | That the service fails *closed*: with two request streams running, the container is killed and then restarted, and no request for a denied host may ever succeed. Also records startup time and image size. |
+| `scripts/verify_sandbox.py` | Whether anything on this machine actually routes a sandbox through the endpoint. Reads it off the installed `project-sandbox` rather than assuming; `--run-sandbox` runs the in-sandbox assertions once the routing exists. |
 
 ### `down`
 
@@ -184,14 +206,8 @@ upgrade procedure.
 ./run.py check --full
 ./run.py up                      # back to the real policy
 
-# compare engines
-./run.py --engine smokescreen setup
-./run.py --engine smokescreen up --test-policy
-./run.py check --full --json > results/smokescreen-$(date +%Y%m%d).json
-
-./run.py --engine squid setup
-./run.py --engine squid up --test-policy
-./run.py check --full --json > results/squid-$(date +%Y%m%d).json
+# compare engines: measure all three and regenerate docs/comparison.md
+scripts/report.py --run
 ```
 
 ## Local test suite

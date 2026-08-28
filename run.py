@@ -26,6 +26,7 @@ if sys.version_info < (3, 11):
 
 import argparse
 import difflib
+import ipaddress
 import json
 import os
 import platform
@@ -303,6 +304,55 @@ class Backend:
                     return address.split("/", 1)[0]
         return ""
 
+    def published_ports(self, name: str) -> list[tuple[str, int, int]]:
+        """(host address, host port, container port) for each published port.
+
+        The endpoint is supposed to be loopback-only, and `--publish
+        ip:host:container` is the whole of that guarantee — a release that
+        quietly ignored the address half would widen it to every interface
+        with no error and no visible change. This reads the binding back out
+        of the runtime so that scripts/verify_loopback.py can assert it
+        rather than trust it (docs/backends.md).
+
+        Docker:          HostConfig.PortBindings {"8888/tcp": [{HostIp, HostPort}]}
+        Apple container: configuration.publishedPorts [{hostAddress, hostPort,
+                         containerPort}]
+        """
+        proc = self._run("inspect", name, check=False)
+        if proc.returncode != 0:
+            return []
+        try:
+            info = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return []
+        entry = (info[0] if isinstance(info, list) and info else info) or {}
+        if not isinstance(entry, dict):
+            return []
+        bindings: list[tuple[str, int, int]] = []
+        published = (entry.get("configuration") or {}).get("publishedPorts")
+        if isinstance(published, list):
+            for item in published:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    bindings.append((str(item.get("hostAddress", "")),
+                                     int(item["hostPort"]), int(item["containerPort"])))
+                except (KeyError, TypeError, ValueError):
+                    continue
+        port_bindings = (entry.get("HostConfig") or {}).get("PortBindings") or {}
+        if isinstance(port_bindings, dict):
+            for spec, targets in port_bindings.items():
+                container_port = int(str(spec).split("/", 1)[0] or 0)
+                for target in targets or []:
+                    if not isinstance(target, dict):
+                        continue
+                    try:
+                        bindings.append((str(target.get("HostIp", "")),
+                                         int(target["HostPort"]), container_port))
+                    except (KeyError, TypeError, ValueError):
+                        continue
+        return bindings
+
     def remove_container(self, name: str) -> bool:
         """Remove a container if present; returns True if something was removed."""
         if self.container_state(name) == "absent":
@@ -398,6 +448,38 @@ class Backend:
                     return value
         return ""
 
+    def image_size(self, ref: str) -> int:
+        """On-disk size of a local image in bytes; 0 when it cannot be read.
+
+        Reported by `scripts/verify_resilience.py` rather than enforced —
+        image size is one of the operational numbers the engine choice is
+        weighed on, and it was never collected. Docker puts it at `Size`;
+        Apple `container` reports the manifest's layer sizes instead, so
+        the two are summed to something comparable rather than equal.
+        """
+        proc = self._image("inspect", ref, check=False)
+        if proc.returncode != 0:
+            return 0
+        try:
+            info = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return 0
+        entry = (info[0] if isinstance(info, list) and info else info) or {}
+        if not isinstance(entry, dict):
+            return 0
+        for key in ("Size", "size", "VirtualSize"):
+            value = entry.get(key)
+            if isinstance(value, (int, float)) and value > 0:
+                return int(value)
+        variants = (entry.get("variants") or entry.get("manifests") or [])
+        total = 0
+        for variant in variants if isinstance(variants, list) else []:
+            for layer in (variant or {}).get("layers") or []:
+                value = (layer or {}).get("size")
+                if isinstance(value, (int, float)):
+                    total += int(value)
+        return total
+
     def run_once(self, image: str, args: list[str]) -> str:
         """Run a throwaway container and return its stdout. Used by `pin` to
         ask a base image what package version it would install."""
@@ -455,11 +537,44 @@ _ALLOW_ENTRY = re.compile(
 
 
 @dataclass(frozen=True)
+class FixtureConfig:
+    """The local DNS fixture's records, read from `[fixture]` in config.toml.
+
+    `config/dns-fixture.hosts` is rendered from this, so the records the
+    fixture serves and the `[policy.test]` allowlist that has to cover them
+    come from one place instead of being hand-synced (docs/policy.md).
+    """
+
+    control: str
+    rebind_zone: str
+    ptr_address: str
+    ptr_claims: str
+    # (name, addresses) in file order; the order of the addresses is the
+    # order the fixture answers with, which is half of what the check asks.
+    records: tuple[tuple[str, tuple[str, ...]], ...]
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        return tuple(name for name, _ in self.records)
+
+    @property
+    def targets(self) -> tuple[str, ...]:
+        """The mixed-answer names — every record except the control."""
+        return tuple(name for name in self.names if name != self.control)
+
+    def addresses(self, name: str) -> tuple[str, ...]:
+        return dict(self.records).get(name, ())
+
+
+@dataclass(frozen=True)
 class PolicyConfig:
     """The shared logical policy, read from config.toml."""
 
     allow: tuple[str, ...]
     allow_test: tuple[str, ...]
+    # Optional so a test can render the engine configs from a bare
+    # allowlist; `load_policy_config()` always supplies one.
+    fixture: FixtureConfig | None = None
 
     def exact(self, entries: tuple[str, ...]) -> list[str]:
         return [entry for entry in entries if not entry.startswith("*.")]
@@ -487,7 +602,7 @@ def _allow_list(raw: object, path: Path, key: str) -> list[str]:
         # `_ALLOW_ENTRY` cannot tell 1.2.3.4 from a hostname, and an
         # address-form entry is exactly what `http_access deny ip_literal`
         # exists to refuse: this policy allowlists by name and never by
-        # address (docs/comparison.md).
+        # address (docs/engines.md).
         if re.fullmatch(r"[0-9.]+", entry):
             raise Fail(
                 f"{path}: {key} entry `{entry}` is an address, not a hostname. "
@@ -497,13 +612,180 @@ def _allow_list(raw: object, path: Path, key: str) -> list[str]:
     return entries
 
 
+# The reserved TLD the fixture's names live under (RFC 6761). Anything in
+# `[policy.test].allow` under it is a fixture name and must have a record
+# behind it — that is the half of the sync `[fixture]` cannot enforce by
+# being the source of the hosts file.
+FIXTURE_TLD = ".test"
+
+
+def _covered_by(name: str, entries: "tuple[str, ...]") -> bool:
+    """Does the allowlist `entries` permit `name`, in either shared form?"""
+    if name in entries:
+        return True
+    return any(entry.startswith("*.") and name.endswith(entry[1:])
+               for entry in entries)
+
+
+def _public_address(raw: str, path: Path, what: str) -> str:
+    """An address that must be routable — the half of a fixture answer an
+    engine is allowed to reach, and the one `ptr-allowlist` connects to."""
+    address = _address(raw, path, what)
+    if _private_address(address):
+        raise Fail(f"{path}: {what} is `{raw}`, which is not a public address; "
+                   "the check it backs would be graded by the SSRF floors "
+                   "rather than by the rule it is testing")
+    return address
+
+
+def _address(raw: str, path: Path, what: str) -> str:
+    if not isinstance(raw, str):
+        raise Fail(f"{path}: {what} must be a string (found {raw!r})")
+    try:
+        ipaddress.ip_address(raw)
+    except ValueError as exc:
+        raise Fail(f"{path}: {what} is not an IP address: {raw!r}") from exc
+    return raw
+
+
+def _private_address(raw: str) -> bool:
+    addr = ipaddress.ip_address(raw)
+    return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
+
+
+def _fixture_config(raw: object, path: Path, allow: "list[str]",
+                    allow_test: "list[str]") -> FixtureConfig:
+    """Read and validate `[fixture]`, cross-checked against the allowlists.
+
+    Everything here exists so that one edit cannot half-land: a record the
+    test policy does not allowlist would be denied by name and grade
+    nothing, and a `[policy.test]` fixture name with no record behind it
+    would resolve to NXDOMAIN and skip.
+    """
+    if not isinstance(raw, dict):
+        raise Fail(f"{path}: missing the [fixture] table (it holds the DNS "
+                   "fixture's records; config/dns-fixture.hosts is rendered "
+                   "from it)")
+    known = {"control", "rebind_zone", "ptr_address", "ptr_claims", "records"}
+    unknown = sorted(set(raw) - known)
+    if unknown:
+        raise Fail(f"{path}: unknown key(s) in [fixture]: {', '.join(unknown)}")
+    missing = sorted(known - set(raw))
+    if missing:
+        raise Fail(f"{path}: [fixture] is missing {', '.join(missing)}")
+
+    entries = raw["records"]
+    if not isinstance(entries, dict) or not entries:
+        raise Fail(f"{path}: [fixture.records] must be a non-empty table of "
+                   "`\"name\" = [\"addr\", ...]`")
+    records: list[tuple[str, tuple[str, ...]]] = []
+    allowed = tuple(allow_test)
+    for name, addresses in entries.items():
+        if not _ALLOW_ENTRY.match(name) or name.startswith("*."):
+            raise Fail(f"{path}: [fixture.records] key `{name}` is not a hostname")
+        if not name.endswith(FIXTURE_TLD):
+            raise Fail(f"{path}: [fixture.records] key `{name}` must be under "
+                       f"`{FIXTURE_TLD}`, the reserved TLD that can never "
+                       "resolve publicly")
+        if not isinstance(addresses, list) or not addresses:
+            raise Fail(f"{path}: [fixture.records] `{name}` must list at least "
+                       "one address")
+        parsed = tuple(_address(a, path, f"[fixture.records] `{name}`") for a in addresses)
+        if len(set(parsed)) != len(parsed):
+            raise Fail(f"{path}: [fixture.records] `{name}` repeats an address")
+        if _covered_by(name, tuple(allow)):
+            # The fixture's names belong to the test policy alone. In the
+            # real one they would be a shipped allowlist entry for a name
+            # that resolves to whatever the fixture says, private addresses
+            # included — and `up` without --test-policy does not even start
+            # the fixture, so the entry would be dead weight at best.
+            raise Fail(f"{path}: [policy].allow permits the fixture name `{name}`. "
+                       "Fixture names belong in [policy.test].allow only; the real "
+                       "policy must never allowlist a name the fixture answers.")
+        if not _covered_by(name, allowed):
+            raise Fail(f"{path}: [fixture.records] `{name}` is not allowlisted by "
+                       "[policy.test].allow, so the fixture would be refused by "
+                       "name and the check would grade nothing")
+        records.append((name, parsed))
+
+    control = raw["control"]
+    by_name = dict(records)
+    if control not in by_name:
+        raise Fail(f"{path}: [fixture] control `{control}` is not one of the "
+                   f"records ({', '.join(by_name)})")
+    if len(by_name[control]) != 1:
+        raise Fail(f"{path}: [fixture] control `{control}` must resolve to exactly "
+                   "one address; it is the probe that proves the fixture is live")
+    _public_address(by_name[control][0], path, f"the control record `{control}`")
+
+    orderings: set[tuple[bool, ...]] = set()
+    for name, addresses in records:
+        if name == control:
+            continue
+        private = tuple(_private_address(a) for a in addresses)
+        if not any(private) or all(private):
+            raise Fail(f"{path}: [fixture.records] `{name}` must mix one public and "
+                       "one private address — that mixture is the whole content of "
+                       "`dns-mixed-answers`")
+        orderings.add(private)
+    if len(orderings) < 2:
+        raise Fail(f"{path}: [fixture.records] must serve both answer orderings "
+                   "(public first and private first), or an engine that validates "
+                   "only the first address would not be distinguished from one that "
+                   "validates all of them")
+
+    rebind_zone = raw["rebind_zone"]
+    if not isinstance(rebind_zone, str) or not _ALLOW_ENTRY.match(rebind_zone) \
+            or not rebind_zone.endswith(FIXTURE_TLD):
+        raise Fail(f"{path}: [fixture] rebind_zone must be a hostname under "
+                   f"`{FIXTURE_TLD}` (found {rebind_zone!r})")
+    if _covered_by(f"probe.{rebind_zone}", tuple(allow)):
+        raise Fail(f"{path}: [policy].allow permits the rebinding zone "
+                   f"`{rebind_zone}`. Its answers change between lookups and end "
+                   "at a private address; it belongs in [policy.test].allow only.")
+    if f"*.{rebind_zone}" not in allow_test:
+        raise Fail(f"{path}: [fixture] rebind_zone `{rebind_zone}` needs "
+                   f"`*.{rebind_zone}` in [policy.test].allow; a denial has to be "
+                   "attributable to the address the engine was handed, not to the name")
+
+    ptr_address = _public_address(raw["ptr_address"], path, "[fixture] ptr_address")
+    served = {a for _, addresses in records for a in addresses}
+    if ptr_address in served:
+        raise Fail(f"{path}: [fixture] ptr_address `{ptr_address}` is also a record "
+                   "address. dnsmasq synthesizes PTR records from the records, so "
+                   "sharing an address would let a bare-IP destination match the "
+                   "allowlist under a fixture name")
+    ptr_claims = raw["ptr_claims"]
+    if not isinstance(ptr_claims, str) or ptr_claims not in allow:
+        raise Fail(f"{path}: [fixture] ptr_claims must be an exact entry in "
+                   f"[policy].allow (found {ptr_claims!r}); `ptr-allowlist` asks "
+                   "whether a PTR record can satisfy the *real* allowlist")
+
+    # The other direction: a `.test` name in the test policy with no record
+    # behind it resolves to NXDOMAIN and silently skips its check.
+    for entry in allow_test:
+        if not entry.endswith(FIXTURE_TLD):
+            continue
+        if entry.startswith("*."):
+            if entry != f"*.{rebind_zone}":
+                raise Fail(f"{path}: policy.test.allow has `{entry}`, which no "
+                           f"[fixture] zone serves (the only one is *.{rebind_zone})")
+        elif entry not in by_name:
+            raise Fail(f"{path}: policy.test.allow has `{entry}`, which "
+                       "[fixture.records] does not serve")
+
+    return FixtureConfig(control=control, rebind_zone=rebind_zone,
+                         ptr_address=ptr_address, ptr_claims=ptr_claims,
+                         records=tuple(records))
+
+
 def load_policy_config(path: Path = POLICY_FILE) -> PolicyConfig:
     """Read and validate config.toml. Fails closed on anything ambiguous."""
     if not path.is_file():
         raise Fail(f"missing the policy source {path} (it holds the allowlist)")
     with path.open("rb") as fh:
         data = tomllib.load(fh)
-    unknown = sorted(set(data) - {"policy"})
+    unknown = sorted(set(data) - {"policy", "fixture"})
     if unknown:
         raise Fail(f"{path}: unknown top-level table(s): {', '.join(unknown)}")
     policy = data.get("policy")
@@ -529,7 +811,8 @@ def load_policy_config(path: Path = POLICY_FILE) -> PolicyConfig:
     if overlap:
         raise Fail(f"{path}: policy.test.allow repeats {', '.join(overlap)}, "
                    "which policy.allow already permits everywhere")
-    return PolicyConfig(tuple(allow), tuple(allow_test))
+    fixture = _fixture_config(data.get("fixture"), path, allow, allow_test)
+    return PolicyConfig(tuple(allow), tuple(allow_test), fixture)
 
 
 def _yaml_scalar(entry: str) -> str:
@@ -597,7 +880,38 @@ def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
                 allow_test_exact=config.exact(config.allow_test),
                 allow_test_wild=config.wild(config.allow_test),
             )
+    if config.fixture is not None:
+        rendered.update(_render_fixture_hosts(env, config.fixture))
     return rendered
+
+
+def _render_fixture_hosts(env, fixture: FixtureConfig) -> dict[Path, str]:
+    """Render config/dns-fixture.hosts from `[fixture]`.
+
+    The hosts file is not a policy — nothing in it is enforced — but it is
+    the other half of the test policy, and hand-syncing it against
+    `[policy.test].allow` is exactly what `load_policy_config()` now
+    refuses to leave to care (docs/policy.md).
+    """
+    spec = ServiceSpec.load(DNS_FIXTURE)
+    name = _template_name(spec)
+    if not (TEMPLATE_DIR / name).is_file():
+        raise Fail(f"missing template: {TEMPLATE_DIR / name}")
+    rows = []
+    for record, addresses in fixture.records:
+        shape = ["private" if _private_address(a) else "public" for a in addresses]
+        rows.append({
+            "name": record,
+            "addresses": list(addresses),
+            "role": "control" if record == fixture.control else "mixed",
+            "shape": f"{shape[0].capitalize()} answer first, {shape[-1]} second",
+        })
+    text = env.get_template(name).render(
+        template_name=f"templates/{name}",
+        fixture=fixture,
+        fixture_records=rows,
+    )
+    return {REPO_ROOT / spec.config_file: text}
 
 
 def check_rendered_policies(rendered: dict[Path, str]) -> list[str]:
@@ -617,6 +931,9 @@ def check_rendered_policies(rendered: dict[Path, str]) -> list[str]:
         real, test = rendered[real_path], rendered[test_path]
         problems += validate_policy_text(engine, real, real_path)
         problems += validate_policy_text(engine, test, test_path)
+        if engine == "squid":
+            problems += check_squid_error_pages(real, real_path)
+            problems += check_squid_error_pages(test, test_path)
         missing = policy_allowlist_text(engine, real) - policy_allowlist_text(engine, test)
         for entry in sorted(missing):
             problems.append(f"{test_path}: the test policy must be a strict superset "
@@ -705,10 +1022,50 @@ REQUIRED_SQUID_DENY_RANGES = (
 )
 
 
+# Which denial page each ACL must be wired to. Squid answers a denial with
+# a generic "Access control configuration prevents your request" page
+# unless a `deny_info` names the ACL that matched, and that page classifies
+# as `unknown` — so the bracketed cause in every comparison table, and the
+# ability to tell an SSRF refusal from an allowlist refusal at all, rests
+# on this mapping. Renaming an ACL without updating its `deny_info` is a
+# silent, valid-looking config that loses every reason (docs/engines.md).
+#
+# `all` is Squid's built-in catch-all ACL and is deliberately here: it is
+# the last rule, so it is what an ordinary allowlist miss reports.
+REQUIRED_SQUID_DENY_INFO = {
+    "metadata_ip": "ERR_IPL_METADATA",
+    "private_ip": "ERR_IPL_PRIVATE_IP",
+    "ip_literal": "ERR_IPL_IP_LITERAL",
+    "TLS_ports": "ERR_IPL_PORT_NOT_ALLOWED",
+    "all": "ERR_IPL_NOT_ALLOWLISTED",
+}
+
+# ACLs Squid defines itself, which a config may reference without declaring.
+SQUID_BUILTIN_ACLS = ("all", "manager", "localhost", "to_localhost", "to_linklocal")
+
+SQUID_ERROR_DIR = REPO_ROOT / "images" / "squid" / "errors"
+
+
 def _squid_access_rules(text: str) -> list[str]:
     """Every `http_access` line, in file order, whitespace-normalized."""
     return [" ".join(line.split()) for line in text.splitlines()
             if re.match(r"^\s*http_access\s", line)]
+
+
+def _squid_acl_names(text: str) -> set[str]:
+    """Every ACL name the file defines."""
+    return {match.group(1) for match in
+            re.finditer(r"^\s*acl\s+(\S+)\s+\S+", text, re.M)}
+
+
+def _squid_deny_info(text: str) -> list[tuple[str, str]]:
+    """`deny_info <page> <acl>` pairs, in file order."""
+    pairs: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        match = re.match(r"^\s*deny_info\s+(\S+)\s+(\S+)\s*$", line)
+        if match:
+            pairs.append((match.group(1), match.group(2)))
+    return pairs
 
 
 def _squid_acl_values(text: str, name: str, acl_type: str) -> list[str]:
@@ -737,6 +1094,57 @@ def _squid_regex_to_glob(pattern: str) -> str:
 def _require(cond: bool, path: Path, message: str, problems: list[str]) -> None:
     if not cond:
         problems.append(f"{path}: {message}")
+
+
+def _validate_squid_deny_info(text: str, path: Path) -> list[str]:
+    """Every denial page must be wired to an ACL the file still defines.
+
+    Squid does not complain about a `deny_info` naming an ACL that no
+    longer exists — it just never fires, and the denial falls back to the
+    stock page, which says nothing about why. So renaming `private_ip`
+    without updating its `deny_info` turns every SSRF denial from
+    `private-ip` into `unknown` while leaving a config that starts, passes
+    every other check here, and still denies the right requests. Nothing
+    would have caught it; this does.
+    """
+    problems: list[str] = []
+    defined = _squid_acl_names(text) | set(SQUID_BUILTIN_ACLS)
+    pairs = _squid_deny_info(text)
+    seen: dict[str, str] = {}
+    for page, acl in pairs:
+        _require(acl in defined, path,
+                 f"`deny_info {page} {acl}` names an ACL this file does not define; "
+                 "the page would never be shown and the denial would lose its reason",
+                 problems)
+        _require(acl not in seen, path,
+                 f"`{acl}` has two denial pages ({seen.get(acl)} and {page}); "
+                 "only one of them can ever be shown", problems)
+        seen[acl] = page
+    for acl, page in REQUIRED_SQUID_DENY_INFO.items():
+        _require(seen.get(acl) == page, path,
+                 f"`deny_info {page} {acl}` is missing (found "
+                 f"{seen.get(acl) or 'nothing'} for `{acl}`); without it that denial "
+                 "reports Squid's generic page and classifies as `unknown`",
+                 problems)
+    return problems
+
+
+def check_squid_error_pages(text: str, path: Path) -> list[str]:
+    """Every page a `deny_info` names must exist in the Squid image.
+
+    Separate from `validate_policy_text` because it is the one Squid check
+    that has to look outside the config: a `deny_info` naming a template
+    that was never written answers with "Internal Error: Missing Template".
+    """
+    problems: list[str] = []
+    for page, acl in _squid_deny_info(text):
+        if not page.startswith("ERR_"):
+            continue  # `deny_info 302:https://…` redirects to a URL, not a page
+        _require((SQUID_ERROR_DIR / page).is_file(), path,
+                 f"`deny_info {page} {acl}` names a page that does not exist at "
+                 f"{(SQUID_ERROR_DIR / page).relative_to(REPO_ROOT)}; Squid would "
+                 "answer `Internal Error: Missing Template`", problems)
+    return problems
 
 
 def validate_policy_file(engine: str, path: Path) -> list[str]:
@@ -793,7 +1201,7 @@ def validate_policy_text(engine: str, text: str, path: Path) -> list[str]:
         # different failure: Squid retries a `dstdomain` miss as a reverse
         # lookup, so an address-form destination reaches the allowlist under
         # whatever name its PTR claims. Refusing it earlier is the only fix
-        # Squid offers (docs/comparison.md).
+        # Squid offers (docs/engines.md).
         for acl in ("metadata_ip", "private_ip", "ip_literal"):
             index = next((i for i, rule in enumerate(rules)
                           if rule == f"http_access deny {acl}"), None)
@@ -808,6 +1216,7 @@ def validate_policy_text(engine: str, text: str, path: Path) -> list[str]:
         _require(re.search(r"^\s*cache\s+deny\s+all\b", text, re.M) is not None, path,
                  "must set `cache deny all` (a cache hit is a response nobody re-authorized)",
                  problems)
+        problems += _validate_squid_deny_info(text, path)
         _require(len(policy_allowlist_text("squid", text)) > 0, path,
                  "the allowlist must not be empty (default deny needs explicit allows)", problems)
     else:
@@ -1332,7 +1741,11 @@ def cmd_check(opts: argparse.Namespace) -> int:
     host, port = endpoint()
     cmd = [sys.executable, str(REPO_ROOT / "checks" / "egress.py"),
            "--proxy", f"http://{host}:{port}", "--engine", engine,
-           "--backend-bin", backend.bin, "--container", spec.container_name]
+           "--backend-bin", backend.bin, "--container", spec.container_name,
+           # Recorded in the JSON envelope so a result file states which
+           # build it measured; scripts/report.py reads it back into the
+           # conditions table in docs/engines.md.
+           "--image", spec.run_image_ref()]
     # dns-rebinding grades on what the fixture observed, so the checker
     # needs its log stream too. Only present under `up --test-policy`.
     fixture = ServiceSpec.load(DNS_FIXTURE)

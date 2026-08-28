@@ -131,7 +131,7 @@ class EgressSuiteTest(unittest.TestCase):
     def test_full_suite_lenient_squid_expectations(self) -> None:
         # Squid relays CONNECT tunnels without inspecting them, like
         # Smokescreen, so its tunnel behavior is recorded rather than
-        # graded (docs/comparison.md).
+        # graded (docs/engines.md).
         results = self.run_suite("squid", "lenient", full=True)
         self.assertEqual(results["connect-sni-mismatch"].outcome, "record",
                          results["connect-sni-mismatch"].detail)
@@ -160,7 +160,7 @@ class EgressSuiteTest(unittest.TestCase):
         The mock decides by hostname, so it can stand in for an engine's
         *verdict* on the mixed names but not for the resolution behind it —
         which is fine: this exercises the check's own grading, and the real
-        resolution behavior is measured in docs/comparison.md.
+        resolution behavior is measured in docs/engines.md.
         """
         port = free_port()
         allowed = set(mock_proxy.DEFAULT_ALLOWED) | {"1.1.1.1.nip.io"} | allowed_names
@@ -170,21 +170,47 @@ class EgressSuiteTest(unittest.TestCase):
         self.addCleanup(server.shutdown)
         return port
 
-    def test_mixed_answers_passes_when_only_the_control_is_reachable(self) -> None:
+    def test_mixed_answers_denies_when_only_the_control_is_reachable(self) -> None:
         port = self._mixed_fixture_server({egress.MIXED_FIXTURE_CONTROL})
         client = egress.ProxyClient("127.0.0.1", port)
         raw = egress.test_dns_mixed(client)
-        self.assertEqual(raw.outcome, "pass", raw.detail)
+        self.assertEqual(raw.outcome, "denied", raw.detail)
         self.assertEqual(len(raw.attempts), 1 + len(egress.MIXED_FIXTURE_TARGETS))
 
-    def test_mixed_answers_fails_when_a_mixed_name_is_reachable(self) -> None:
+    def test_mixed_answers_reports_allowed_when_a_mixed_name_is_reachable(self) -> None:
         port = self._mixed_fixture_server(
             {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS})
         client = egress.ProxyClient("127.0.0.1", port)
         raw = egress.test_dns_mixed(client)
-        self.assertEqual(raw.outcome, "fail", raw.detail)
+        self.assertEqual(raw.outcome, "allowed", raw.detail)
         for name in egress.MIXED_FIXTURE_TARGETS:
             self.assertIn(name, raw.detail)
+
+    def test_mixed_answers_is_graded_per_engine(self) -> None:
+        """The same behavior is a failure on the engines that are expected
+        to refuse it and a recorded deviation on Smokescreen, which is not
+        (ENGINE_EXPECTATIONS)."""
+        port = self._mixed_fixture_server(
+            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS})
+        graded = {}
+        for engine in ("pipelock", "squid", "smokescreen"):
+            results = {r.name: r for r in
+                       egress.run_suite(f"http://127.0.0.1:{port}", engine, full=True)}
+            graded[engine] = results["dns-mixed-answers"].outcome
+        self.assertEqual(graded["pipelock"], "fail")
+        self.assertEqual(graded["squid"], "fail")
+        self.assertEqual(graded["smokescreen"], "record")
+
+    def test_smokescreens_recorded_deviation_does_not_set_the_exit_code(self) -> None:
+        # The point of the grade: a known, bounded deviation must not make
+        # `check --full` indistinguishable from a broken engine.
+        port = self._mixed_fixture_server(
+            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS})
+        results = egress.run_suite(f"http://127.0.0.1:{port}", "smokescreen", full=True)
+        row = {r.name: r for r in results}["dns-mixed-answers"]
+        self.assertEqual(row.outcome, "record")
+        self.assertIn("established", row.detail)
+        self.assertIsNone(row.cause, "nothing was denied, so there is no cause")
 
     def test_mixed_answers_skips_without_a_working_control(self) -> None:
         # No control means a denial below cannot be attributed to
@@ -226,7 +252,7 @@ class EgressSuiteTest(unittest.TestCase):
 
 
 class ClassifyDenialTest(unittest.TestCase):
-    """Best-effort denial-cause taxonomy (TODO.md §1)."""
+    """Best-effort denial-cause taxonomy (docs/security.md)."""
 
     def test_metadata(self) -> None:
         text = "denied by mock policy: destination is the cloud metadata endpoint"
@@ -284,7 +310,7 @@ class SummarizeBodyTest(unittest.TestCase):
 
 
 class ClassifyDenialRealWordingTest(unittest.TestCase):
-    """Verbatim engine wording captured on 2026-08-19 (docs/comparison.md).
+    """Verbatim engine wording captured on 2026-08-19 (docs/engines.md).
 
     The invented strings in ClassifyDenialTest all classified correctly
     while the taxonomy was still keying on bare addresses and on the word
@@ -378,7 +404,7 @@ class ClassifyDenialRealWordingTest(unittest.TestCase):
 
 
 class AggregateCauseTest(unittest.TestCase):
-    """A mixed attempt set must not report a minority reason (TODO.md §1)."""
+    """A mixed attempt set must not report a minority reason (docs/security.md)."""
 
     @staticmethod
     def _attempt(n: int, cause: str) -> "egress.Attempt":
@@ -410,7 +436,7 @@ class AggregateCauseTest(unittest.TestCase):
 
 
 class AnnotateTlsBytesTest(unittest.TestCase):
-    """Decoding the exact alert bytes docs/comparison.md manually decoded."""
+    """Decoding the exact alert bytes docs/engines.md manually decoded."""
 
     def test_decodes_documented_alert_sequence(self) -> None:
         data = b"\x15\x03\x03\x00\x02\x02\x32" + b"\x15\x03\x03\x00\x02\x01\x00"
@@ -440,7 +466,7 @@ class LogDeltaTest(unittest.TestCase):
 class LogCaptureTest(unittest.TestCase):
     """`--backend-bin`/`--container` end to end, via a tiny fake backend
     that returns a growing log on every `logs` call — no real container
-    runtime available in this environment (TODO.md §1's log-capture item)."""
+    runtime available in this environment (docs/security.md)."""
 
     def setUp(self) -> None:
         tmp = Path(tempfile.mkdtemp(prefix="ipl-logcap-test-"))
@@ -508,7 +534,7 @@ class PtrAllowlistTest(unittest.TestCase):
     """`ptr-allowlist` guards a bypass the rest of the suite cannot see:
     Squid retries a `dstdomain` miss as a reverse lookup, so an address
     whose PTR names an allowlisted host is allowed through. Measured before
-    the fix (docs/comparison.md), and `direct-ip-connect` passed throughout
+    the fix (docs/engines.md), and `direct-ip-connect` passed throughout
     — it uses an address with no PTR claim."""
 
     def setUp(self) -> None:
@@ -587,7 +613,7 @@ class DnsRebindTest(unittest.TestCase):
     """`dns-rebinding` grades on one thing: whether the fixture saw a
     connection. The mock proxy stands in for the engine's verdict on each
     CONNECT; the fixture transcript is supplied directly, since the real
-    one is read from a container's log stream (docs/comparison.md
+    one is read from a container's log stream (docs/engines.md
     "DNS rebinding")."""
 
     def setUp(self) -> None:

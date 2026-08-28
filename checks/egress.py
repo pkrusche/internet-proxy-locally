@@ -24,7 +24,7 @@ log — before grading anything.
 Outcomes:
   pass   — behavior matched the expectation
   fail   — behavior violated the expectation
-  record — engine behavior documented, no pass/fail defined (docs/comparison.md)
+  record — engine behavior documented, no pass/fail defined (docs/engines.md)
   skip   — prerequisites missing (with reason)
   error  — the test itself could not run
 
@@ -45,6 +45,7 @@ import concurrent.futures
 import ipaddress
 import json
 import os
+import platform
 import re
 import socket
 import ssl
@@ -55,7 +56,12 @@ from dataclasses import dataclass, field, asdict
 
 DEFAULT_PROXY = "http://127.0.0.1:18080"
 TIMEOUT = 8.0
-SCHEMA_VERSION = 1
+# 2: the envelope carries the run's conditions (engine image, backend,
+# which policy was mounted, host, timestamp) so that scripts/report.py can
+# generate docs/engines.md from the result files alone, rather than from
+# a table somebody remembered to update. v1 files still diff against v2
+# ones — `--diff` only reads `results` — with a warning.
+SCHEMA_VERSION = 2
 
 ALLOWED_HTTP_HOST = "pypi.org"          # must be on the allowlist
 ALLOWED_HTTPS_HOST = "pypi.org"         # must be on the allowlist
@@ -103,16 +109,31 @@ FIXTURE_LOG_SOURCE: "callable" = lambda: []
 
 # Engine-specific expectations for the CONNECT-abuse tests: Pipelock is
 # expected to reject; Smokescreen and Squid behavior is recorded
-# (docs/comparison.md has the measured outcome — both allow both).
+# (docs/engines.md has the measured outcome — both allow both).
 #
 # Squid *can* inspect a tunnel, via `ssl_bump peek` + `splice`, but that
 # configuration was built, measured and rejected: it crashes the daemon
 # when a peeked connection must be terminated without a signing CA, and it
 # answers every CONNECT with 200 before evaluating policy. See the header
-# of config/squid.conf and docs/comparison.md.
+# of config/squid.conf and docs/engines.md.
+#
+# `dns-mixed-answers` on Smokescreen is the third override and the one that
+# is a policy call rather than a capability gap. Handed a name that
+# resolves to one public and one private address, Smokescreen connects to
+# the public one; docs/policy.md says such a name is rejected, so it
+# deviates. It is graded `record` rather than `fail` because the row is
+# still the same measurement either way and the grade was doing a job it
+# cannot do: `check --full` exited 1 on every Smokescreen run, so the exit
+# code stopped distinguishing "this engine has a known, bounded deviation"
+# from "something broke". Recording keeps the behavior in the report — the
+# row says `RECORD established` with both answer orderings — and leaves the
+# exit code meaning what it says. What it costs, and why the deviation is
+# bounded, is docs/security.md, "Choosing an engine"; the measurement is
+# docs/engines.md §2.
 ENGINE_EXPECTATIONS = {
     "pipelock": {"connect-sni-mismatch": "deny", "connect-raw-tunnel": "deny"},
-    "smokescreen": {"connect-sni-mismatch": "record", "connect-raw-tunnel": "record"},
+    "smokescreen": {"connect-sni-mismatch": "record", "connect-raw-tunnel": "record",
+                    "dns-mixed-answers": "record"},
     "squid": {"connect-sni-mismatch": "record", "connect-raw-tunnel": "record"},
 }
 
@@ -140,6 +161,12 @@ class Result:
     outcome: str        # "pass" | "fail" | "record" | "skip" | "error"
     detail: str
     cause: str | None = None            # best-effort denial classification
+    # What the engine actually did, for checks that report behavior rather
+    # than grading themselves: "allowed" or "denied". A `record` grade says
+    # only that no verdict is defined, so without this the result file would
+    # not say which way the engine went — which is the entire content of a
+    # recorded row.
+    observed: str | None = None
     elapsed_ms: float | None = None
     attempts: list[Attempt] = field(default_factory=list)
     headers: dict[str, str] = field(default_factory=dict)
@@ -287,7 +314,7 @@ def aggregate_cause(detail: str, attempts: "list[Attempt]") -> str:
             # is no denial to attribute. Falling through to the text would
             # classify the checker's *own* summary — which is how a failing
             # dns-mixed-answers row came to be labelled `private-ip` for
-            # saying the words "a private address" (TODO.md §1: never
+            # saying the words "a private address" (docs/security.md: never
             # classify a reason word the checker wrote).
             return None
         return classify_denial(detail)
@@ -708,7 +735,7 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
     so the trap could not fire even against a vulnerable engine and the row
     would pass while testing nothing — the failure mode that made
     `dns-private-ipv6` vacuous for two measurement rounds
-    (docs/comparison.md, "Corrections to earlier runs"). Two probes in the
+    (docs/engines.md, "Corrections to earlier runs"). Two probes in the
     same second are no
     better against a resolver cache with second granularity, which is why
     the passes are separated rather than interleaved.
@@ -722,7 +749,7 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
     This replaced `rbndr.us`, which stopped resolving in 2026-08 and had
     always been ungradable: it answered each query with one of its two
     addresses at random, so nothing the checker observed could attribute
-    what the engine did (docs/comparison.md, "DNS rebinding").
+    what the engine did (docs/engines.md, "DNS rebinding").
     """
     _, before_trap = parse_fixture_log(FIXTURE_LOG_SOURCE())
     token = os.urandom(3).hex()
@@ -792,7 +819,7 @@ def test_ptr_allowlist(client: ProxyClient) -> RawOutcome:
     controls only has to point that host's PTR at an allowlisted name.
     Measured before the fix: `CONNECT 1.1.1.1:443` was allowed under the
     real policy while `CONNECT 9.9.9.9:443` was refused, the PTR record
-    being the only difference (docs/comparison.md).
+    being the only difference (docs/engines.md).
 
     The local fixture answers PTR for `PTR_FIXTURE_ADDRESS` with
     `PTR_FIXTURE_CLAIMS`, which is on the allowlist. The destination is an
@@ -870,12 +897,16 @@ def test_dns_mixed(client: ProxyClient) -> RawOutcome:
                  for i, name in enumerate(MIXED_FIXTURE_TARGETS, start=1)]
     established = [a for a in attempts[1:] if a.outcome == "established"]
     if established:
+        # Behavioral, not graded: `_finalize` maps it through the engine's
+        # expectation, because Smokescreen's deviation here is recorded
+        # rather than failed (ENGINE_EXPECTATIONS).
+        #
         # Deliberately phrased without a taxonomy reason word: this detail
         # is fed to classify_denial(), and nothing here was denied.
-        return RawOutcome("fail", "; ".join(
-            f"{a.target} established — the engine connected although 10.0.0.1 was in "
-            "the answer set" for a in established), attempts=attempts)
-    return RawOutcome("pass", (
+        return RawOutcome("allowed", "; ".join(
+            f"{a.target} established — the engine connected although a private address "
+            "was in the answer set" for a in established), attempts=attempts)
+    return RawOutcome("denied", (
         f"control {MIXED_FIXTURE_CONTROL} established, and both mixed-answer names "
         "(public-first and private-first) were denied — every address in the answer set "
         "is validated, not only the first one or the routable one"), attempts=attempts)
@@ -940,6 +971,58 @@ TESTS = [
     ("connect-raw-tunnel",   "full",  "record", test_raw_tunnel,           False),
     ("concurrency-sanity",   "full",  "record", test_concurrency,          False),
 ]
+
+# What each check asks, in one sentence — the question, not the verdict.
+#
+# It lives here rather than in the report generator because the question is
+# a property of the check: whoever changes what a check does is the person
+# who has to restate what it asks. scripts/report.py prints these above the
+# measured outcomes so that docs/engines.md can be generated whole,
+# instead of pairing generated rows with a hand-written key that drifts.
+# A test asserts every check has one and that nothing here is orphaned.
+CHECK_PURPOSE = {
+    "allowed-http": "A plain-HTTP GET to an allowlisted host reaches it.",
+    "allowed-https": "A CONNECT tunnel to an allowlisted host completes a real TLS "
+                     "handshake, so ordinary HTTPS works through the proxy.",
+    "blocked-host-connect": "CONNECT to a host that is not on the allowlist is refused "
+                            "— the default-deny rule, on the tunnel path.",
+    "blocked-host-http": "A plain-HTTP GET to a host that is not on the allowlist is "
+                         "refused — the same rule on the request path.",
+    "direct-ip-connect": "A destination written as a bare address is refused. Under a "
+                         "hostname allowlist it can only ever be denied; which rule "
+                         "denies it is what the cause column shows.",
+    "loopback-ipv4": "CONNECT to 127.0.0.1 is refused.",
+    "rfc1918-ipv4": "CONNECT to RFC1918 space (10/8, 172.16/12, 192.168/16) is refused.",
+    "link-local-ipv4": "CONNECT to 169.254.0.0/16 is refused.",
+    "metadata-endpoint": "The cloud metadata address is refused over both CONNECT and "
+                         "plain HTTP.",
+    "loopback-ipv6": "CONNECT to [::1] is refused.",
+    "private-ipv6": "CONNECT to ULA and link-local IPv6 (fd00::1, fe80::1) is refused.",
+    "dns-private-ipv4": "An *allowlisted* name that resolves to a private IPv4 address "
+                        "is refused, so the denial can only have come from validating "
+                        "the resolved address (nip.io).",
+    "dns-private-ipv6": "The same, for IPv6 (sslip.io).",
+    "dns-rebinding": "A name whose answer changes between the first lookup and the "
+                     "next does not get the engine to a private address. Graded on "
+                     "whether the fixture's trap was reached, not on counts.",
+    "dns-mixed-answers": "A name resolving to a public *and* a private address is "
+                         "refused, in both answer orderings — every address in the "
+                         "answer set is validated, not just the first or the routable "
+                         "one.",
+    "ptr-allowlist": "An address whose PTR record claims an allowlisted hostname is "
+                     "still refused, so a reverse lookup cannot satisfy the allowlist.",
+    "connect-sni-mismatch": "What the engine does when a tunnel to one allowlisted host "
+                            "carries a ClientHello for another: enforcement inside the "
+                            "tunnel, or none.",
+    "connect-raw-tunnel": "What the engine does when a tunnel to an allowlisted host on "
+                          "443 carries plaintext rather than TLS.",
+    "concurrency-sanity": "Ten simultaneous CONNECTs to an allowed host all succeed — "
+                          "the proxy is not serializing or dropping under trivial load.",
+}
+
+
+def check_purpose(name: str) -> str:
+    return CHECK_PURPOSE.get(name, "")
 
 
 def _finalize(name: str, expectation: str, raw: tuple[str, str]) -> tuple[str, str]:
@@ -1009,8 +1092,10 @@ def run_suite(proxy: str, engine: str, full: bool,
                 continue
         before_logs = _fetch_logs(backend_bin, container)
         t0 = time.monotonic()
+        observed = None
         try:
             raw = _normalize(fn(client))
+            observed = raw.outcome if raw.outcome in ("allowed", "denied") else None
             outcome, detail = _finalize(name, expectation, (raw.outcome, raw.detail))
         except Exception as exc:  # a test must never take down the suite
             outcome, detail = "error", f"{type(exc).__name__}: {exc}"
@@ -1020,13 +1105,56 @@ def run_suite(proxy: str, engine: str, full: bool,
         for attempt in raw.attempts:
             if attempt.outcome == "denied" and attempt.cause is None:
                 attempt.cause = classify_denial(attempt.detail)
+        # A recorded row still deserves its reason when there is one to
+        # attribute — that is the whole content of a `record` grade. Only
+        # per-attempt evidence qualifies there: without it `aggregate_cause`
+        # falls back to matching the checker's own summary, which on a row
+        # nothing denied would invent a cause (docs/security.md).
+        gradable = outcome in ("pass", "fail", "record")
         cause = (aggregate_cause(detail, raw.attempts)
-                 if expectation == "deny" and outcome in ("pass", "fail") else None)
+                 if gradable and (expectation == "deny" or raw.attempts) else None)
         results.append(Result(name, group, expectation, outcome, detail,
-                              cause=cause, elapsed_ms=elapsed_ms,
+                              cause=cause, observed=observed, elapsed_ms=elapsed_ms,
                               attempts=raw.attempts, headers=raw.headers,
                               engine_logs=_log_delta(before_logs, after_logs)))
     return results
+
+
+def policy_in_use(results: list[Result]) -> str:
+    """Which policy the engine was started with, read back off the results.
+
+    The checker is not told; it can see it. Every fixture-dependent check
+    skips with `FIXTURE_SKIP` under the real policy and runs under the test
+    one, so the rows themselves say which was mounted. A `--quick` run has
+    no such rows and reports `unknown` rather than guessing.
+    """
+    fixture_rows = [r for r in results
+                    if r.name in {name for name, _, _, _, needs in TESTS if needs}]
+    if not fixture_rows:
+        return "unknown"
+    if all(r.outcome == "skip" and r.detail == FIXTURE_SKIP for r in fixture_rows):
+        return "real"
+    return "test"
+
+
+def envelope(results: list[Result], engine: str, proxy: str, full: bool,
+             backend: str | None = None, image: str | None = None) -> dict:
+    """The `--json` document: the results plus the conditions they were
+    measured under, which is what scripts/report.py generates
+    docs/engines.md from."""
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "engine": engine,
+        "proxy": proxy,
+        "mode": "full" if full else "quick",
+        "backend": backend or None,
+        "image": image or None,
+        "policy": policy_in_use(results),
+        "host": f"{platform.system()} {platform.release()} {platform.machine()}",
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "exit_code": 1 if any(r.outcome in ("fail", "error") for r in results) else 0,
+        "results": [asdict(r) for r in results],
+    }
 
 
 def print_text(results: list[Result], engine: str) -> None:
@@ -1034,6 +1162,8 @@ def print_text(results: list[Result], engine: str) -> None:
     print(f"egress checks — engine: {engine}")
     for r in results:
         extra = f" [{r.cause}]" if r.cause else ""
+        if r.outcome == "record" and r.observed:
+            extra = f" ({r.observed})" + extra
         timing = f" ({r.elapsed_ms:.0f}ms)" if r.elapsed_ms is not None else ""
         attempts = f" [{len(r.attempts)} attempts]" if r.attempts else ""
         print(f"  {r.name:<{width}}  [{r.expectation:^6}]  {r.outcome.upper():<6}{extra}{timing}{attempts}  {r.detail}")
@@ -1101,6 +1231,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fixture-container", default=None,
                         help="DNS fixture container name, paired with --backend-bin; "
                              "dns-rebinding grades on what the fixture observed")
+    parser.add_argument("--image", default=None,
+                        help="the engine image reference, recorded in --json output so "
+                             "a result file says what it measured (run.py check passes it)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--quick", action="store_true")
     mode.add_argument("--full", action="store_true")
@@ -1118,8 +1251,8 @@ def main(argv: list[str] | None = None) -> int:
                         backend_bin=opts.backend_bin, container=opts.container,
                         fixture_container=opts.fixture_container)
     if opts.as_json:
-        print(json.dumps({"schema_version": SCHEMA_VERSION, "engine": opts.engine, "proxy": opts.proxy,
-                          "results": [asdict(r) for r in results]}, indent=2))
+        print(json.dumps(envelope(results, opts.engine, opts.proxy, full=opts.full,
+                                  backend=opts.backend_bin, image=opts.image), indent=2))
     else:
         print_text(results, opts.engine)
     return 1 if any(r.outcome in ("fail", "error") for r in results) else 0

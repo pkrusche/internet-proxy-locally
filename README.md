@@ -69,23 +69,36 @@ override the defaults. Full reference: [docs/usage.md](docs/usage.md).
 | [usage.md](docs/usage.md) | command reference, lifecycle, health check, local tests |
 | [policy.md](docs/policy.md) | the allowlist, the rules, how to change them |
 | [security.md](docs/security.md) | threat model, fail-closed properties, what it does *not* defend against |
-| [comparison.md](docs/comparison.md) | **measured** Pipelock vs Smokescreen vs Squid results and the default-engine decision |
+| [comparison.md](docs/comparison.md) | **generated** Pipelock vs Smokescreen vs Squid results — every row measured, nothing written by hand |
+| [engines.md](docs/engines.md) | what those results mean: the differences that matter, the corrections, the default-engine decision |
 | [backends.md](docs/backends.md) | Docker vs Apple `container`, parity status, upgrades |
 
 Open work is tracked in [TODO.md](TODO.md).
 
 ## Status
 
-The service is implemented and all three engines have been measured
-against the common adversarial suite
-([docs/comparison.md](docs/comparison.md)). Of 14 graded checks, all three
-pass the same 13. The fourteenth, `dns-mixed-answers`, is new and is the
-first to separate them on enforcement rather than grading: given a
-hostname resolving to both a public and a private address, Pipelock and
-Squid refuse the name and **Smokescreen connects to the public address**,
-so `check --full` exits 1 on Smokescreen. It does not reach the private
-address; the evidence and the decision it forces are under "Mixed DNS
-answers" in docs/comparison.md.
+The service is implemented and all three engines are measured against the
+common adversarial suite on every run of `scripts/report.py --run`, which
+regenerates [docs/comparison.md](docs/comparison.md) from the result files
+in `results/`. Of the 15 checks graded on every engine, all three pass all
+15.
+
+The differences are in the four checks that are *not* graded identically
+everywhere, and they are the interesting part —
+[docs/engines.md](docs/engines.md) is the file to read:
+
+* `dns-mixed-answers` — given a hostname resolving to both a public and a
+  private address, Pipelock and Squid refuse the name and **Smokescreen
+  connects to the public address**, which docs/policy.md says it should
+  not. The row is graded `record` on Smokescreen, so the exit code stays
+  meaningful; the deviation is still measured and still printed.
+* `connect-sni-mismatch` / `connect-raw-tunnel` — Pipelock refuses both;
+  Smokescreen and Squid relay whatever the tunnel carries.
+* `allowed-http` — Pipelock answers 200 where the others answer 301,
+  because it **follows the destination's redirect** and hands back the
+  target's response. Each hop is re-authorized against the allowlist:
+  measured by narrowing the policy around a real cross-host redirect, with
+  a control run that proves the redirect is followed at all.
 
 Pipelock stays the default because it enforces inside CONNECT tunnels
 (SNI verification, TLS-required) where Smokescreen and Squid do not.
@@ -96,9 +109,18 @@ floors are ordinary `dst` ACLs in `config/squid.conf`, ordered ahead of
 the allowlist. That makes them reviewable — and `./run.py setup` checks
 the required ranges and the rule order rather than trusting them.
 
-Not yet verified: the `project-sandbox` integration matrix, and Squid plus
-the DNS fixture on the Docker backend (both were measured on Apple
-`container`). See TODO.md.
+Both backends are verified end to end, the DNS fixture included, by the
+scripts in `scripts/` (docs/backends.md records which release each result
+came from). The service is also measured to fail *closed*: killed
+mid-load and restarted, no request for a denied host ever succeeded on
+any engine.
+
+One thing the architecture diagram implies is **not** true on any machine
+yet: `project-sandbox` does not route sandboxes through this proxy. It
+sets no `HTTP_PROXY` and filters egress with its own allowlist, so
+exporting the variables by hand is currently what puts a client behind
+this proxy. `scripts/verify_sandbox.py` checks that claim against the
+installed tool rather than assuming it. See TODO.md.
 
 ## Important limitation
 
