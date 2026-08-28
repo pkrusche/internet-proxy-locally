@@ -10,7 +10,22 @@ Stdlib only; Python 3.11+.
 
 from __future__ import annotations
 
+import sys
+
+# Ahead of the stdlib imports on purpose. `tomllib` arrived in 3.11, so on
+# an older interpreter (macOS Command Line Tools still ships 3.9) the next
+# import would die with a bare ModuleNotFoundError that names a module the
+# reader has no reason to connect to a version requirement.
+if sys.version_info < (3, 11):
+    sys.exit(
+        f"error: Python 3.11+ required, found {sys.version.split()[0]} "
+        f"at {sys.executable}.\n"
+        "This repository is a uv project: run `uv sync` once, then "
+        "`uv run ./run.py ...`."
+    )
+
 import argparse
+import difflib
 import json
 import os
 import platform
@@ -18,7 +33,6 @@ import re
 import shutil
 import socket
 import subprocess
-import sys
 import time
 import tomllib
 from dataclasses import dataclass, field
@@ -413,7 +427,231 @@ def detect_backend(override: str | None) -> Backend:
 
 
 # ---------------------------------------------------------------------------
-# Policy validation (lightweight, stdlib-only)
+# Policy generation
+# ---------------------------------------------------------------------------
+#
+# config.toml holds the allowlist once; templates/*.j2 hold everything else
+# each engine needs, as literal text. Rendering the two together produces
+# config/<engine>.{yaml,conf} and the `.test` variants, so the three
+# engines cannot express different policies — the thing docs/policy.md used
+# to ask a human to keep true by editing three files.
+#
+# Nothing security-critical is parameterized: the deny floors, the rule
+# order, `cache deny all` and `tls_interception: false` are literal text in
+# the templates. The generator only ever fills in domains, and its output
+# is put through the same `validate_policy_file()` the hand-written files
+# went through — before it is allowed to touch the disk.
+
+
+POLICY_FILE = REPO_ROOT / "config.toml"
+TEMPLATE_DIR = REPO_ROOT / "templates"
+
+# The two forms docs/policy.md defines, and nothing else: `d` (that host
+# exactly) or `*.d` (subdomains of d, never the apex). At least two labels,
+# no leading dot, no regex metacharacters, no scheme/port/path.
+_ALLOW_ENTRY = re.compile(
+    r"\A(?:\*\.)?(?!-)[A-Za-z0-9-]{1,63}(?<!-)(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+\Z"
+)
+
+
+@dataclass(frozen=True)
+class PolicyConfig:
+    """The shared logical policy, read from config.toml."""
+
+    allow: tuple[str, ...]
+    allow_test: tuple[str, ...]
+
+    def exact(self, entries: tuple[str, ...]) -> list[str]:
+        return [entry for entry in entries if not entry.startswith("*.")]
+
+    def wild(self, entries: tuple[str, ...]) -> list[str]:
+        return [entry for entry in entries if entry.startswith("*.")]
+
+
+def _allow_list(raw: object, path: Path, key: str) -> list[str]:
+    if not isinstance(raw, list):
+        raise Fail(f"{path}: {key} must be an array of strings")
+    entries: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            raise Fail(f"{path}: {key} must contain only strings (found {item!r})")
+        entry = item.strip()
+        if entry in entries:
+            raise Fail(f"{path}: {key} lists `{entry}` twice")
+        if not _ALLOW_ENTRY.match(entry):
+            raise Fail(
+                f"{path}: {key} entry `{entry}` is not a valid allowlist form. "
+                "Use `example.com` for one host or `*.example.com` for its "
+                "subdomains (docs/policy.md)."
+            )
+        # `_ALLOW_ENTRY` cannot tell 1.2.3.4 from a hostname, and an
+        # address-form entry is exactly what `http_access deny ip_literal`
+        # exists to refuse: this policy allowlists by name and never by
+        # address (docs/comparison.md).
+        if re.fullmatch(r"[0-9.]+", entry):
+            raise Fail(
+                f"{path}: {key} entry `{entry}` is an address, not a hostname. "
+                "This policy allowlists by name only."
+            )
+        entries.append(entry)
+    return entries
+
+
+def load_policy_config(path: Path = POLICY_FILE) -> PolicyConfig:
+    """Read and validate config.toml. Fails closed on anything ambiguous."""
+    if not path.is_file():
+        raise Fail(f"missing the policy source {path} (it holds the allowlist)")
+    with path.open("rb") as fh:
+        data = tomllib.load(fh)
+    unknown = sorted(set(data) - {"policy"})
+    if unknown:
+        raise Fail(f"{path}: unknown top-level table(s): {', '.join(unknown)}")
+    policy = data.get("policy")
+    if not isinstance(policy, dict):
+        raise Fail(f"{path}: missing the [policy] table")
+    unknown = sorted(set(policy) - {"allow", "test"})
+    if unknown:
+        # A typo here (`allows = [...]`) would otherwise silently render an
+        # empty or truncated allowlist.
+        raise Fail(f"{path}: unknown key(s) in [policy]: {', '.join(unknown)}")
+    allow = _allow_list(policy.get("allow", []), path, "policy.allow")
+    if not allow:
+        raise Fail(f"{path}: policy.allow must not be empty "
+                   "(default deny needs explicit allows)")
+    test = policy.get("test", {})
+    if not isinstance(test, dict):
+        raise Fail(f"{path}: [policy.test] must be a table")
+    unknown = sorted(set(test) - {"allow"})
+    if unknown:
+        raise Fail(f"{path}: unknown key(s) in [policy.test]: {', '.join(unknown)}")
+    allow_test = _allow_list(test.get("allow", []), path, "policy.test.allow")
+    overlap = sorted(set(allow) & set(allow_test))
+    if overlap:
+        raise Fail(f"{path}: policy.test.allow repeats {', '.join(overlap)}, "
+                   "which policy.allow already permits everywhere")
+    return PolicyConfig(tuple(allow), tuple(allow_test))
+
+
+def _yaml_scalar(entry: str) -> str:
+    """Quote what YAML would otherwise read as syntax — `*` starts an alias."""
+    return entry if entry[:1].isalnum() else f'"{entry}"'
+
+
+def _squid_wild(entry: str) -> str:
+    r"""`*.github.com` -> `\.github\.com$`.
+
+    The exact anchored-suffix shape `_squid_regex_to_glob()` reads back, so
+    generation and the cross-engine comparison are inverses of each other.
+    """
+    if not entry.startswith("*."):
+        raise Fail(f"not a wildcard allowlist entry: {entry}")
+    return "\\." + entry[2:].replace(".", "\\.") + "$"
+
+
+def _template_name(spec: "ServiceSpec") -> str:
+    """`config/squid.conf` -> `squid.conf.j2`."""
+    return Path(spec.config_file).name + ".j2"
+
+
+def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
+    """Render every engine config from config.toml. Path -> file contents."""
+    config = load_policy_config() if config is None else config
+    try:
+        from jinja2 import Environment, FileSystemLoader, StrictUndefined
+    except ModuleNotFoundError as exc:  # pragma: no cover - environment issue
+        raise Fail(
+            "jinja2 is required to render the engine policies from config.toml.\n"
+            "Run `uv sync` once, then use `uv run ./run.py ...` "
+            "(or install jinja2 into the interpreter you are using)."
+        ) from exc
+    env = Environment(
+        loader=FileSystemLoader(str(TEMPLATE_DIR)),
+        trim_blocks=True,
+        lstrip_blocks=True,
+        keep_trailing_newline=True,
+        undefined=StrictUndefined,
+        autoescape=False,  # config files, not markup
+    )
+    env.filters["yaml_scalar"] = _yaml_scalar
+    env.filters["squid_wild"] = _squid_wild
+
+    rendered: dict[Path, str] = {}
+    for engine in ENGINES:
+        spec = ServiceSpec.load(engine)
+        name = _template_name(spec)
+        if not (TEMPLATE_DIR / name).is_file():
+            raise Fail(f"missing template: {TEMPLATE_DIR / name}")
+        template = env.get_template(name)
+        for test_policy in (False, True):
+            rel = spec.test_config_file if test_policy else spec.config_file
+            if not rel:
+                raise Fail(f"services/{engine}.toml: config_file and "
+                           "test_config_file are both required")
+            rendered[REPO_ROOT / rel] = template.render(
+                template_name=f"templates/{name}",
+                test_policy=test_policy,
+                allow=list(config.allow),
+                allow_test=list(config.allow_test),
+                allow_exact=config.exact(config.allow),
+                allow_wild=config.wild(config.allow),
+                allow_test_exact=config.exact(config.allow_test),
+                allow_test_wild=config.wild(config.allow_test),
+            )
+    return rendered
+
+
+def check_rendered_policies(rendered: dict[Path, str]) -> list[str]:
+    """Validate rendered text before it is allowed near the disk.
+
+    Auto-regeneration means a template or generator bug could otherwise
+    overwrite a reviewed, working policy with a broken one. The same
+    `validate_policy_file()` invariants that guarded the hand-written files
+    guard the generated ones, plus the superset rule the two variants of
+    each file have to satisfy.
+    """
+    problems: list[str] = []
+    for engine in ENGINES:
+        spec = ServiceSpec.load(engine)
+        real_path = REPO_ROOT / spec.config_file
+        test_path = REPO_ROOT / spec.test_config_file
+        real, test = rendered[real_path], rendered[test_path]
+        problems += validate_policy_text(engine, real, real_path)
+        problems += validate_policy_text(engine, test, test_path)
+        missing = policy_allowlist_text(engine, real) - policy_allowlist_text(engine, test)
+        for entry in sorted(missing):
+            problems.append(f"{test_path}: the test policy must be a strict superset "
+                            f"of the real one, but drops `{entry}`")
+    return problems
+
+
+def sync_policies(config: PolicyConfig | None = None) -> list[Path]:
+    """Regenerate the engine configs from config.toml; return what changed.
+
+    Files whose contents already match are left alone, so a no-op `up`
+    does not churn mtimes or the working tree.
+    """
+    rendered = render_policies(config)
+    problems = check_rendered_policies(rendered)
+    if problems:
+        for problem in problems:
+            print(f"CONFIG ERROR: {problem}", file=sys.stderr)
+        raise Fail("refusing to write a policy that fails validation (fail closed)")
+    changed: list[Path] = []
+    for path, text in sorted(rendered.items()):
+        if not path.is_file() or path.read_text(encoding="utf-8") != text:
+            path.write_text(text, encoding="utf-8")
+            changed.append(path)
+    return changed
+
+
+def sync_policies_reporting() -> None:
+    """`sync_policies()` for the lifecycle commands: quiet when up to date."""
+    for path in sync_policies():
+        print(f"regenerated {path.relative_to(REPO_ROOT)} from config.toml")
+
+
+# ---------------------------------------------------------------------------
+# Policy validation (lightweight, stdlib-only — independent of the generator)
 # ---------------------------------------------------------------------------
 
 
@@ -503,7 +741,16 @@ def _require(cond: bool, path: Path, message: str, problems: list[str]) -> None:
 
 def validate_policy_file(engine: str, path: Path) -> list[str]:
     """Return a list of human-readable policy problems (empty = OK)."""
-    text = path.read_text()
+    return validate_policy_text(engine, path.read_text(), path)
+
+
+def validate_policy_text(engine: str, text: str, path: Path) -> list[str]:
+    """As `validate_policy_file`, on text that may not be on disk yet.
+
+    `sync_policies()` uses this to check a rendered policy *before* writing
+    it, so a generator bug cannot overwrite a working config with a broken
+    one. `path` is used only to name the file in the messages.
+    """
     problems: list[str] = []
     if engine == "pipelock":
         _require(re.search(r"^mode:\s*strict\b", text, re.M) is not None, path,
@@ -561,7 +808,7 @@ def validate_policy_file(engine: str, path: Path) -> list[str]:
         _require(re.search(r"^\s*cache\s+deny\s+all\b", text, re.M) is not None, path,
                  "must set `cache deny all` (a cache hit is a response nobody re-authorized)",
                  problems)
-        _require(len(policy_allowlist("squid", path)) > 0, path,
+        _require(len(policy_allowlist_text("squid", text)) > 0, path,
                  "the allowlist must not be empty (default deny needs explicit allows)", problems)
     else:
         raise Fail(f"unknown engine: {engine}")
@@ -571,7 +818,11 @@ def validate_policy_file(engine: str, path: Path) -> list[str]:
 def policy_allowlist(engine: str, path: Path) -> set[str]:
     """The engine's allowlist, normalized to the shared `d` / `*.d` forms of
     docs/policy.md so the three files can be compared directly."""
-    text = path.read_text()
+    return policy_allowlist_text(engine, path.read_text())
+
+
+def policy_allowlist_text(engine: str, text: str) -> set[str]:
+    """As `policy_allowlist`, on text that may not be on disk yet."""
     if engine == "pipelock":
         return set(_yaml_list(text, "api_allowlist"))
     if engine == "squid":
@@ -712,10 +963,53 @@ def running_engine(backend: Backend) -> str | None:
     return None
 
 
+def cmd_policy(opts: argparse.Namespace) -> int:
+    """Render config.toml into the engine configs, or report the drift.
+
+    `setup` and `up` do this on their own; this exists so a config.toml
+    edit can be reviewed — and CI can assert the committed files match —
+    without a container runtime.
+    """
+    rendered = render_policies()
+    problems = check_rendered_policies(rendered)
+    if problems:
+        for problem in problems:
+            print(f"CONFIG ERROR: {problem}", file=sys.stderr)
+        raise Fail("configuration validation failed")
+
+    stale = [(path, body) for path, body in sorted(rendered.items())
+             if not path.is_file() or path.read_text(encoding="utf-8") != body]
+    if not opts.check:
+        for path in sync_policies():
+            print(f"regenerated {path.relative_to(REPO_ROOT)} from config.toml")
+        print("configs: up to date with config.toml")
+        return 0
+
+    for path, body in stale:
+        rel = path.relative_to(REPO_ROOT)
+        current = (path.read_text(encoding="utf-8").splitlines(keepends=True)
+                   if path.is_file() else [])
+        sys.stdout.writelines(difflib.unified_diff(
+            current, body.splitlines(keepends=True),
+            fromfile=f"{rel} (on disk)", tofile=f"{rel} (from config.toml)"))
+    if stale:
+        names = ", ".join(str(path.relative_to(REPO_ROOT)) for path, _ in stale)
+        print(f"\nSTALE: {names}", file=sys.stderr)
+        print("Run `./run.py policy` to regenerate, then commit.", file=sys.stderr)
+        return 1
+    print("configs: up to date with config.toml")
+    return 0
+
+
 def cmd_setup(opts: argparse.Namespace) -> int:
-    if sys.version_info < (3, 11):
-        raise Fail(f"Python 3.11+ required (found {platform.python_version()})")
+    # The hard guard is at the top of this file, ahead of the stdlib
+    # imports; by here the version is known good and only worth reporting.
     print(f"python: {platform.python_version()} — OK")
+
+    # Before validating: the files validated below are rendered from
+    # config.toml, so a stale one would be reported as a policy problem
+    # that editing it could not fix.
+    sync_policies_reporting()
 
     for name in BACKENDS:
         state = "available" if Backend(name).available() else "not installed"
@@ -889,6 +1183,13 @@ def cmd_up(opts: argparse.Namespace) -> int:
     backend = detect_backend(opts.backend)
     host, port = endpoint()
 
+    # The policy the container is about to bind-mount is rendered from
+    # config.toml first, so `up` can never start an engine on a config that
+    # disagrees with the reviewed allowlist. `sync_policies()` validates
+    # the rendered text before writing it, so a bad config.toml fails here
+    # rather than replacing a working file.
+    sync_policies_reporting()
+
     config_path = spec.config_path(opts.test_policy)
     problems = validate_policy_file(engine, config_path)
     if problems:
@@ -1060,6 +1361,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backend", choices=BACKENDS, default=None,
                         help="container backend (default: Apple `container` on macOS when installed, else docker)")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p_policy = sub.add_parser("policy",
+                              help="render config/* from config.toml (setup/up do this too)")
+    p_policy.add_argument("--check", action="store_true",
+                          help="report drift as a diff and exit 1 instead of writing")
+    p_policy.set_defaults(func=cmd_policy)
 
     p_setup = sub.add_parser("setup", help="validate prerequisites, pull/build pinned images")
     p_setup.add_argument("--rebuild", action="store_true",

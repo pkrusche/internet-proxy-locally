@@ -12,6 +12,7 @@ Docker and Apple `container` are both first-class. No Docker Compose.
 ## Quick start
 
 ```bash
+uv sync                 # once: create .venv (Python 3.11+, Jinja2)
 ./run.py setup          # validate prerequisites, pull/build pinned images
 ./run.py up             # start the proxy and health-check it
 ./run.py check --quick  # confirm allow/deny behavior
@@ -22,7 +23,26 @@ curl https://github.com          # allowlisted → works
 curl https://example.com         # not allowlisted → denied by the proxy
 ```
 
-Requires Python 3.11+ (stdlib only) and Docker or Apple `container`.
+Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and Docker or
+Apple `container`. The only dependency is Jinja2, used by one code path —
+rendering the engine configs from `config.toml`. It is imported lazily, so
+`down`, `status` and `logs` still work on a bare interpreter.
+
+## The allowlist
+
+`config.toml` at the repository root holds the allowlist, once:
+
+```toml
+[policy]
+allow = ["github.com", "*.github.com", "pypi.org", ...]
+```
+
+`./run.py` renders it into all six engine configs (`config/*.yaml`,
+`config/squid.conf` and the `.test` variants) through `templates/`, and
+`setup` / `up` / `restart` do that before starting anything — so the three
+engines cannot express different policies. Edit `config.toml`, run
+`./run.py up`, commit both. `./run.py policy --check` reports drift
+without writing. See [docs/policy.md](docs/policy.md).
 
 ## Commands
 
@@ -36,6 +56,7 @@ Requires Python 3.11+ (stdlib only) and Docker or Apple `container`.
 | `./run.py restart` | explicit teardown then up |
 | `./run.py down` | remove containers owned by this repository |
 | `./run.py pin` | record immutable image/source pins |
+| `./run.py policy` | render `config/*` from `config.toml` (`--check` to report drift) |
 
 `--engine pipelock|smokescreen|squid` and `--backend docker|container`
 override the defaults. Full reference: [docs/usage.md](docs/usage.md).

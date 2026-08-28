@@ -1,0 +1,18 @@
+# internet-proxy-locally.
+#
+# `run.py` and `checks/egress.py` remain stdlib-only at runtime: the one
+# dependency below is used by a single code path, the policy generator
+# (`render_policies()` in run.py), which renders templates/*.j2 into
+# config/. Jinja2 is imported lazily there so that `./run.py down`,
+# `status` and `logs` — the commands you want during an incident — keep
+# working with nothing but a Python interpreter.
+
+[project]
+name = "internet-proxy-locally"
+version = "0.1.0"
+description = "Local containerized Internet filtering proxy for coding-agent sandboxes"
+requires-python = ">=3.11"
+dependencies = ["jinja2>=3.1"]
+
+[tool.uv]
+package = false

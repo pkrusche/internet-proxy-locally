@@ -1,11 +1,19 @@
 # Usage
 
-One CLI drives both container backends. `run.py` is stdlib-only and needs
-Python 3.11+ (it imports `tomllib`). 
+One CLI drives both container backends. `run.py` needs Python 3.11+ (it
+imports `tomllib`) and refuses to run on anything older with a message
+naming the interpreter it found. Its one dependency is Jinja2, used only
+to render `config/*` from `config.toml` and imported lazily inside that
+code path — so `down`, `status` and `logs` keep working on a bare
+interpreter with no virtualenv, which is when you most want them.
+
+```bash
+uv sync    # once: creates .venv from pyproject.toml / uv.lock
+```
 
 ```text
 usage: run.py [--engine {pipelock,smokescreen,squid}] [--backend {docker,container}]
-              {setup,up,restart,down,status,logs,check,pin} ...
+              {policy,setup,up,restart,down,status,logs,check,pin} ...
 ```
 
 ## Lifecycle semantics
@@ -21,6 +29,20 @@ usage: run.py [--engine {pipelock,smokescreen,squid}] [--backend {docker,contain
 
 ## Commands
 
+### `policy [--check]`
+
+Renders `config.toml` into all six engine configs through `templates/*.j2`
+and writes the ones that changed, naming each. `--check` instead prints a
+unified diff for every stale file and exits 1 without writing — the form
+for review and CI.
+
+Either way the rendered text is validated first (the same
+`validate_policy_file()` checks, plus the rule that each `.test` variant is
+a strict superset of its real counterpart), so a bad `config.toml` fails
+before it can overwrite a working policy. `setup`, `up` and `restart` run
+this for you; the subcommand exists to review a `config.toml` edit without
+a container runtime.
+
 ### `setup`
 
 `--rebuild` forces a rebuild of a locally built image (Smokescreen,
@@ -28,14 +50,20 @@ Squid); `--all` prepares every engine.
 
 Validates the Python version, detects available backends, verifies engine
 prerequisites, pulls the pinned Pipelock image by digest, builds the
-Smokescreen and Squid images when needed, and validates all three config
-files plus their cross-engine allowlist sync. It never modifies system
-networking.
+Smokescreen and Squid images when needed, and — after regenerating them
+from `config.toml` — validates all three config files plus their
+cross-engine allowlist sync. It never modifies system networking.
 
 ### `up [--test-policy]`
 
-Validates the policy, recreates the container, publishes the stable
-endpoint, and runs a post-start health check. It refuses to start when:
+Regenerates `config/*` from `config.toml`, validates the policy, recreates
+the container, publishes the stable endpoint, and runs a post-start health
+check. Regeneration comes first so the file bind-mounted into the
+container is always what `config.toml` says; a hand edit to `config/` is
+overwritten rather than silently started. It refuses to start when:
+
+* `config.toml` is malformed, or holds an entry that is not a bare
+  hostname or a `*.` wildcard (nothing is written and nothing starts);
 
 * the policy file is invalid or non-strict;
 * the image is unpinned (no digest / source SHA / package version) or
@@ -169,7 +197,8 @@ upgrade procedure.
 ## Local test suite
 
 ```bash
-python3 -m unittest discover -s tests
+uv sync                                     # once
+uv run python -m unittest discover -s tests
 ```
 
 No network and no container runtime required: a fake backend shim records

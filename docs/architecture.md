@@ -58,6 +58,29 @@ pinning; every engine configuration; the Internet allowlist; SSRF/private
 -address policy; proxy lifecycle; logs; health and status; the upgrade
 procedure; the security tests; and the cross-engine comparison.
 
+## Where the policy comes from
+
+```text
+config.toml            the allowlist, written once
+   +  templates/*.j2   everything else each engine needs, as literal text
+   |
+   |  ./run.py policy  (also run by setup / up / restart)
+   v
+config/pipelock.yaml   config/smokescreen.yaml   config/squid.conf
+config/*.test.*        the same, plus [policy.test]
+   |
+   |  --volume ...:ro
+   v
+the running container
+```
+
+The generated files are committed, because they are what a reviewer reads
+and what the container mounts. Only domains are generated: the deny
+floors, rule order and every enforcement switch are literal text in the
+templates. `validate_policy_file()` — a regex reader that knows nothing
+about the generator — checks the rendered output before it is written, so
+a generator bug fails closed instead of shipping (docs/policy.md).
+
 ## Non-goals
 
 This service does not aim to replace Agentgateway, proxy MCP, proxy

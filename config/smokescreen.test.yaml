@@ -1,8 +1,15 @@
+# GENERATED FILE — do not edit.
+#
+# Rendered from config.toml by ./run.py, via templates/smokescreen.yaml.j2.
+# To change the allowlist, edit config.toml and run `./run.py policy`
+# (or just `./run.py up`, which regenerates first). A hand edit here is
+# silently overwritten and is caught by the test suite.
+#
 # TEST POLICY — NEVER use for normal operation.
 #
-# Identical to config/smokescreen.yaml plus wildcard DNS fixture domains
-# (nip.io / sslip.io), plus the names the local DNS fixture serves
-# (services/dnsfixture.toml). All of them resolve to arbitrary,
+# config/smokescreen.yaml plus the `[policy.test]` entries from
+# config.toml: wildcard DNS services and the names the local DNS fixture
+# serves (services/dnsfixture.toml). All of them resolve to arbitrary,
 # attacker-chosen IPs. Allowlisting them is the point of the test: with
 # the hostname allowed, Smokescreen's built-in IP-range blocking must
 # still deny private/loopback/link-local/metadata destinations.
@@ -26,14 +33,10 @@ default:
     - pypi.org
     - files.pythonhosted.org
     - registry.npmjs.org
-    # --- DNS fixtures for the adversarial suite only ---
+    # --- [policy.test] in config.toml: adversarial fixtures only ---
     - "*.nip.io"
     - "*.sslip.io"
-    # --- local DNS fixture (services/dnsfixture.toml) ---
-    # Mixed public+private answer sets, from config/dns-fixture.hosts:
     - public-only.fixture.test
     - mixed-public-first.fixture.test
     - mixed-private-first.fixture.test
-    # Rebinding zone, answered by images/dnsfixture/rebind.py. Allowlisted
-    # so that a denial can only come from the address it was handed:
     - "*.rebind.fixture.test"

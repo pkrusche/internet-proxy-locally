@@ -223,6 +223,23 @@ Fixed to `0--1.sslip.io`.
 
 ## 5. Smaller items
 
+* [x] The allowlist is generated. **Done** — `config.toml` at the repo
+      root is the single source of truth; `./run.py` renders all six engine
+      configs from it through `templates/*.j2`, and `setup`/`up`/`restart`
+      do that before starting anything. Rendered text is validated before
+      it is written, so a bad `config.toml` cannot replace a working
+      policy. `./run.py policy --check` reports drift; a test asserts the
+      committed files are exactly what `config.toml` renders. This closes
+      the hand-sync burden docs/policy.md used to describe.
+
+      What it does **not** close: the DNS-fixture names are still
+      hand-synced between `[policy.test]` in `config.toml`,
+      `config/dns-fixture.hosts`, `images/dnsfixture/rebind.py` and the
+      `MIXED_FIXTURE_*` / `REBIND_ZONE` constants in `checks/egress.py`.
+      A test checks the records against the checker's constants; nothing
+      checks either against `config.toml`. Worth generating the hosts file
+      from the same source.
+
 * [x] Attributed the `allowed-http` 200-vs-301 difference: response
       headers show Smokescreen answered at the Fastly edge (`Server:
       Varnish`, `Location: https://pypi.org/`) and Pipelock at pypi.org's
@@ -234,13 +251,11 @@ Fixed to `0--1.sslip.io`.
       clients — some HTTP clients treat it as a credentials prompt and
       retry-loop instead of surfacing the block. Upstream behavior; may
       only be documentable.
-* [ ] Guard the Python version explicitly. `run.py` documents "Python
-      3.11+" but only fails when `import tomllib` raises, so on a host
-      whose `python3` is older (macOS Command Line Tools ships 3.9)
-      `./run.py` dies with a bare `ModuleNotFoundError` traceback and no
-      hint. The same applies to running the tests. A version check ahead
-      of the stdlib imports, printing the interpreter found and what is
-      required, would turn a confusing traceback into one line.
+* [x] Guard the Python version explicitly. **Done** — `run.py` now checks
+      `sys.version_info` ahead of the stdlib imports and exits with one
+      line naming the interpreter it found, its version, and what is
+      required. `requires-python = ">=3.11"` in `pyproject.toml` covers
+      the same ground for anyone entering through `uv run`.
 
 * [ ] Re-validate Pipelock config keys against the pinned release's
       upstream configuration docs after every version bump — the keys in
@@ -254,7 +269,8 @@ Fixed to `0--1.sslip.io`.
       without updating `deny_info` would silently fall back to Squid's
       generic page and turn every SSRF denial into `unknown`. A parse-level
       check that each `deny_info` names an ACL the file defines would close
-      it.
+      it. Both now live in `templates/squid.conf.j2`, so the check can run
+      against the one template instead of both generated outputs.
 
 * [ ] Squid's `package_version` pin is only as immutable as Alpine's
       repository: unlike a digest or a commit SHA, an apk version can be

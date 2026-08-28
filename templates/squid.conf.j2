@@ -1,13 +1,25 @@
-# GENERATED FILE — do not edit.
+{% include "_banner.j2" %}
+{% if test_policy %}
+# TEST POLICY — NEVER use for normal operation.
 #
-# Rendered from config.toml by ./run.py, via templates/squid.conf.j2.
-# To change the allowlist, edit config.toml and run `./run.py policy`
-# (or just `./run.py up`, which regenerates first). A hand edit here is
-# silently overwritten and is caught by the test suite.
+# config/squid.conf plus the `[policy.test]` entries from config.toml:
+# wildcard DNS services and the names the local DNS fixture serves
+# (services/dnsfixture.toml). All of them resolve to arbitrary,
+# attacker-chosen IPs. Allowlisting them is the point of the test: with the
+# hostname allowed, the `dst` deny floors below — which Squid evaluates
+# against the *resolved* address — must still block the connection. See
+# checks/egress.py and docs/security.md.
 #
+# Activate with:  ./run.py --engine squid up --test-policy
+# Deactivate with a normal `./run.py up` (recreates with the real policy).
+#
+# ---------------------------------------------------------------------------
+#
+{% else %}
 # Squid egress policy: default deny, hostname allowlist, IP-layer SSRF
 # floors evaluated after DNS resolution.
 #
+{% endif %}
 # This file is the Squid expression of the shared logical policy in
 # docs/policy.md. The allowlist below comes from config.toml and is
 # rendered identically into every engine's config, so the three cannot
@@ -34,6 +46,11 @@
 # Listener
 # ---------------------------------------------------------------------------
 
+{% if test_policy %}
+# A plain forward-proxy port: no `ssl-bump`, so CONNECT tunnels are relayed
+# without Squid looking inside them. The reasoning — and the measurements
+# that rejected peek-and-splice — are in config/squid.conf.
+{% else %}
 # A plain forward-proxy port: no `ssl-bump`, so CONNECT tunnels are relayed
 # without Squid looking inside them. Squid *can* peek at the TLS
 # ClientHello without decrypting (`ssl_bump peek` + `splice`), which would
@@ -57,6 +74,7 @@
 #
 # So Squid enforces at the same layer as Smokescreen: the CONNECT target,
 # not the tunnel's contents.
+{% endif %}
 http_port 3128
 
 visible_hostname internet-proxy-locally
@@ -105,6 +123,13 @@ dns_defnames off
 acl CONNECT method CONNECT
 acl TLS_ports port 443
 
+{% if test_policy %}
+# A destination written as a bare address rather than a name. Squid falls
+# back to a PTR lookup for `dstdomain` when an address-form destination
+# matches nothing, which lets anyone who controls a host's reverse DNS
+# satisfy a hostname allowlist. Refusing address-form destinations outright
+# is the fix; the full reasoning is in config/squid.conf.
+{% else %}
 # A destination written as a bare address rather than a name.
 #
 # This exists because of how Squid resolves `dstdomain`: "a reverse lookup
@@ -129,6 +154,7 @@ acl TLS_ports port 443
 # match, so evaluation stops here and no PTR query is made. The IPv6
 # pattern requires a colon so that a single-label hostname made of hex
 # characters is not caught by it.
+{% endif %}
 acl ip_literal dstdom_regex -i ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$
 acl ip_literal dstdom_regex -i ^\[?[0-9a-f]*:[0-9a-f:.]*\]?$
 
@@ -181,21 +207,33 @@ http_access deny CONNECT !TLS_ports
 
 # Must precede the allowlist: the point is to refuse address-form
 # destinations *before* a `dstdomain` rule can fall back to a PTR lookup.
+{% if not test_policy %}
 # Placed after the SSRF floors so a private address still reports the more
 # specific cause.
+{% endif %}
 http_access deny ip_literal
 
 # ---------------------------------------------------------------------------
 # Allowlist
 # ---------------------------------------------------------------------------
 
-acl allowlist_exact dstdomain github.com
-acl allowlist_exact dstdomain pypi.org
-acl allowlist_exact dstdomain files.pythonhosted.org
-acl allowlist_exact dstdomain registry.npmjs.org
+{% for domain in allow_exact %}
+acl allowlist_exact dstdomain {{ domain }}
+{% endfor %}
 
-acl allowlist_wild dstdom_regex -i \.github\.com$
-acl allowlist_wild dstdom_regex -i \.githubusercontent\.com$
+{% for domain in allow_wild %}
+acl allowlist_wild dstdom_regex -i {{ domain | squid_wild }}
+{% endfor %}
+{% if test_policy %}
+
+# --- [policy.test] in config.toml: adversarial fixtures only ---
+{% for domain in allow_test_exact %}
+acl allowlist_exact dstdomain {{ domain }}
+{% endfor %}
+{% for domain in allow_test_wild %}
+acl allowlist_wild dstdom_regex -i {{ domain | squid_wild }}
+{% endfor %}
+{% endif %}
 
 http_access allow allowlist_exact
 http_access allow allowlist_wild

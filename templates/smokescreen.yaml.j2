@@ -1,0 +1,48 @@
+{% include "_banner.j2" %}
+{% if test_policy %}
+# TEST POLICY — NEVER use for normal operation.
+#
+# config/smokescreen.yaml plus the `[policy.test]` entries from
+# config.toml: wildcard DNS services and the names the local DNS fixture
+# serves (services/dnsfixture.toml). All of them resolve to arbitrary,
+# attacker-chosen IPs. Allowlisting them is the point of the test: with
+# the hostname allowed, Smokescreen's built-in IP-range blocking must
+# still deny private/loopback/link-local/metadata destinations.
+#
+# Activate with:  ./run.py --engine smokescreen up --test-policy
+# Deactivate with a normal `./run.py up` (recreates with the real policy).
+{% else %}
+# Smokescreen egress ACL: default deny, enforce mode.
+#
+# This file is the Smokescreen expression of the shared logical policy in
+# docs/policy.md. The allowlist below comes from config.toml and is
+# rendered identically into every engine's config, so the three cannot
+# drift apart.
+#
+# Smokescreen is run with `allow_missing_role: true` (set in
+# config/smokescreen.conf.yaml — it has no CLI equivalent), so every client
+# (no TLS client cert in v1) is subject to the `default` service below.
+# Private/loopback/link-local destination blocking is built into
+# Smokescreen and is NOT disabled here (never pass
+# --unsafe-allow-private-ranges).
+{% endif %}
+
+---
+version: v1
+
+services: []
+
+default:
+  name: default
+  project: internet-proxy-locally
+  action: enforce
+  allowed_domains:
+{% for domain in allow %}
+    - {{ domain | yaml_scalar }}
+{% endfor %}
+{% if test_policy %}
+    # --- [policy.test] in config.toml: adversarial fixtures only ---
+{% for domain in allow_test %}
+    - {{ domain | yaml_scalar }}
+{% endfor %}
+{% endif %}

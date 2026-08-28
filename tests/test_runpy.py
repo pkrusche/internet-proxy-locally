@@ -130,7 +130,11 @@ class RunPyCliTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         # Minimal repo copy so pins can be edited without touching the checkout.
         shutil.copy(REPO_ROOT / "run.py", self.tmp / "run.py")
-        for sub in ("services", "config"):
+        # config.toml and templates/ come too: `setup` and `up` regenerate
+        # config/ from them, so a copy missing either would fail before it
+        # reached the behavior under test.
+        shutil.copy(REPO_ROOT / "config.toml", self.tmp / "config.toml")
+        for sub in ("services", "config", "templates"):
             shutil.copytree(REPO_ROOT / sub, self.tmp / sub)
         # Start from unpinned service specs regardless of what the checkout
         # currently pins, so the fail-closed tests stay meaningful and the
@@ -210,6 +214,73 @@ class RunPyCliTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         self.assertIn("pin squid", proc.stderr)
         self.assertNotIn("run --detach", self.backend_log())
+
+    def test_up_regenerates_a_hand_edited_policy(self) -> None:
+        """`up` renders config/ from config.toml before mounting it, so a
+        hand edit cannot reach a running container."""
+        self.pin_pipelock()
+        policy = self.tmp / "config" / "pipelock.yaml"
+        policy.write_text(policy.read_text(encoding="utf-8")
+                          .replace("  - github.com\n", "  - github.com\n  - evil.example\n"),
+                          encoding="utf-8")
+        proc = self.run_cli("--backend", "docker", "up")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("regenerated config/pipelock.yaml", proc.stdout)
+        self.assertNotIn("evil.example", policy.read_text(encoding="utf-8"))
+
+    def test_up_is_quiet_when_the_configs_are_current(self) -> None:
+        self.pin_pipelock()
+        proc = self.run_cli("--backend", "docker", "up")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("regenerated", proc.stdout)
+
+    def test_up_propagates_a_new_domain_to_the_engine_config(self) -> None:
+        self.pin_pipelock()
+        config_toml = self.tmp / "config.toml"
+        config_toml.write_text(
+            config_toml.read_text(encoding="utf-8")
+            .replace('    "github.com",', '    "github.com",\n    "*.example.test",'),
+            encoding="utf-8")
+        proc = self.run_cli("--backend", "docker", "up")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('  - "*.example.test"',
+                      (self.tmp / "config" / "pipelock.yaml").read_text(encoding="utf-8"))
+        self.assertIn(r"dstdom_regex -i \.example\.test$",
+                      (self.tmp / "config" / "squid.conf").read_text(encoding="utf-8"))
+        self.assertIn('    - "*.example.test"',
+                      (self.tmp / "config" / "smokescreen.yaml").read_text(encoding="utf-8"))
+
+    def test_up_refuses_a_bad_config_toml_and_starts_nothing(self) -> None:
+        """A malformed allowlist entry must stop `up` before any container
+        runs, and must not damage the configs already on disk."""
+        self.pin_pipelock()
+        config_toml = self.tmp / "config.toml"
+        before = (self.tmp / "config" / "squid.conf").read_text(encoding="utf-8")
+        config_toml.write_text(
+            config_toml.read_text(encoding="utf-8")
+            .replace('    "github.com",', '    "1.2.3.4",'), encoding="utf-8")
+        proc = self.run_cli("--backend", "docker", "up")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("1.2.3.4", proc.stderr)
+        self.assertIn("address", proc.stderr)
+        self.assertNotIn("run --detach", self.backend_log())
+        self.assertEqual((self.tmp / "config" / "squid.conf").read_text(encoding="utf-8"),
+                         before)
+
+    def test_policy_check_reports_drift_without_writing(self) -> None:
+        policy = self.tmp / "config" / "squid.conf"
+        policy.write_text(policy.read_text(encoding="utf-8") + "\n# stray edit\n",
+                          encoding="utf-8")
+        proc = self.run_cli("policy", "--check")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("STALE", proc.stderr)
+        self.assertIn("stray edit", proc.stdout)  # shown as a diff
+        self.assertIn("# stray edit", policy.read_text(encoding="utf-8"))
+
+        proc = self.run_cli("policy")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("# stray edit", policy.read_text(encoding="utf-8"))
+        self.assertEqual(self.run_cli("policy", "--check").returncode, 0)
 
     def test_up_refuses_occupied_port(self) -> None:
         self.pin_pipelock()
@@ -562,6 +633,170 @@ class RunPyUnitTest(unittest.TestCase):
     def test_shipped_allowlists_are_in_sync(self) -> None:
         self.assertEqual(self.run_mod.check_allowlist_sync(False), [])
         self.assertEqual(self.run_mod.check_allowlist_sync(True), [])
+
+    # --- config.toml -> config/* generation --------------------------------
+
+    def policy_config(self, allow, allow_test=()):
+        """A config.toml on disk holding the given lists."""
+        tmp = Path(tempfile.mkdtemp(prefix="ipl-config-toml-test-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = tmp / "config.toml"
+        # TOML literal strings: the bad-entry cases include backslashes,
+        # which a basic string would reject before the loader sees them.
+        body = "[policy]\nallow = [\n"
+        body += "".join(f"    '{entry}',\n" for entry in allow)
+        body += "]\n\n[policy.test]\nallow = [\n"
+        body += "".join(f"    '{entry}',\n" for entry in allow_test)
+        body += "]\n"
+        path.write_text(body)
+        return path
+
+    def test_shipped_configs_match_config_toml(self) -> None:
+        """The committed configs must be exactly what config.toml renders.
+
+        This is the guard that makes the generator the source of truth: a
+        hand edit to config/, or a config.toml change committed without
+        regenerating, fails here rather than silently shipping a policy
+        nobody reviewed.
+        """
+        for path, body in sorted(self.run_mod.render_policies().items()):
+            rel = path.relative_to(REPO_ROOT)
+            self.assertTrue(path.is_file(), f"{rel} is missing")
+            self.assertEqual(
+                path.read_text(encoding="utf-8"), body,
+                f"{rel} is stale — run `./run.py policy` and commit the result")
+
+    def test_generated_policies_validate(self) -> None:
+        """Auto-regeneration means the generator's output is what runs, so it
+        goes through the same checks the hand-written files went through."""
+        rendered = self.run_mod.render_policies()
+        self.assertEqual(self.run_mod.check_rendered_policies(rendered), [])
+
+    def test_generated_allowlists_round_trip(self) -> None:
+        """Every engine's rendered file reads back as exactly the config.toml
+        list — so `squid_wild` and `_squid_regex_to_glob` stay inverses."""
+        config = self.run_mod.load_policy_config()
+        rendered = self.run_mod.render_policies(config)
+        base = set(config.allow)
+        full = base | set(config.allow_test)
+        for engine in self.run_mod.ENGINES:
+            spec = self.run_mod.ServiceSpec.load(engine)
+            for test_policy, expected in ((False, base), (True, full)):
+                rel = spec.test_config_file if test_policy else spec.config_file
+                entries = self.run_mod.policy_allowlist_text(
+                    engine, rendered[REPO_ROOT / rel])
+                self.assertEqual(entries, expected, rel)
+
+    def test_test_policy_is_a_strict_superset(self) -> None:
+        config = self.run_mod.load_policy_config()
+        rendered = self.run_mod.render_policies(config)
+        for engine in self.run_mod.ENGINES:
+            spec = self.run_mod.ServiceSpec.load(engine)
+            real = self.run_mod.policy_allowlist_text(
+                engine, rendered[REPO_ROOT / spec.config_file])
+            test = self.run_mod.policy_allowlist_text(
+                engine, rendered[REPO_ROOT / spec.test_config_file])
+            self.assertTrue(real < test, f"{engine}: test policy is not a strict superset")
+
+    def test_squid_wildcard_filter_is_the_inverse_of_the_reader(self) -> None:
+        for entry in ("*.github.com", "*.rebind.fixture.test", "*.io"):
+            pattern = self.run_mod._squid_wild(entry)
+            self.assertEqual(self.run_mod._squid_regex_to_glob(pattern), entry)
+        # The apex must not match: `\.d$` is a suffix, not a prefix.
+        self.assertEqual(self.run_mod._squid_wild("*.github.com"), r"\.github\.com$")
+
+    def test_yaml_scalar_quotes_wildcards(self) -> None:
+        # A bare leading `*` is a YAML alias, not a string.
+        self.assertEqual(self.run_mod._yaml_scalar("*.github.com"), '"*.github.com"')
+        self.assertEqual(self.run_mod._yaml_scalar("github.com"), "github.com")
+
+    def test_config_toml_rejects_bad_entries(self) -> None:
+        """Every rejection here is a policy that would otherwise be wrong in a
+        way no engine would complain about."""
+        Fail = self.run_mod.Fail
+        cases = {
+            # Address-form entries are what `http_access deny ip_literal`
+            # exists to refuse; this policy allowlists by name only.
+            "1.2.3.4": "address",
+            # `.d` is Squid's own form and covers the apex too — silently
+            # wider than the `*.d` the shared policy means.
+            ".github.com": "allowlist form",
+            # A hand-written regex would be emitted verbatim into squid.conf
+            # and read back as drift by every other engine.
+            r"\.github\.com$": "allowlist form",
+            "*github.com": "allowlist form",
+            "localhost": "allowlist form",     # single label; `dns_defnames off`
+            "github.com:443": "allowlist form",
+            "https://github.com": "allowlist form",
+            "*.github.com/path": "allowlist form",
+        }
+        for entry, expected in cases.items():
+            path = self.policy_config([entry])
+            with self.assertRaises(Fail, msg=f"{entry} was accepted") as ctx:
+                self.run_mod.load_policy_config(path)
+            self.assertIn(expected, str(ctx.exception), entry)
+
+    def test_config_toml_rejects_an_empty_allowlist(self) -> None:
+        path = self.policy_config([])
+        with self.assertRaises(self.run_mod.Fail) as ctx:
+            self.run_mod.load_policy_config(path)
+        self.assertIn("must not be empty", str(ctx.exception))
+
+    def test_config_toml_rejects_duplicates_and_typos(self) -> None:
+        Fail = self.run_mod.Fail
+        dupe = self.policy_config(["github.com", "github.com"])
+        with self.assertRaises(Fail) as ctx:
+            self.run_mod.load_policy_config(dupe)
+        self.assertIn("twice", str(ctx.exception))
+
+        # A test entry the real policy already allows means one of the two
+        # lists is not saying what its author thought.
+        overlap = self.policy_config(["github.com"], ["github.com"])
+        with self.assertRaises(Fail) as ctx:
+            self.run_mod.load_policy_config(overlap)
+        self.assertIn("repeats", str(ctx.exception))
+
+        # `allows = [...]` would otherwise render an empty allowlist.
+        typo = self.policy_config(["github.com"])
+        typo.write_text(typo.read_text().replace("[policy]\nallow", "[policy]\nallows"))
+        with self.assertRaises(Fail) as ctx:
+            self.run_mod.load_policy_config(typo)
+        self.assertIn("unknown key", str(ctx.exception))
+
+    def test_generation_survives_a_new_domain(self) -> None:
+        """An added domain must reach all three engines in the right form."""
+        config = self.run_mod.PolicyConfig(
+            allow=("github.com", "*.example.test"), allow_test=())
+        rendered = self.run_mod.render_policies(config)
+        self.assertEqual(self.run_mod.check_rendered_policies(rendered), [])
+        squid = rendered[REPO_ROOT / "config" / "squid.conf"]
+        self.assertIn(r"acl allowlist_wild dstdom_regex -i \.example\.test$", squid)
+        self.assertIn("acl allowlist_exact dstdomain github.com", squid)
+        self.assertIn('  - "*.example.test"',
+                      rendered[REPO_ROOT / "config" / "pipelock.yaml"])
+        self.assertIn('    - "*.example.test"',
+                      rendered[REPO_ROOT / "config" / "smokescreen.yaml"])
+
+    def test_sync_refuses_to_write_a_policy_that_fails_validation(self) -> None:
+        """Auto-regeneration must never replace a working config with a
+        broken one: a bad render has to fail before it touches the disk."""
+        original = self.run_mod.render_policies
+        squid_conf = REPO_ROOT / "config" / "squid.conf"
+        before = squid_conf.read_text(encoding="utf-8")
+
+        def broken(config=None):
+            rendered = original(config)
+            # Drop the SSRF floor: `validate_policy_text` must catch it.
+            rendered[squid_conf] = rendered[squid_conf].replace(
+                "http_access deny private_ip\n", "")
+            return rendered
+
+        self.run_mod.render_policies = broken
+        self.addCleanup(setattr, self.run_mod, "render_policies", original)
+        with self.assertRaises(self.run_mod.Fail):
+            self.run_mod.sync_policies()
+        self.assertEqual(squid_conf.read_text(encoding="utf-8"), before,
+                         "a failed render must leave the shipped config untouched")
 
     def test_container_ip_parses_docker_and_apple_shapes(self) -> None:
         Backend = self.run_mod.Backend

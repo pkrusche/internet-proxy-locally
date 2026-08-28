@@ -1,0 +1,59 @@
+# The shared logical policy — the single source of truth for the allowlist.
+#
+# `./run.py` renders every engine's configuration from this file plus the
+# templates in templates/: config/pipelock.yaml, config/smokescreen.yaml
+# and config/squid.conf, and the three `.test` variants. Those six files
+# are generated; do not edit them by hand. `setup`, `up` and `restart`
+# regenerate them, and `./run.py policy --check` reports drift without
+# writing.
+#
+# The rules the allowlist sits on top of — default deny, the IP-layer SSRF
+# floors, no TLS interception — are NOT configurable here. They live in
+# the templates as literal text and are checked independently by
+# `validate_policy_file()` in run.py. See docs/policy.md.
+
+[policy]
+# Two forms, and only these two (docs/policy.md):
+#
+#     d      matches that host exactly
+#     *.d    matches subdomains of d, never the apex
+#
+# Deliberately small. Expand only from demonstrated requirements, one
+# reviewed change at a time. AI provider domains (OpenAI, Anthropic, ...)
+# are intentionally absent: AI API traffic goes through Agentgateway, not
+# this proxy.
+allow = [
+    # git clone/fetch
+    "github.com",
+    "*.github.com",
+    # raw file access
+    "*.githubusercontent.com",
+    # Python packages
+    "pypi.org",
+    "files.pythonhosted.org",
+    # npm packages
+    "registry.npmjs.org",
+]
+
+[policy.test]
+# Added to the `.test` configs ONLY, on top of everything above — the test
+# policy is a strict superset by construction. These exist so that
+# `./run.py check --full` can prove the IP-layer SSRF floors hold even for
+# an allowlisted hostname; a normal `./run.py up` never uses them.
+#
+# Never add an operational domain here: `up --test-policy` is the only
+# thing that reads it, and anything on this list is a name that resolves
+# to an attacker-chosen address by design.
+allow = [
+    # Wildcard DNS services resolving to arbitrary caller-chosen IPs.
+    "*.nip.io",
+    "*.sslip.io",
+    # Mixed public+private answer sets, served by the local DNS fixture
+    # from config/dns-fixture.hosts (services/dnsfixture.toml).
+    "public-only.fixture.test",
+    "mixed-public-first.fixture.test",
+    "mixed-private-first.fixture.test",
+    # Rebinding zone, answered by images/dnsfixture/rebind.py. Allowlisted
+    # so that a denial can only come from the address it was handed.
+    "*.rebind.fixture.test",
+]
