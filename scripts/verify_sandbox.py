@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Is a sandbox on this machine actually routed through this proxy?
 
-docs/architecture.md draws `project-sandbox` sending its egress to
+docs/security.md draws `project-sandbox` sending its egress to
 `http://127.0.0.1:18080` behind an iptables default-DROP. That picture has
 two halves owned by two repositories, and only one of them is here:
 
@@ -195,7 +195,7 @@ def run_sandbox(report: Reporter, project: Path) -> None:
         elif line.startswith("SANDBOX-FAIL "):
             report.check(False, f"in-sandbox: {line[len('SANDBOX-FAIL '):]}",
                          "the sandbox's egress does not match the contract in "
-                         "docs/architecture.md.")
+                         "docs/security.md.")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -232,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
                     "sandboxes through this proxy — it sets no proxy variables and "
                     "does not name the endpoint. It filters egress with its own "
                     "iptables/ipset domain allowlist. The topology in "
-                    "docs/architecture.md is therefore an intended integration, not "
+                    "docs/security.md is therefore an intended integration, not "
                     "a description of this machine; wiring it means setting "
                     "HTTP_PROXY/HTTPS_PROXY in project-sandbox and allowing the "
                     "endpoint through its firewall.")

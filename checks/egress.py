@@ -11,20 +11,20 @@ Groups:
   full  — quick + SSRF/DNS fixtures and CONNECT-abuse tests
 
 The DNS fixture tests (nip.io / sslip.io, plus the local mixed-answer and
-rebinding fixtures) only make sense when the *test* policy is mounted
-(`./run.py up --test-policy`): the fixture hostnames must be allowlisted so
+rebinding fixtures) only make sense when the *test* policy is mounted, which
+is what `./lab.py up` does: the fixture hostnames must be allowlisted so
 that a rejection can only come from the IP-layer SSRF protections, not from
 ordinary hostname policy. The suite auto-detects whether the test policy is
 active and skips those tests otherwise. `dns-mixed-answers` and
 `dns-rebinding` additionally need the local DNS fixture container, which the
-same `--test-policy` flag starts and points the engine's resolver at; each
-proves the fixture is live — a control probe, and the fixture's own lookup
-log — before grading anything.
+same command starts and points the engine's resolver at; each proves the
+fixture is live — a control probe, and the fixture's own lookup log —
+before grading anything.
 
 Outcomes:
   pass   — behavior matched the expectation
   fail   — behavior violated the expectation
-  record — engine behavior documented, no pass/fail defined (docs/engines.md)
+  record — engine behavior documented, no pass/fail defined (docs/findings.md)
   skip   — prerequisites missing (with reason)
   error  — the test itself could not run
 
@@ -32,7 +32,7 @@ Each result may carry: a best-effort denial `cause` classification, a
 wall-clock `elapsed_ms`, per-attempt evidence (`attempts` — used by the
 DNS fixtures), full response `headers` (allow-path checks), and the
 engine's own log lines for that test's window (`--backend-bin`/
-`--container`; `run.py check` wires this automatically).
+`--container`; `run.py check` and `lab.py check` wire this automatically).
 
 `--diff A.json B.json` compares two prior `--json` runs and prints only
 the rows that diverge, instead of running the suite.
@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import ipaddress
 import json
 import os
 import platform
@@ -58,7 +57,7 @@ DEFAULT_PROXY = "http://127.0.0.1:18080"
 TIMEOUT = 8.0
 # 2: the envelope carries the run's conditions (engine image, backend,
 # which policy was mounted, host, timestamp) so that scripts/report.py can
-# generate docs/engines.md from the result files alone, rather than from
+# generate docs/findings.md from the result files alone, rather than from
 # a table somebody remembered to update. v1 files still diff against v2
 # ones — `--diff` only reads `results` — with a warning.
 SCHEMA_VERSION = 2
@@ -68,8 +67,8 @@ ALLOWED_HTTPS_HOST = "pypi.org"         # must be on the allowlist
 ALLOWED_ALT_HOST = "files.pythonhosted.org"  # allowlisted, used as mismatching SNI
 BLOCKED_HOST = "example.com"            # must NOT be on the allowlist
 
-# Mixed-answer fixture, served from config/dns-fixture.hosts which
-# `run.py up --test-policy` mounts at /etc/hosts inside the engine
+# Mixed-answer fixture, served from lab/config/dns-fixture.hosts which
+# `run.py ./lab.py up` mounts at /etc/hosts inside the engine
 # container. The control resolves to one public address; the other two
 # resolve to the same public address *and* a private one, in both
 # orderings, so an engine that validates only the first answer fails one of
@@ -78,7 +77,7 @@ MIXED_FIXTURE_CONTROL = "public-only.fixture.test"
 MIXED_FIXTURE_TARGETS = ("mixed-public-first.fixture.test",
                          "mixed-private-first.fixture.test")
 
-# Rebinding fixture, served by the same container (images/dnsfixture).
+# Rebinding fixture, served by the same container (lab/dnsfixture).
 # The first A query for one of these names is answered with a public
 # address and every later query with the fixture's own private address,
 # where it listens as a trap. Each name is fresh, so no name can be served
@@ -95,7 +94,7 @@ REBIND_TTL_GAP = 1.5
 
 # Reverse-DNS fixture: the local resolver answers PTR for this address with
 # an allowlisted hostname. Keep in sync with PTR_ADDRESS / PTR_CLAIMS in
-# images/dnsfixture/rebind.py. The address is public — so the SSRF floors
+# lab/dnsfixture/rebind.py. The address is public — so the SSRF floors
 # stay out of it and the hostname allowlist really is the rule under test —
 # and no other check connects to it.
 PTR_FIXTURE_ADDRESS = "1.0.0.1"
@@ -109,13 +108,13 @@ FIXTURE_LOG_SOURCE: "callable" = lambda: []
 
 # Engine-specific expectations for the CONNECT-abuse tests: Pipelock is
 # expected to reject; Smokescreen and Squid behavior is recorded
-# (docs/engines.md has the measured outcome — both allow both).
+# (docs/findings.md has the measured outcome — both allow both).
 #
 # Squid *can* inspect a tunnel, via `ssl_bump peek` + `splice`, but that
 # configuration was built, measured and rejected: it crashes the daemon
 # when a peeked connection must be terminated without a signing CA, and it
 # answers every CONNECT with 200 before evaluating policy. See the header
-# of config/squid.conf and docs/engines.md.
+# of config/squid.conf and docs/findings.md.
 #
 # `dns-mixed-answers` on Smokescreen is the third override and the one that
 # is a policy call rather than a capability gap. Handed a name that
@@ -123,13 +122,13 @@ FIXTURE_LOG_SOURCE: "callable" = lambda: []
 # the public one; docs/policy.md says such a name is rejected, so it
 # deviates. It is graded `record` rather than `fail` because the row is
 # still the same measurement either way and the grade was doing a job it
-# cannot do: `check --full` exited 1 on every Smokescreen run, so the exit
+# cannot do: `./lab.py check` exited 1 on every Smokescreen run, so the exit
 # code stopped distinguishing "this engine has a known, bounded deviation"
 # from "something broke". Recording keeps the behavior in the report — the
 # row says `RECORD established` with both answer orderings — and leaves the
 # exit code meaning what it says. What it costs, and why the deviation is
 # bounded, is docs/security.md, "Choosing an engine"; the measurement is
-# docs/engines.md §2.
+# docs/findings.md §2.
 ENGINE_EXPECTATIONS = {
     "pipelock": {"connect-sni-mismatch": "deny", "connect-raw-tunnel": "deny"},
     "smokescreen": {"connect-sni-mismatch": "record", "connect-raw-tunnel": "record",
@@ -211,13 +210,6 @@ def resolve_locally(host: str) -> list[str]:
         return []
     return sorted({info[4][0] for info in infos})
 
-
-def _is_private(ip: str) -> bool:
-    try:
-        addr = ipaddress.ip_address(ip)
-    except ValueError:
-        return False
-    return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
 
 
 # ---------------------------------------------------------------------------
@@ -634,7 +626,7 @@ def fixtures_active(client: ProxyClient) -> bool:
     return False
 
 
-FIXTURE_SKIP = ("test policy not active — run `./run.py up --test-policy` "
+FIXTURE_SKIP = ("test policy not active — run `./lab.py up` "
                 "to exercise DNS/SSRF fixtures, then re-run")
 
 
@@ -735,7 +727,7 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
     so the trap could not fire even against a vulnerable engine and the row
     would pass while testing nothing — the failure mode that made
     `dns-private-ipv6` vacuous for two measurement rounds
-    (docs/engines.md, "Corrections to earlier runs"). Two probes in the
+    (docs/findings.md, "Corrections to earlier runs"). Two probes in the
     same second are no
     better against a resolver cache with second granularity, which is why
     the passes are separated rather than interleaved.
@@ -749,7 +741,7 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
     This replaced `rbndr.us`, which stopped resolving in 2026-08 and had
     always been ungradable: it answered each query with one of its two
     addresses at random, so nothing the checker observed could attribute
-    what the engine did (docs/engines.md, "DNS rebinding").
+    what the engine did (docs/findings.md, "DNS rebinding").
     """
     _, before_trap = parse_fixture_log(FIXTURE_LOG_SOURCE())
     token = os.urandom(3).hex()
@@ -774,7 +766,7 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
         return RawOutcome("skip", (
             f"the DNS fixture reported no lookups for *.{REBIND_ZONE} — it is not "
             "running, the engine is not resolving through it, or its log stream is not "
-            "readable from here. Run `./run.py up --test-policy` and `./run.py check "
+            "readable from here. Run `./lab.py up` and `./run.py check "
             "--full`, which wires the fixture's container through automatically"),
             attempts=attempts)
 
@@ -819,7 +811,7 @@ def test_ptr_allowlist(client: ProxyClient) -> RawOutcome:
     controls only has to point that host's PTR at an allowlisted name.
     Measured before the fix: `CONNECT 1.1.1.1:443` was allowed under the
     real policy while `CONNECT 9.9.9.9:443` was refused, the PTR record
-    being the only difference (docs/engines.md).
+    being the only difference (docs/findings.md).
 
     The local fixture answers PTR for `PTR_FIXTURE_ADDRESS` with
     `PTR_FIXTURE_CLAIMS`, which is on the allowlist. The destination is an
@@ -837,7 +829,7 @@ def test_ptr_allowlist(client: ProxyClient) -> RawOutcome:
         return RawOutcome("skip", (
             "the local DNS fixture is not observable from here, so the PTR claim "
             f"for {PTR_FIXTURE_ADDRESS} cannot be known to be live. Run "
-            "`./run.py up --test-policy` and `./run.py check --full`, which wires "
+            "`./lab.py up` and `./lab.py check`, which wires "
             "the fixture's container through automatically"))
 
     target = f"{PTR_FIXTURE_ADDRESS}:443"
@@ -871,8 +863,8 @@ def test_dns_mixed(client: ProxyClient) -> RawOutcome:
     must be refused, in both answer orderings.
 
     This is the one check whose fixture cannot come from public DNS, so it
-    is manufactured in config/dns-fixture.hosts (mounted at /etc/hosts by
-    `up --test-policy`). The control probe is what makes the result
+    is manufactured in lab/config/dns-fixture.hosts, served by the dnsmasq
+    container `./lab.py up` starts. The control probe is what makes the result
     attributable: it resolves to the same public address as the mixed names
     and nothing else, so if it does not establish, the fixture is missing,
     unallowlisted or unreachable and a denial below would prove nothing.
@@ -889,7 +881,7 @@ def test_dns_mixed(client: ProxyClient) -> RawOutcome:
             f"control probe to {MIXED_FIXTURE_CONTROL} did not establish "
             f"({control.detail}) — the mixed-answer fixture is not mounted, not "
             "allowlisted, or its public address is unreachable from here. Run "
-            "`./run.py up --test-policy`, which mounts config/dns-fixture.hosts, "
+            "`./lab.py up`, which serves lab/config/dns-fixture.hosts, "
             "and re-run"), attempts=[control])
 
     attempts = [control]
@@ -977,7 +969,7 @@ TESTS = [
 # It lives here rather than in the report generator because the question is
 # a property of the check: whoever changes what a check does is the person
 # who has to restate what it asks. scripts/report.py prints these above the
-# measured outcomes so that docs/engines.md can be generated whole,
+# measured outcomes so that docs/findings.md can be generated whole,
 # instead of pairing generated rows with a hand-written key that drifts.
 # A test asserts every check has one and that nothing here is orphaned.
 CHECK_PURPOSE = {
@@ -1141,7 +1133,7 @@ def envelope(results: list[Result], engine: str, proxy: str, full: bool,
              backend: str | None = None, image: str | None = None) -> dict:
     """The `--json` document: the results plus the conditions they were
     measured under, which is what scripts/report.py generates
-    docs/engines.md from."""
+    docs/findings.md from."""
     return {
         "schema_version": SCHEMA_VERSION,
         "engine": engine,

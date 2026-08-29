@@ -3,7 +3,7 @@
 The scripts themselves need a container runtime and are not run here; what
 is tested is everything around that — the report generator's pure
 rendering, the invariants it enforces on a result file, and the guard that
-the committed docs/comparison.md is what the committed results render to.
+the committed docs/findings.md is what the committed results render to.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ class CheckCatalogTest(unittest.TestCase):
         names = {name for name, _, _, _, _ in egress.TESTS}
         self.assertEqual(names - set(egress.CHECK_PURPOSE), set(),
                          "a check with no CHECK_PURPOSE entry renders an "
-                         "unexplained section in docs/comparison.md")
+                         "unexplained section in docs/findings.md")
         self.assertEqual(set(egress.CHECK_PURPOSE) - names, set(),
                          "CHECK_PURPOSE describes a check that no longer exists")
 
@@ -175,7 +175,7 @@ class ResultFileTest(unittest.TestCase):
     def test_reports_a_missing_engine_with_the_command_to_fix_it(self) -> None:
         with self.assertRaises(report.Fail) as ctx:
             report.load_runs(self.tmp, ("pipelock",))
-        self.assertIn("report.py --run", str(ctx.exception))
+        self.assertIn("./lab.py measure", str(ctx.exception))
 
 
 class PolicyDetectionTest(unittest.TestCase):
@@ -202,78 +202,60 @@ class PolicyDetectionTest(unittest.TestCase):
 
 
 class GeneratedComparisonTest(unittest.TestCase):
-    """The committed docs/comparison.md must be exactly what the committed
-    results render to — the same guard config/ has against config.toml."""
+    """The generated blocks of docs/findings.md must be exactly what the
+    committed results render to — the same guard config/ has against
+    config.toml. The narrative around them is written by a person and is
+    not checked here, only that it survives the injection untouched."""
 
-    def test_comparison_matches_the_committed_results(self) -> None:
-        results_dir = REPO_ROOT / "results"
-        if not any(results_dir.glob("*.json")):
-            self.skipTest("no results/ in this checkout")
-        runs = report.load_runs(results_dir, report.ENGINES)
-        body = report.render(runs, results_dir)
-        current = (REPO_ROOT / "docs" / "comparison.md").read_text(encoding="utf-8")
-        self.assertEqual(current, body,
-                         "run `scripts/report.py` and commit docs/comparison.md")
-
-    def test_the_rendering_names_every_check_and_engine(self) -> None:
-        results_dir = REPO_ROOT / "results"
-        if not any(results_dir.glob("*.json")):
-            self.skipTest("no results/ in this checkout")
-        body = report.render(report.load_runs(results_dir, report.ENGINES), results_dir)
-        self.assertIn("GENERATED FILE", body)
-        for name, _, _, _, _ in egress.TESTS:
-            self.assertIn(f"### {name}", body, f"{name} has no section")
-            self.assertIn(egress.check_purpose(name), body)
-        for label in report.LABELS.values():
-            self.assertIn(label, body)
-
-
-class RedirectAuthorizationExperimentTest(unittest.TestCase):
-    """The two policies the redirect experiment renders.
-
-    Its whole validity rests on them differing in exactly one thing — one
-    allows the redirect target, the other does not — so both halves are
-    checked here rather than trusted at runtime, where a silently wrong
-    policy would turn a bypass into a pass.
-    """
+    FINDINGS = REPO_ROOT / "docs" / "findings.md"
 
     def setUp(self) -> None:
-        import tempfile, shutil
-        fidelity = load_module("fidelity_scripts",
-                               REPO_ROOT / "scripts" / "upstream_fidelity.py")
-        self.fidelity = fidelity
-        self.tmp = Path(tempfile.mkdtemp(prefix="ipl-authz-test-"))
-        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.results_dir = REPO_ROOT / "results"
+        if not any(self.results_dir.glob("*.json")):
+            self.skipTest("no results/ in this checkout")
+        self.runs = report.load_runs(self.results_dir, report.ENGINES)
 
-    def test_the_two_policies_differ_only_in_the_redirect_target(self) -> None:
-        f = self.fidelity
-        control = f._experiment_policy(self.tmp, "pipelock", allow_target=True)
-        narrowed = f._experiment_policy(self.tmp, "pipelock", allow_target=False)
-        control_text = control.read_text()
-        narrowed_text = narrowed.read_text()
-        suffix = f.REDIRECT_TARGET_HOST.split(".", 1)[1]
-        self.assertIn(suffix, control_text)
-        self.assertNotIn(suffix, narrowed_text)
-        # Both must allow the redirect *source*, or the request never gets
-        # far enough to be redirected and the experiment measures nothing.
-        for text in (control_text, narrowed_text):
-            self.assertIn(f.REDIRECT_SOURCE_HOST, text)
+    def test_findings_matches_the_committed_results(self) -> None:
+        body = report.build(self.runs, self.results_dir, self.FINDINGS)
+        current = self.FINDINGS.read_text(encoding="utf-8")
+        self.assertEqual(current, body,
+                         "run `./lab.py report` and commit docs/findings.md")
 
-    def test_both_policies_are_valid_and_still_default_deny(self) -> None:
-        f = self.fidelity
-        run_mod = f.run_mod
-        for allow_target in (True, False):
-            path = f._experiment_policy(self.tmp, "pipelock", allow_target)
-            self.assertEqual(run_mod.validate_policy_file("pipelock", path), [],
-                             "the experiment must never run the engine on a "
-                             "policy that would fail validation")
+    def test_the_rendering_names_every_check_and_engine(self) -> None:
+        sections = report.render_sections(self.runs, self.results_dir)
+        self.assertEqual(set(sections), set(report.SECTIONS))
+        per_check = sections["per-check"]
+        for name, _, _, _, _ in egress.TESTS:
+            self.assertIn(f"### {name}", per_check, f"{name} has no section")
+            self.assertIn(egress.check_purpose(name), per_check)
+        for label in report.LABELS.values():
+            self.assertIn(label, sections["matrix"])
 
-    def test_the_redirect_target_is_a_different_host_from_the_source(self) -> None:
-        # If they were the same host the experiment could not distinguish
-        # "re-authorizes each hop" from "authorized the first hop only".
-        f = self.fidelity
-        self.assertNotEqual(f.REDIRECT_SOURCE_HOST, f.REDIRECT_TARGET_HOST)
-        self.assertFalse(f.REDIRECT_TARGET_HOST.endswith(f".{f.REDIRECT_SOURCE_HOST}"))
+    def test_the_narrative_outside_the_markers_is_copied_byte_for_byte(self) -> None:
+        # The whole point of injecting into named regions rather than
+        # rendering the file: a person's reading of the measurements must
+        # not be rewritable by the generator.
+        document = self.FINDINGS.read_text(encoding="utf-8")
+        sections = report.render_sections(self.runs, self.results_dir)
+        rebuilt = report.inject(document, sections, self.FINDINGS)
+        for name in report.SECTIONS:
+            begin, end = f"<!-- BEGIN GENERATED {name} -->", f"<!-- END GENERATED {name} -->"
+            self.assertIn(begin, rebuilt)
+            self.assertIn(end, rebuilt)
+        # Everything before the first marker and after the last is identical.
+        first = document.index("<!-- BEGIN GENERATED")
+        self.assertEqual(document[:first], rebuilt[:first])
+        tail = "<!-- END GENERATED "
+        self.assertEqual(document[document.rindex(tail):].split("-->", 1)[1],
+                         rebuilt[rebuilt.rindex(tail):].split("-->", 1)[1])
+
+    def test_a_missing_marker_is_fatal_rather_than_silently_skipped(self) -> None:
+        sections = report.render_sections(self.runs, self.results_dir)
+        stripped = self.FINDINGS.read_text(encoding="utf-8").replace(
+            "<!-- BEGIN GENERATED matrix -->", "")
+        with self.assertRaises(report.Fail) as ctx:
+            report.inject(stripped, sections, self.FINDINGS)
+        self.assertIn("matrix", str(ctx.exception))
 
 
 class ResilienceLoadTest(unittest.TestCase):

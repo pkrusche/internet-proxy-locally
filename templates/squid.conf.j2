@@ -1,15 +1,15 @@
 {% include "_banner.j2" %}
 {% if test_policy %}
 # TEST POLICY — NEVER use for normal operation. config/squid.conf plus the
-# `[policy.test]` fixtures. See docs/policy.md, "Test policy".
+# `[policy.test]` fixtures from lab/fixtures.toml. See docs/lab.md.
 #
-# Activate with:  ./run.py --engine squid up --test-policy
-# Deactivate with a normal `./run.py up` (recreates with the real policy).
+# Activate with:  ./lab.py --engine squid up
+# Deactivate with `./run.py up` (recreates with the real policy).
 {% else %}
 # Squid egress policy: default deny, hostname allowlist, IP-layer SSRF
 # floors evaluated after DNS resolution. This is the Squid rendering of
 # the shared logical policy in docs/policy.md; full rationale for every
-# rule below is in docs/policy.md and docs/engines.md.
+# rule below is in docs/policy.md and docs/findings.md.
 {% endif %}
 
 # ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@
 
 # No ssl_bump: peeking the ClientHello crashes Squid the first time a
 # peeked connection must be force-closed, and avoiding that needs a signing
-# CA baked into the image. Findings: docs/engines.md, "Rejected: tunnel
+# CA baked into the image. Findings: docs/findings.md, "Rejected: tunnel
 # peeking on Squid".
 http_port 3128
 
@@ -56,7 +56,7 @@ acl CONNECT method CONNECT
 acl TLS_ports port 443
 
 # Address-form destinations, refused before any dstdomain rule can fall
-# back to a reverse lookup. docs/engines.md §5 ("a bare IP could satisfy
+# back to a reverse lookup. docs/findings.md ("a bare IP could satisfy
 # the allowlist through a reverse lookup").
 acl ip_literal dstdom_regex -i ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$
 acl ip_literal dstdom_regex -i ^\[?[0-9a-f]*:[0-9a-f:.]*\]?$
@@ -91,7 +91,7 @@ acl private_ip dst fc00::/7
 acl private_ip dst fe80::/10
 acl private_ip dst ff00::/8
 
-# Not part of the contract in docs/architecture.md.
+# Not part of the contract in README.md ("Stable interface").
 http_access deny manager
 
 # Metadata first: it is also link-local, and the more specific cause is
@@ -120,7 +120,7 @@ acl allowlist_wild dstdom_regex -i {{ domain | squid_wild }}
 {% endfor %}
 {% if test_policy %}
 
-# --- [policy.test] in config.toml: adversarial fixtures only ---
+# --- [policy.test] in lab/fixtures.toml: adversarial fixtures only ---
 {% for domain in allow_test_exact %}
 acl allowlist_exact dstdomain {{ domain }}
 {% endfor %}
@@ -149,6 +149,6 @@ deny_info ERR_IPL_NOT_ALLOWLISTED all
 # Not configured here
 # ---------------------------------------------------------------------------
 #
-# `ssl_bump` — see the note on http_port above (docs/engines.md).
+# `ssl_bump` — see the note on http_port above (docs/findings.md).
 # `cache_peer` / any parent proxy — this proxy talks to origins directly.
-# `auth_param` — v1 has one caller identity (docs/architecture.md).
+# `auth_param` — v1 has one caller identity (docs/security.md).

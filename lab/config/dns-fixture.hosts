@@ -1,4 +1,11 @@
-{% include "_banner.j2" %}
+# GENERATED FILE — do not edit.
+#
+# Rendered from config.toml + lab/fixtures.toml by ./lab.py,
+# via templates/dns-fixture.hosts.j2.
+# To change the test policy, edit lab/fixtures.toml and run
+# `./lab.py policy`. A hand edit here is silently overwritten and is
+# caught by the test suite.
+#
 # TEST FIXTURE — served by the dnsmasq container that `./lab.py up`
 # starts, and read only through it. Never present in normal operation.
 #
@@ -6,22 +13,20 @@
 # for what this fixture is for and why it has to be a local dnsmasq
 # container rather than a bind-mounted `/etc/hosts`: docs/lab.md.
 #
-# `{{ fixture.rebind_zone }}` is NOT here: its answers change between the
+# `rebind.fixture.test` is NOT here: its answers change between the
 # first lookup and the next, which no static file can express, so
 # lab/dnsfixture/rebind.py serves that zone instead.
-{% for record in fixture_records %}
 
-{% if record.role == "control" %}
 # Control: one public address, nothing else — must be reachable through
 # the proxy or the mixed-answer rows below cannot be attributed.
-{% else %}
-{% if loop.first or fixture_records[loop.index0 - 1].role == "control" %}
+9.9.9.9         public-only.fixture.test
+
 # Mixed answers, both orderings (docs/findings.md, "Mixed DNS answers").
 #
-{% endif %}
-# {{ record.shape }}.
-{% endif %}
-{% for address in record.addresses %}
-{{ "%-15s"|format(address) }} {{ record.name }}
-{% endfor %}
-{% endfor %}
+# Public answer first, private second.
+9.9.9.9         mixed-public-first.fixture.test
+10.0.0.1        mixed-public-first.fixture.test
+
+# Private answer first, public second.
+10.0.0.1        mixed-private-first.fixture.test
+9.9.9.9         mixed-private-first.fixture.test

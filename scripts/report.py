@@ -1,30 +1,25 @@
 #!/usr/bin/env python3
-"""Generate docs/comparison.md from `checks/egress.py --json` result files.
+"""Render the measured tables of docs/findings.md from result files.
 
-docs/comparison.md used to be written by hand from suite output, which made
-it a transcription: every number in it was a claim about a run nobody could
-re-derive from the repository. This script makes the file a *rendering* of
-the result files in `results/`, the same way config/ is a rendering of
-config.toml — so a stale table is a diff rather than a belief.
+docs/findings.md holds two things: what the three engines actually did, and
+what that means. The second half is written by a person. The first is
+generated here from the JSON in `results/`, the same way config/ is a
+rendering of config.toml — so a stale table is a diff rather than a belief.
 
-    scripts/report.py --run          # measure all three engines, then write
-    scripts/report.py                # write from the existing results/
-    scripts/report.py --check        # report drift as a diff, exit 1, write nothing
+This module has no CLI. ./lab.py is the entry point:
 
-`--run` drives ./run.py for each engine (setup, `up --test-policy`,
-`check --full --json`) and needs a container runtime; the other two modes
-need nothing but the JSON.
+    ./lab.py measure         # measure all three engines, then rewrite
+    ./lab.py report          # rewrite from the existing results/
+    ./lab.py report --check  # report drift as a diff, exit 1, write nothing
 
-What is *not* generated — why an engine behaves the way it does, what the
-differences mean, and which engine to choose — lives in docs/engines.md and
-is written by a person. This file only reports what was measured.
+It rewrites only the regions of docs/findings.md delimited by
+`<!-- BEGIN GENERATED <name> -->` / `<!-- END GENERATED <name> -->`; the
+narrative around them is copied through byte for byte.
 
 Stdlib only; Python 3.11+.
 """
-
 from __future__ import annotations
 
-import argparse
 import difflib
 import importlib.util
 import json
@@ -34,8 +29,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RESULTS = REPO_ROOT / "results"
-DEFAULT_OUT = REPO_ROOT / "docs" / "comparison.md"
-ANALYSIS_DOC = "docs/engines.md"
+DEFAULT_OUT = REPO_ROOT / "docs" / "findings.md"
+
+# The generated blocks, in the order they appear in docs/findings.md. Each
+# is delimited in that file by
+#
+#     <!-- BEGIN GENERATED <name> -->  …  <!-- END GENERATED <name> -->
+#
+# and this script rewrites only what is between the two. The narrative
+# around them is written by a person and is never touched, which is how one
+# document can hold both the measurements and what they mean without
+# either being able to overwrite the other.
+SECTIONS = ("conditions", "summary", "matrix", "per-check")
 
 # The engines, in the order the report presents them: the default first.
 ENGINES = ("pipelock", "smokescreen", "squid")
@@ -66,8 +71,8 @@ class Fail(Exception):
 def result_path(results_dir: Path, engine: str) -> Path:
     """`results/<engine>.json`, or the newest `results/<engine>-*.json`.
 
-    The dated form is what docs/engines.md's reproduce recipe writes, so
-    both are accepted rather than making the recipe wrong.
+    The dated form is what docs/lab.md's reproduce recipe writes, so both
+    are accepted rather than making the recipe wrong.
     """
     exact = results_dir / f"{engine}.json"
     if exact.is_file():
@@ -77,9 +82,9 @@ def result_path(results_dir: Path, engine: str) -> Path:
         return dated[-1]
     raise Fail(f"no results for {engine}: expected {exact} or "
                f"{results_dir / (engine + '-<date>.json')}.\n"
-               "Run `scripts/report.py --run` (needs a container runtime), or "
-               "`./run.py --engine {engine} up --test-policy && "
-               "./run.py check --full --json > results/{engine}.json`.")
+               "Run `./lab.py measure` (needs a container runtime), or "
+               f"`./lab.py --engine {engine} up && ./lab.py check --json > "
+               f"results/{engine}.json`.")
 
 
 def load_runs(results_dir: Path, engines: "tuple[str, ...]") -> dict[str, dict]:
@@ -100,7 +105,7 @@ def load_runs(results_dir: Path, engines: "tuple[str, ...]") -> dict[str, dict]:
             raise Fail(f"{path}: holds results for {data.get('engine')!r}, not {engine!r}")
         if data.get("mode") != "full":
             raise Fail(f"{path}: is a `{data.get('mode')}` run. The comparison is "
-                       "generated from `check --full`; a quick run has no fixture rows "
+                       "generated from `./lab.py check`; a quick run has no fixture rows "
                        "and would report them as missing rather than as skipped.")
         runs[engine] = data
         runs[engine]["_path"] = path
@@ -213,7 +218,7 @@ def conditions_table(runs: dict[str, dict]) -> list[str]:
         ("Backend", lambda r: r.get("backend") or "?"),
         ("Host", lambda r: r.get("host") or "?"),
         ("Image", lambda r: f"`{r['image']}`" if r.get("image") else "?"),
-        ("Policy", lambda r: {"test": "test (`up --test-policy`)",
+        ("Policy", lambda r: {"test": "test (`./lab.py up`)",
                               "real": "real", "unknown": "?"}.get(r.get("policy"), "?")),
         ("Endpoint", lambda r: f"`{r.get('proxy', '?')}`"),
         ("Result", counts),
@@ -224,36 +229,35 @@ def conditions_table(runs: dict[str, dict]) -> list[str]:
     return lines
 
 
-def render(runs: dict[str, dict], results_dir: Path) -> str:
+def render_sections(runs: dict[str, dict], results_dir: Path) -> dict[str, str]:
+    """The generated blocks of docs/findings.md, keyed by marker name.
+
+    Sections rather than a whole document: the measurements and the reading
+    of them belong in one file, and the only way that file can hold both is
+    if this script owns named regions of it instead of the whole thing.
+    """
+    return {
+        "conditions": _conditions(runs, results_dir),
+        "summary": _summary(runs),
+        "matrix": _matrix(runs),
+        "per-check": _per_check(runs),
+    }
+
+
+def _conditions(runs: dict[str, dict], results_dir: Path) -> str:
+    engines = list(runs)
+    out = conditions_table(runs)
+    out.append("")
+    out.append("Source files: " + ", ".join(
+        f"`{runs[e]['_path'].relative_to(REPO_ROOT)}`" for e in engines) + ".")
+    return "\n".join(out)
+
+
+def _summary(runs: dict[str, dict]) -> str:
     engines = list(runs)
     out: list[str] = []
     add = out.append
-
-    add("# Engine comparison — measured results")
-    add("")
-    add("GENERATED FILE — do not edit.")
-    add("")
-    add(f"Rendered by `scripts/report.py` from the `{results_dir.name}/` result files "
-        "listed below, which are the JSON output of `./run.py check --full --json`. "
-        "Re-measure and rewrite it with `scripts/report.py --run`; "
-        "`scripts/report.py --check` reports drift without writing.")
-    add("")
-    add(f"Everything this file does *not* say — why an engine behaves this way, what "
-        f"each difference costs, and which engine to choose — is in "
-        f"[{ANALYSIS_DOC}]({Path(ANALYSIS_DOC).name}), which is written by hand.")
-    add("")
-
-    add("## Conditions")
-    add("")
-    out += conditions_table(runs)
-    add("")
-    add("Source files: " + ", ".join(
-        f"`{runs[e]['_path'].relative_to(REPO_ROOT)}`" for e in engines) + ".")
-    add("")
-
     graded = graded_names(runs)
-    add("## Summary")
-    add("")
     total = len(rows_of(runs[engines[0]]))
     ungraded = [name for name, _, _, _, _ in egress.TESTS if name not in graded]
     add(f"{len(graded)} of the {total} checks are graded `pass`/`fail` on every "
@@ -294,7 +298,7 @@ def render(runs: dict[str, dict], results_dir: Path) -> str:
         add("")
     else:
         add("**No engine behaved differently from another on any check**: every "
-            "outcome above is the same across the three.")
+            "outcome below is the same across the three.")
         add("")
     if attribution:
         add(f"**Same behavior, different stated reason** on {len(attribution)} "
@@ -305,10 +309,13 @@ def render(runs: dict[str, dict], results_dir: Path) -> str:
         add("")
         for name, groups in attribution:
             add(f"* [`{name}`](#{name}) — " + _describe(groups))
-        add("")
+    return "\n".join(out).rstrip()
 
-    add("## Matrix")
-    add("")
+
+def _matrix(runs: dict[str, dict]) -> str:
+    engines = list(runs)
+    out: list[str] = []
+    add = out.append
     add("Bracketed values are the **attributed cause**: what the engine said it was "
         "rejecting, not what the check is named after. A blank one means nothing was "
         "denied, so there is no reason to attribute.")
@@ -328,10 +335,13 @@ def render(runs: dict[str, dict], results_dir: Path) -> str:
     add("")
     add("Where the expectation column shows two values, the check is graded "
         "differently per engine (`ENGINE_EXPECTATIONS` in `checks/egress.py` says why).")
-    add("")
+    return "\n".join(out)
 
-    add("## Every check, and what each engine did")
-    add("")
+
+def _per_check(runs: dict[str, dict]) -> str:
+    engines = list(runs)
+    out: list[str] = []
+    add = out.append
     for name, group, _, _, _ in egress.TESTS:
         add(f"### {name}")
         add("")
@@ -350,122 +360,132 @@ def render(runs: dict[str, dict], results_dir: Path) -> str:
                 f"(expectation: {row['expectation']}{timing}{attempts})  ")
             add(f"  {row['detail']}")
         add("")
+    return "\n".join(out).rstrip()
 
-    add("---")
-    add("")
-    add(f"Analysis, decisions and the corrections behind these numbers: "
-        f"[{ANALYSIS_DOC}]({Path(ANALYSIS_DOC).name}).")
-    return "\n".join(out) + "\n"
 
+# ---------------------------------------------------------------------------
+# Injecting the sections into docs/findings.md
+# ---------------------------------------------------------------------------
+
+
+def _marker(name: str, edge: str) -> str:
+    return f"<!-- {edge} GENERATED {name} -->"
+
+
+def inject(document: str, sections: dict[str, str], out: Path) -> str:
+    """Replace each marked region of `document` with its rendered section.
+
+    Everything outside the markers is copied through byte for byte. A
+    missing or duplicated marker is fatal rather than silently skipped: a
+    findings document that quietly stopped carrying a table would read as
+    if the measurement had never been made.
+    """
+    for name, body in sections.items():
+        begin, end = _marker(name, "BEGIN"), _marker(name, "END")
+        for edge in (begin, end):
+            found = document.count(edge)
+            if found != 1:
+                raise Fail(f"{out.relative_to(REPO_ROOT)}: expected exactly one "
+                           f"`{edge}`, found {found}. The generated blocks are "
+                           f"{', '.join(SECTIONS)}.")
+        if document.index(begin) > document.index(end):
+            raise Fail(f"{out.relative_to(REPO_ROOT)}: `{end}` appears before "
+                       f"`{begin}`")
+        head, _, rest = document.partition(begin)
+        _, _, tail = rest.partition(end)
+        document = f"{head}{begin}\n\n{body}\n\n{end}{tail}"
+    return document
+
+
+def build(runs: dict[str, dict], results_dir: Path, out: Path) -> str:
+    """The full text `out` should have, given these results."""
+    if not out.is_file():
+        raise Fail(f"missing {out.relative_to(REPO_ROOT)}. It is written by hand "
+                   "around the generated blocks; this script does not create it.")
+    return inject(out.read_text(encoding="utf-8"),
+                  render_sections(runs, results_dir), out)
+
+
+def write_findings(check: bool = False, results_dir: Path = DEFAULT_RESULTS,
+                   out: Path = DEFAULT_OUT,
+                   engines: "tuple[str, ...]" = ENGINES) -> int:
+    """Regenerate (or verify) the generated blocks. Returns an exit code."""
+    try:
+        runs = load_runs(results_dir, engines)
+        body = build(runs, results_dir, out)
+    except Fail as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    current = out.read_text(encoding="utf-8")
+    rel = out.relative_to(REPO_ROOT)
+    if current == body:
+        print(f"{rel}: up to date with {results_dir.name}/")
+        return 0
+    if check:
+        sys.stdout.writelines(difflib.unified_diff(
+            current.splitlines(keepends=True), body.splitlines(keepends=True),
+            fromfile=f"{rel} (on disk)",
+            tofile=f"{rel} (from {results_dir.name}/)"))
+        print(f"\nSTALE: {rel}", file=sys.stderr)
+        print("Run `./lab.py report` to regenerate, then commit.", file=sys.stderr)
+        return 1
+    out.write_text(body, encoding="utf-8")
+    print(f"rewrote the generated blocks of {rel} from "
+          f"{', '.join(str(runs[e]['_path'].relative_to(REPO_ROOT)) for e in engines)}")
+    return 0
 
 # ---------------------------------------------------------------------------
 # --run: measure first
 # ---------------------------------------------------------------------------
 
 
-def measure(engines: "tuple[str, ...]", results_dir: Path,
-            backend: str | None) -> None:
-    """Drive ./run.py through the full matrix, one engine at a time.
+def measure_all(backend: str | None = None,
+                engines: "tuple[str, ...]" = ENGINES,
+                results_dir: Path = DEFAULT_RESULTS,
+                out: Path = DEFAULT_OUT) -> int:
+    """Measure every engine, then rewrite the generated blocks of findings.
 
     Every engine publishes the same endpoint, so this is necessarily
-    sequential, and each `up` removes whatever the last one left. The final
-    `down` matters: `up --test-policy` starts a DNS fixture that must never
-    outlive the run.
+    sequential, and each `./lab.py up` removes whatever the last one left.
+    The final `down` matters: `./lab.py up` starts a DNS fixture that must
+    never outlive the run.
     """
     results_dir.mkdir(parents=True, exist_ok=True)
-    run_py = [sys.executable, str(REPO_ROOT / "run.py")]
+    lab_py = [sys.executable, str(REPO_ROOT / "lab.py")]
     common = (["--backend", backend] if backend else [])
     try:
-        for engine in engines:
-            print(f"=== {engine}: setup", flush=True)
-            _run(run_py + common + ["--engine", engine, "setup"])
-            print(f"=== {engine}: up --test-policy", flush=True)
-            _run(run_py + common + ["--engine", engine, "up", "--test-policy"])
-            print(f"=== {engine}: check --full --json", flush=True)
-            proc = subprocess.run(run_py + common + ["check", "--full", "--json"],
-                                  capture_output=True, text=True)
-            # A failing check is data, not an error: the suite exits 1 when
-            # a graded row failed, and that run is exactly what the report
-            # has to show. Only unparseable output is a problem.
-            try:
-                json.loads(proc.stdout)
-            except json.JSONDecodeError as exc:
-                raise Fail(f"{engine}: `check --full --json` produced no result "
-                           f"document ({exc}).\n{proc.stderr.strip()}") from exc
-            path = results_dir / f"{engine}.json"
-            path.write_text(proc.stdout, encoding="utf-8")
-            print(f"=== {engine}: wrote {path.relative_to(REPO_ROOT)} "
-                  f"(exit {proc.returncode})", flush=True)
-    finally:
-        # Back to no engine and no fixture, whatever happened above.
-        subprocess.run(run_py + common + ["down"], check=False)
+        try:
+            print("=== lab setup (all engines + the DNS fixture)", flush=True)
+            _run(lab_py + common + ["setup"])
+            for engine in engines:
+                print(f"=== {engine}: up (test policy)", flush=True)
+                _run(lab_py + common + ["--engine", engine, "up"])
+                print(f"=== {engine}: check --json", flush=True)
+                proc = subprocess.run(lab_py + common + ["check", "--json"],
+                                      capture_output=True, text=True)
+                # A failing check is data, not an error: the suite exits 1
+                # when a graded row failed, and that run is exactly what the
+                # report has to show. Only unparseable output is a problem.
+                try:
+                    json.loads(proc.stdout)
+                except json.JSONDecodeError as exc:
+                    raise Fail(f"{engine}: `lab.py check --json` produced no result "
+                               f"document ({exc}).\n{proc.stderr.strip()}") from exc
+                path = results_dir / f"{engine}.json"
+                path.write_text(proc.stdout, encoding="utf-8")
+                print(f"=== {engine}: wrote {path.relative_to(REPO_ROOT)} "
+                      f"(exit {proc.returncode})", flush=True)
+        finally:
+            # Back to no engine and no fixture, whatever happened above.
+            subprocess.run(lab_py + common + ["down"], check=False)
+    except Fail as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return write_findings(check=False, results_dir=results_dir, out=out,
+                          engines=engines)
 
 
 def _run(cmd: list[str]) -> None:
     proc = subprocess.run(cmd)
     if proc.returncode != 0:
         raise Fail(f"`{' '.join(cmd)}` failed with exit {proc.returncode}")
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--run", action="store_true",
-                        help="measure every engine first (needs a container runtime)")
-    parser.add_argument("--check", action="store_true",
-                        help="report drift as a diff and exit 1 instead of writing")
-    parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS,
-                        help=f"directory of result files (default: {DEFAULT_RESULTS.name}/)")
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT,
-                        help=f"file to write (default: {DEFAULT_OUT.relative_to(REPO_ROOT)})")
-    parser.add_argument("--engines", default=",".join(ENGINES),
-                        help="comma-separated engines to report on")
-    parser.add_argument("--backend", choices=("docker", "container"), default=None,
-                        help="container backend for --run (default: run.py's own choice)")
-    opts = parser.parse_args(argv)
-
-    engines = tuple(name.strip() for name in opts.engines.split(",") if name.strip())
-    unknown = [name for name in engines if name not in ENGINES]
-    if unknown:
-        parser.error(f"unknown engine(s): {', '.join(unknown)}")
-
-    try:
-        if opts.run:
-            if opts.check:
-                parser.error("--run writes new results; it cannot be combined with --check")
-            measure(engines, opts.results, opts.backend)
-        runs = load_runs(opts.results, engines)
-        body = render(runs, opts.results)
-    except Fail as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-
-    current = opts.out.read_text(encoding="utf-8") if opts.out.is_file() else ""
-    if opts.check:
-        if current == body:
-            print(f"{opts.out.relative_to(REPO_ROOT)}: up to date with "
-                  f"{opts.results.name}/")
-            return 0
-        sys.stdout.writelines(difflib.unified_diff(
-            current.splitlines(keepends=True), body.splitlines(keepends=True),
-            fromfile=f"{opts.out.relative_to(REPO_ROOT)} (on disk)",
-            tofile=f"{opts.out.relative_to(REPO_ROOT)} (from {opts.results.name}/)"))
-        print(f"\nSTALE: {opts.out.relative_to(REPO_ROOT)}", file=sys.stderr)
-        print("Run `scripts/report.py` to regenerate, then commit.", file=sys.stderr)
-        return 1
-
-    if current == body:
-        print(f"{opts.out.relative_to(REPO_ROOT)}: already up to date")
-        return 0
-    opts.out.write_text(body, encoding="utf-8")
-    print(f"wrote {opts.out.relative_to(REPO_ROOT)} from "
-          f"{', '.join(str(runs[e]['_path'].relative_to(REPO_ROOT)) for e in engines)}")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

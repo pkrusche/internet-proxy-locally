@@ -1,0 +1,37 @@
+# GENERATED FILE — do not edit.
+#
+# Rendered from config.toml + lab/fixtures.toml by ./lab.py,
+# via templates/smokescreen.yaml.j2.
+# To change the test policy, edit lab/fixtures.toml and run
+# `./lab.py policy`. A hand edit here is silently overwritten and is
+# caught by the test suite.
+#
+# TEST POLICY — NEVER use for normal operation. config/smokescreen.yaml
+# plus the `[policy.test]` fixtures from lab/fixtures.toml. See docs/lab.md.
+#
+# Activate with:  ./lab.py --engine smokescreen up
+# Deactivate with `./run.py up` (recreates with the real policy).
+
+---
+version: v1
+
+services: []
+
+default:
+  name: default
+  project: internet-proxy-locally
+  action: enforce
+  allowed_domains:
+    - github.com
+    - "*.github.com"
+    - "*.githubusercontent.com"
+    - pypi.org
+    - files.pythonhosted.org
+    - registry.npmjs.org
+    # --- [policy.test] in lab/fixtures.toml: adversarial fixtures only ---
+    - "*.nip.io"
+    - "*.sslip.io"
+    - public-only.fixture.test
+    - mixed-public-first.fixture.test
+    - mixed-private-first.fixture.test
+    - "*.rebind.fixture.test"

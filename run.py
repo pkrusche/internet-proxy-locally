@@ -26,7 +26,6 @@ if sys.version_info < (3, 11):
 
 import argparse
 import difflib
-import ipaddress
 import json
 import os
 import platform
@@ -50,17 +49,15 @@ BACKENDS = ("docker", "container")
 
 HEALTH_WAIT_SECONDS = 15.0
 
-# The local DNS fixture: a dnsmasq container serving
-# config/dns-fixture.hosts, started only by `up --test-policy` so that
-# `check --full` can grade dns-mixed-answers. Not an engine — it never
-# appears in ENGINES — but it is pinned, built and torn down like one.
-#
-# It has to be a resolver rather than a bind-mounted /etc/hosts: duplicate
-# names in a hosts file collapse to one address (musl keeps the first,
-# Squid's parser the last), so the engine would never see a multi-address
-# answer. dnsmasq's --addn-hosts aggregates them.
-DNS_FIXTURE = "dnsfixture"
-PINNABLE = ENGINES + (DNS_FIXTURE,)
+SERVICE_DIR = REPO_ROOT / "services"
+
+# The DNS fixture belongs to ./lab.py and is defined in lab/dnsfixture.toml;
+# this is the one thing about it the operational lane still has to know.
+# A fixture left running answers allowlisted names with private addresses,
+# so it must never outlive the engine it was started for — `up` and `down`
+# remove it by name, whether or not lab/ is even present. A test asserts
+# this string still matches lab/dnsfixture.toml.
+FIXTURE_CONTAINER = "internet-proxy-dnsfixture"
 
 
 class Fail(Exception):
@@ -94,19 +91,29 @@ class ServiceSpec:
     container_name: str = ""
     internal_port: int = 0
     config_file: str = ""
-    test_config_file: str = ""
     config_mount: str = ""
     extra_config_file: str = ""
     extra_config_mount: str = ""
     args: list[str] = field(default_factory=list)
+    # Where this service is defined. `services/` for the proxy engines;
+    # `lab/` for the DNS fixture, which only ./lab.py ever loads. Both the
+    # TOML and the image build context are found relative to it.
+    root: Path = SERVICE_DIR
 
     @property
     def toml_path(self) -> Path:
-        return REPO_ROOT / "services" / f"{self.engine}.toml"
+        return self.root / f"{self.engine}.toml"
+
+    @property
+    def image_context(self) -> Path:
+        """The directory holding this service's Dockerfile."""
+        if self.root == SERVICE_DIR:
+            return REPO_ROOT / "images" / self.engine
+        return self.root / self.engine
 
     @classmethod
-    def load(cls, engine: str) -> "ServiceSpec":
-        path = REPO_ROOT / "services" / f"{engine}.toml"
+    def load(cls, engine: str, root: Path = SERVICE_DIR) -> "ServiceSpec":
+        path = root / f"{engine}.toml"
         if not path.is_file():
             raise Fail(f"missing service definition: {path}")
         with path.open("rb") as fh:
@@ -129,11 +136,11 @@ class ServiceSpec:
             container_name=container.get("name", ""),
             internal_port=int(container.get("internal_port", 0)),
             config_file=container.get("config_file", ""),
-            test_config_file=container.get("test_config_file", ""),
             config_mount=container.get("config_mount", ""),
             extra_config_file=container.get("extra_config_file", ""),
             extra_config_mount=container.get("extra_config_mount", ""),
             args=list(container.get("args", [])),
+            root=root,
         )
         if not spec.image_repository or not spec.container_name or not spec.internal_port:
             raise Fail(f"{path}: image.repository, container.name and container.internal_port are required")
@@ -186,24 +193,28 @@ class ServiceSpec:
                        f"services/{self.engine}.toml.\n{pin_hint}")
         return f"{self.image_repository}:{self.source_ref[:12]}"
 
-    def config_path(self, test_policy: bool) -> Path:
-        rel = self.test_config_file if test_policy else self.config_file
-        if not rel:
-            raise Fail(f"services/{self.engine}.toml: missing config_file")
-        path = REPO_ROOT / rel
+    def config_path(self) -> Path:
+        if not self.config_file:
+            raise Fail(f"{self.toml_path}: missing config_file")
+        path = REPO_ROOT / self.config_file
         if not path.is_file():
             raise Fail(f"missing config file: {path}")
         return path
 
-    def mounts(self, test_policy: bool) -> list[tuple[Path, str]]:
-        """Read-only bind mounts for `up`: the policy file, plus any daemon config."""
-        pairs = [(self.config_path(test_policy), self.config_mount)]
+    def mounts(self, config_path: Path | None = None) -> list[tuple[Path, str]]:
+        """Read-only bind mounts: the policy file, plus any daemon config.
+
+        `config_path` overrides the shipped policy — ./lab.py passes the
+        rendered test policy from lab/config/ there, which is the only way
+        an engine ever starts on anything but `config_file`.
+        """
+        pairs = [(config_path or self.config_path(), self.config_mount)]
         if self.extra_config_file:
             path = REPO_ROOT / self.extra_config_file
             if not path.is_file():
                 raise Fail(f"missing config file: {path}")
             if not self.extra_config_mount:
-                raise Fail(f"services/{self.engine}.toml: extra_config_file needs extra_config_mount")
+                raise Fail(f"{self.toml_path}: extra_config_file needs extra_config_mount")
             pairs.append((path, self.extra_config_mount))
         return pairs
 
@@ -217,7 +228,7 @@ class Backend:
     """Thin wrapper over the docker / Apple `container` CLIs.
 
     Only behavior available in both CLIs is used; anything backend-specific
-    is isolated here so the security semantics stay identical (docs/backends.md).
+    is isolated here so the security semantics stay identical (docs/lab.md).
     """
 
     def __init__(self, name: str):
@@ -312,7 +323,7 @@ class Backend:
         quietly ignored the address half would widen it to every interface
         with no error and no visible change. This reads the binding back out
         of the runtime so that scripts/verify_loopback.py can assert it
-        rather than trust it (docs/backends.md).
+        rather than trust it (docs/lab.md).
 
         Docker:          HostConfig.PortBindings {"8888/tcp": [{HostIp, HostPort}]}
         Apple container: configuration.publishedPorts [{hostAddress, hostPort,
@@ -384,7 +395,7 @@ class Backend:
             # Both CLIs spell this `--dns <ip>`. Docker also has --add-host,
             # which would be a tidier way to inject a single record, but
             # Apple `container` has no equivalent and a hosts entry cannot
-            # carry a multi-address answer anyway (docs/backends.md).
+            # carry a multi-address answer anyway (docs/lab.md).
             cmd += ["--dns", dns]
         for src, dst in mounts:
             cmd += ["--volume", f"{src}:{dst}:ro"]
@@ -537,49 +548,26 @@ _ALLOW_ENTRY = re.compile(
 
 
 @dataclass(frozen=True)
-class FixtureConfig:
-    """The local DNS fixture's records, read from `[fixture]` in config.toml.
+class PolicyConfig:
+    """The shared logical policy, read from config.toml.
 
-    `config/dns-fixture.hosts` is rendered from this, so the records the
-    fixture serves and the `[policy.test]` allowlist that has to cover them
-    come from one place instead of being hand-synced (docs/policy.md).
+    The allowlist and nothing else. The adversarial test policy lives in
+    lab/fixtures.toml and is read by ./lab.py alone (docs/lab.md), so
+    nothing this file can express is ever a fixture.
     """
 
-    control: str
-    rebind_zone: str
-    ptr_address: str
-    ptr_claims: str
-    # (name, addresses) in file order; the order of the addresses is the
-    # order the fixture answers with, which is half of what the check asks.
-    records: tuple[tuple[str, tuple[str, ...]], ...]
-
-    @property
-    def names(self) -> tuple[str, ...]:
-        return tuple(name for name, _ in self.records)
-
-    @property
-    def targets(self) -> tuple[str, ...]:
-        """The mixed-answer names — every record except the control."""
-        return tuple(name for name in self.names if name != self.control)
-
-    def addresses(self, name: str) -> tuple[str, ...]:
-        return dict(self.records).get(name, ())
-
-
-@dataclass(frozen=True)
-class PolicyConfig:
-    """The shared logical policy, read from config.toml."""
-
     allow: tuple[str, ...]
-    allow_test: tuple[str, ...]
-    # Optional so a test can render the engine configs from a bare
-    # allowlist; `load_policy_config()` always supplies one.
-    fixture: FixtureConfig | None = None
 
-    def exact(self, entries: tuple[str, ...]) -> list[str]:
+    # Static: Squid needs the two forms split into a `dstdomain` ACL and a
+    # `dstdom_regex` one, and ./lab.py has to split its own entries the same
+    # way. Taking the entries as an argument keeps one implementation of
+    # "what is a wildcard entry" for both lanes.
+    @staticmethod
+    def exact(entries: "tuple[str, ...] | list[str]") -> list[str]:
         return [entry for entry in entries if not entry.startswith("*.")]
 
-    def wild(self, entries: tuple[str, ...]) -> list[str]:
+    @staticmethod
+    def wild(entries: "tuple[str, ...] | list[str]") -> list[str]:
         return [entry for entry in entries if entry.startswith("*.")]
 
 
@@ -602,7 +590,7 @@ def _allow_list(raw: object, path: Path, key: str) -> list[str]:
         # `_ALLOW_ENTRY` cannot tell 1.2.3.4 from a hostname, and an
         # address-form entry is exactly what `http_access deny ip_literal`
         # exists to refuse: this policy allowlists by name and never by
-        # address (docs/engines.md).
+        # address (docs/findings.md).
         if re.fullmatch(r"[0-9.]+", entry):
             raise Fail(
                 f"{path}: {key} entry `{entry}` is an address, not a hostname. "
@@ -612,172 +600,6 @@ def _allow_list(raw: object, path: Path, key: str) -> list[str]:
     return entries
 
 
-# The reserved TLD the fixture's names live under (RFC 6761). Anything in
-# `[policy.test].allow` under it is a fixture name and must have a record
-# behind it — that is the half of the sync `[fixture]` cannot enforce by
-# being the source of the hosts file.
-FIXTURE_TLD = ".test"
-
-
-def _covered_by(name: str, entries: "tuple[str, ...]") -> bool:
-    """Does the allowlist `entries` permit `name`, in either shared form?"""
-    if name in entries:
-        return True
-    return any(entry.startswith("*.") and name.endswith(entry[1:])
-               for entry in entries)
-
-
-def _public_address(raw: str, path: Path, what: str) -> str:
-    """An address that must be routable — the half of a fixture answer an
-    engine is allowed to reach, and the one `ptr-allowlist` connects to."""
-    address = _address(raw, path, what)
-    if _private_address(address):
-        raise Fail(f"{path}: {what} is `{raw}`, which is not a public address; "
-                   "the check it backs would be graded by the SSRF floors "
-                   "rather than by the rule it is testing")
-    return address
-
-
-def _address(raw: str, path: Path, what: str) -> str:
-    if not isinstance(raw, str):
-        raise Fail(f"{path}: {what} must be a string (found {raw!r})")
-    try:
-        ipaddress.ip_address(raw)
-    except ValueError as exc:
-        raise Fail(f"{path}: {what} is not an IP address: {raw!r}") from exc
-    return raw
-
-
-def _private_address(raw: str) -> bool:
-    addr = ipaddress.ip_address(raw)
-    return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
-
-
-def _fixture_config(raw: object, path: Path, allow: "list[str]",
-                    allow_test: "list[str]") -> FixtureConfig:
-    """Read and validate `[fixture]`, cross-checked against the allowlists.
-
-    Everything here exists so that one edit cannot half-land: a record the
-    test policy does not allowlist would be denied by name and grade
-    nothing, and a `[policy.test]` fixture name with no record behind it
-    would resolve to NXDOMAIN and skip.
-    """
-    if not isinstance(raw, dict):
-        raise Fail(f"{path}: missing the [fixture] table (it holds the DNS "
-                   "fixture's records; config/dns-fixture.hosts is rendered "
-                   "from it)")
-    known = {"control", "rebind_zone", "ptr_address", "ptr_claims", "records"}
-    unknown = sorted(set(raw) - known)
-    if unknown:
-        raise Fail(f"{path}: unknown key(s) in [fixture]: {', '.join(unknown)}")
-    missing = sorted(known - set(raw))
-    if missing:
-        raise Fail(f"{path}: [fixture] is missing {', '.join(missing)}")
-
-    entries = raw["records"]
-    if not isinstance(entries, dict) or not entries:
-        raise Fail(f"{path}: [fixture.records] must be a non-empty table of "
-                   "`\"name\" = [\"addr\", ...]`")
-    records: list[tuple[str, tuple[str, ...]]] = []
-    allowed = tuple(allow_test)
-    for name, addresses in entries.items():
-        if not _ALLOW_ENTRY.match(name) or name.startswith("*."):
-            raise Fail(f"{path}: [fixture.records] key `{name}` is not a hostname")
-        if not name.endswith(FIXTURE_TLD):
-            raise Fail(f"{path}: [fixture.records] key `{name}` must be under "
-                       f"`{FIXTURE_TLD}`, the reserved TLD that can never "
-                       "resolve publicly")
-        if not isinstance(addresses, list) or not addresses:
-            raise Fail(f"{path}: [fixture.records] `{name}` must list at least "
-                       "one address")
-        parsed = tuple(_address(a, path, f"[fixture.records] `{name}`") for a in addresses)
-        if len(set(parsed)) != len(parsed):
-            raise Fail(f"{path}: [fixture.records] `{name}` repeats an address")
-        if _covered_by(name, tuple(allow)):
-            # The fixture's names belong to the test policy alone. In the
-            # real one they would be a shipped allowlist entry for a name
-            # that resolves to whatever the fixture says, private addresses
-            # included — and `up` without --test-policy does not even start
-            # the fixture, so the entry would be dead weight at best.
-            raise Fail(f"{path}: [policy].allow permits the fixture name `{name}`. "
-                       "Fixture names belong in [policy.test].allow only; the real "
-                       "policy must never allowlist a name the fixture answers.")
-        if not _covered_by(name, allowed):
-            raise Fail(f"{path}: [fixture.records] `{name}` is not allowlisted by "
-                       "[policy.test].allow, so the fixture would be refused by "
-                       "name and the check would grade nothing")
-        records.append((name, parsed))
-
-    control = raw["control"]
-    by_name = dict(records)
-    if control not in by_name:
-        raise Fail(f"{path}: [fixture] control `{control}` is not one of the "
-                   f"records ({', '.join(by_name)})")
-    if len(by_name[control]) != 1:
-        raise Fail(f"{path}: [fixture] control `{control}` must resolve to exactly "
-                   "one address; it is the probe that proves the fixture is live")
-    _public_address(by_name[control][0], path, f"the control record `{control}`")
-
-    orderings: set[tuple[bool, ...]] = set()
-    for name, addresses in records:
-        if name == control:
-            continue
-        private = tuple(_private_address(a) for a in addresses)
-        if not any(private) or all(private):
-            raise Fail(f"{path}: [fixture.records] `{name}` must mix one public and "
-                       "one private address — that mixture is the whole content of "
-                       "`dns-mixed-answers`")
-        orderings.add(private)
-    if len(orderings) < 2:
-        raise Fail(f"{path}: [fixture.records] must serve both answer orderings "
-                   "(public first and private first), or an engine that validates "
-                   "only the first address would not be distinguished from one that "
-                   "validates all of them")
-
-    rebind_zone = raw["rebind_zone"]
-    if not isinstance(rebind_zone, str) or not _ALLOW_ENTRY.match(rebind_zone) \
-            or not rebind_zone.endswith(FIXTURE_TLD):
-        raise Fail(f"{path}: [fixture] rebind_zone must be a hostname under "
-                   f"`{FIXTURE_TLD}` (found {rebind_zone!r})")
-    if _covered_by(f"probe.{rebind_zone}", tuple(allow)):
-        raise Fail(f"{path}: [policy].allow permits the rebinding zone "
-                   f"`{rebind_zone}`. Its answers change between lookups and end "
-                   "at a private address; it belongs in [policy.test].allow only.")
-    if f"*.{rebind_zone}" not in allow_test:
-        raise Fail(f"{path}: [fixture] rebind_zone `{rebind_zone}` needs "
-                   f"`*.{rebind_zone}` in [policy.test].allow; a denial has to be "
-                   "attributable to the address the engine was handed, not to the name")
-
-    ptr_address = _public_address(raw["ptr_address"], path, "[fixture] ptr_address")
-    served = {a for _, addresses in records for a in addresses}
-    if ptr_address in served:
-        raise Fail(f"{path}: [fixture] ptr_address `{ptr_address}` is also a record "
-                   "address. dnsmasq synthesizes PTR records from the records, so "
-                   "sharing an address would let a bare-IP destination match the "
-                   "allowlist under a fixture name")
-    ptr_claims = raw["ptr_claims"]
-    if not isinstance(ptr_claims, str) or ptr_claims not in allow:
-        raise Fail(f"{path}: [fixture] ptr_claims must be an exact entry in "
-                   f"[policy].allow (found {ptr_claims!r}); `ptr-allowlist` asks "
-                   "whether a PTR record can satisfy the *real* allowlist")
-
-    # The other direction: a `.test` name in the test policy with no record
-    # behind it resolves to NXDOMAIN and silently skips its check.
-    for entry in allow_test:
-        if not entry.endswith(FIXTURE_TLD):
-            continue
-        if entry.startswith("*."):
-            if entry != f"*.{rebind_zone}":
-                raise Fail(f"{path}: policy.test.allow has `{entry}`, which no "
-                           f"[fixture] zone serves (the only one is *.{rebind_zone})")
-        elif entry not in by_name:
-            raise Fail(f"{path}: policy.test.allow has `{entry}`, which "
-                       "[fixture.records] does not serve")
-
-    return FixtureConfig(control=control, rebind_zone=rebind_zone,
-                         ptr_address=ptr_address, ptr_claims=ptr_claims,
-                         records=tuple(records))
-
 
 def load_policy_config(path: Path = POLICY_FILE) -> PolicyConfig:
     """Read and validate config.toml. Fails closed on anything ambiguous."""
@@ -785,34 +607,30 @@ def load_policy_config(path: Path = POLICY_FILE) -> PolicyConfig:
         raise Fail(f"missing the policy source {path} (it holds the allowlist)")
     with path.open("rb") as fh:
         data = tomllib.load(fh)
-    unknown = sorted(set(data) - {"policy", "fixture"})
+    unknown = sorted(set(data) - {"policy"})
     if unknown:
-        raise Fail(f"{path}: unknown top-level table(s): {', '.join(unknown)}")
+        # `[fixture]` and `[policy.test]` moved to lab/fixtures.toml; say so
+        # rather than reporting them as an anonymous typo.
+        hint = ""
+        if {"fixture"} & set(unknown):
+            hint = ("\n[fixture] and [policy.test] belong in lab/fixtures.toml, "
+                    "which only ./lab.py reads (docs/lab.md).")
+        raise Fail(f"{path}: unknown top-level table(s): {', '.join(unknown)}{hint}")
     policy = data.get("policy")
     if not isinstance(policy, dict):
         raise Fail(f"{path}: missing the [policy] table")
-    unknown = sorted(set(policy) - {"allow", "test"})
+    unknown = sorted(set(policy) - {"allow"})
     if unknown:
         # A typo here (`allows = [...]`) would otherwise silently render an
         # empty or truncated allowlist.
-        raise Fail(f"{path}: unknown key(s) in [policy]: {', '.join(unknown)}")
+        hint = ("\nThe test allowlist belongs in lab/fixtures.toml (docs/lab.md)."
+                if "test" in unknown else "")
+        raise Fail(f"{path}: unknown key(s) in [policy]: {', '.join(unknown)}{hint}")
     allow = _allow_list(policy.get("allow", []), path, "policy.allow")
     if not allow:
         raise Fail(f"{path}: policy.allow must not be empty "
                    "(default deny needs explicit allows)")
-    test = policy.get("test", {})
-    if not isinstance(test, dict):
-        raise Fail(f"{path}: [policy.test] must be a table")
-    unknown = sorted(set(test) - {"allow"})
-    if unknown:
-        raise Fail(f"{path}: unknown key(s) in [policy.test]: {', '.join(unknown)}")
-    allow_test = _allow_list(test.get("allow", []), path, "policy.test.allow")
-    overlap = sorted(set(allow) & set(allow_test))
-    if overlap:
-        raise Fail(f"{path}: policy.test.allow repeats {', '.join(overlap)}, "
-                   "which policy.allow already permits everywhere")
-    fixture = _fixture_config(data.get("fixture"), path, allow, allow_test)
-    return PolicyConfig(tuple(allow), tuple(allow_test), fixture)
+    return PolicyConfig(tuple(allow))
 
 
 def _yaml_scalar(entry: str) -> str:
@@ -836,9 +654,14 @@ def _template_name(spec: "ServiceSpec") -> str:
     return Path(spec.config_file).name + ".j2"
 
 
-def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
-    """Render every engine config from config.toml. Path -> file contents."""
-    config = load_policy_config() if config is None else config
+def jinja_env():
+    """The shared Jinja environment for templates/.
+
+    Public because ./lab.py renders the same templates with `test_policy`
+    set, and a second environment configured slightly differently would be
+    a way for the two lanes to disagree about whitespace or undefined
+    handling rather than about policy.
+    """
     try:
         from jinja2 import Environment, FileSystemLoader, StrictUndefined
     except ModuleNotFoundError as exc:  # pragma: no cover - environment issue
@@ -857,61 +680,38 @@ def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
     )
     env.filters["yaml_scalar"] = _yaml_scalar
     env.filters["squid_wild"] = _squid_wild
+    return env
 
+
+def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
+    """Render every engine config from config.toml. Path -> file contents.
+
+    The operational policy only. The `.test` variants of these same
+    templates are rendered by ./lab.py into lab/config/, which is the only
+    place a fixture domain can enter a config file.
+    """
+    config = load_policy_config() if config is None else config
+    env = jinja_env()
     rendered: dict[Path, str] = {}
     for engine in ENGINES:
         spec = ServiceSpec.load(engine)
         name = _template_name(spec)
         if not (TEMPLATE_DIR / name).is_file():
             raise Fail(f"missing template: {TEMPLATE_DIR / name}")
-        template = env.get_template(name)
-        for test_policy in (False, True):
-            rel = spec.test_config_file if test_policy else spec.config_file
-            if not rel:
-                raise Fail(f"services/{engine}.toml: config_file and "
-                           "test_config_file are both required")
-            rendered[REPO_ROOT / rel] = template.render(
-                template_name=f"templates/{name}",
-                test_policy=test_policy,
-                allow=list(config.allow),
-                allow_test=list(config.allow_test),
-                allow_exact=config.exact(config.allow),
-                allow_wild=config.wild(config.allow),
-                allow_test_exact=config.exact(config.allow_test),
-                allow_test_wild=config.wild(config.allow_test),
-            )
-    if config.fixture is not None:
-        rendered.update(_render_fixture_hosts(env, config.fixture))
+        if not spec.config_file:
+            raise Fail(f"services/{engine}.toml: config_file is required")
+        rendered[REPO_ROOT / spec.config_file] = env.get_template(name).render(
+            template_name=f"templates/{name}",
+            test_policy=False,
+            allow=list(config.allow),
+            allow_test=[],
+            allow_exact=config.exact(config.allow),
+            allow_wild=config.wild(config.allow),
+            allow_test_exact=[],
+            allow_test_wild=[],
+        )
     return rendered
 
-
-def _render_fixture_hosts(env, fixture: FixtureConfig) -> dict[Path, str]:
-    """Render config/dns-fixture.hosts from `[fixture]`.
-
-    The hosts file is not a policy — nothing in it is enforced — but it is
-    the other half of the test policy, and hand-syncing it against
-    `[policy.test].allow` is exactly what `load_policy_config()` now
-    refuses to leave to care (docs/policy.md).
-    """
-    spec = ServiceSpec.load(DNS_FIXTURE)
-    name = _template_name(spec)
-    if not (TEMPLATE_DIR / name).is_file():
-        raise Fail(f"missing template: {TEMPLATE_DIR / name}")
-    rows = []
-    for record, addresses in fixture.records:
-        shape = ["private" if _private_address(a) else "public" for a in addresses]
-        rows.append({
-            "name": record,
-            "addresses": list(addresses),
-            "role": "control" if record == fixture.control else "mixed",
-            "shape": f"{shape[0].capitalize()} answer first, {shape[-1]} second",
-        })
-    text = env.get_template(name).render(
-        template_name=f"templates/{name}",
-        fixture=fixture,
-        fixture_records=rows,
-    )
-    return {REPO_ROOT / spec.config_file: text}
 
 
 def check_rendered_policies(rendered: dict[Path, str]) -> list[str]:
@@ -920,25 +720,30 @@ def check_rendered_policies(rendered: dict[Path, str]) -> list[str]:
     Auto-regeneration means a template or generator bug could otherwise
     overwrite a reviewed, working policy with a broken one. The same
     `validate_policy_file()` invariants that guarded the hand-written files
-    guard the generated ones, plus the superset rule the two variants of
-    each file have to satisfy.
+    guard the generated ones.
+
+    ./lab.py calls this on its own rendered `.test` files too, and adds the
+    superset rule those have to satisfy against these.
     """
     problems: list[str] = []
-    for engine in ENGINES:
-        spec = ServiceSpec.load(engine)
-        real_path = REPO_ROOT / spec.config_file
-        test_path = REPO_ROOT / spec.test_config_file
-        real, test = rendered[real_path], rendered[test_path]
-        problems += validate_policy_text(engine, real, real_path)
-        problems += validate_policy_text(engine, test, test_path)
+    for path, text in sorted(rendered.items()):
+        engine = _engine_for_config(path)
+        if engine is None:
+            continue  # not an engine policy (the fixture's hosts file)
+        problems += validate_policy_text(engine, text, path)
         if engine == "squid":
-            problems += check_squid_error_pages(real, real_path)
-            problems += check_squid_error_pages(test, test_path)
-        missing = policy_allowlist_text(engine, real) - policy_allowlist_text(engine, test)
-        for entry in sorted(missing):
-            problems.append(f"{test_path}: the test policy must be a strict superset "
-                            f"of the real one, but drops `{entry}`")
+            problems += check_squid_error_pages(text, path)
     return problems
+
+
+def _engine_for_config(path: Path) -> str | None:
+    """Which engine a rendered config belongs to, by filename.
+
+    `config/squid.conf` and `lab/config/squid.test.conf` are both Squid, so
+    both lanes validate with the same rules from one place.
+    """
+    stem = path.name.split(".")[0]
+    return stem if stem in ENGINES else None
 
 
 def sync_policies(config: PolicyConfig | None = None) -> list[Path]:
@@ -1028,7 +833,7 @@ REQUIRED_SQUID_DENY_RANGES = (
 # as `unknown` — so the bracketed cause in every comparison table, and the
 # ability to tell an SSRF refusal from an allowlist refusal at all, rests
 # on this mapping. Renaming an ACL without updating its `deny_info` is a
-# silent, valid-looking config that loses every reason (docs/engines.md).
+# silent, valid-looking config that loses every reason (docs/findings.md).
 #
 # `all` is Squid's built-in catch-all ACL and is deliberately here: it is
 # the last rule, so it is what an ordinary allowlist miss reports.
@@ -1201,7 +1006,7 @@ def validate_policy_text(engine: str, text: str, path: Path) -> list[str]:
         # different failure: Squid retries a `dstdomain` miss as a reverse
         # lookup, so an address-form destination reaches the allowlist under
         # whatever name its PTR claims. Refusing it earlier is the only fix
-        # Squid offers (docs/engines.md).
+        # Squid offers (docs/findings.md).
         for acl in ("metadata_ip", "private_ip", "ip_literal"):
             index = next((i for i, rule in enumerate(rules)
                           if rule == f"http_access deny {acl}"), None)
@@ -1240,32 +1045,6 @@ def policy_allowlist_text(engine: str, text: str) -> set[str]:
                        in _squid_acl_values(text, "allowlist_wild", "dstdom_regex"))
         return entries
     return set(_yaml_list(_yaml_block(text, "default"), "allowed_domains"))
-
-
-def check_allowlist_sync(test_policy: bool = False) -> list[str]:
-    """Warn when the engines' allowlists have drifted apart.
-
-    Compared pairwise rather than against a designated master: there is no
-    master. docs/policy.md is the logical policy and each config is one
-    expression of it, so any disagreement is a finding no matter which file
-    is the odd one out.
-    """
-    allowlists: dict[str, set[str]] = {}
-    try:
-        for engine in ENGINES:
-            spec = ServiceSpec.load(engine)
-            allowlists[engine] = policy_allowlist(engine, spec.config_path(test_policy))
-    except Fail:
-        return []
-    warnings = []
-    label = "test policy" if test_policy else "policy"
-    for i, first in enumerate(ENGINES):
-        for second in ENGINES[i + 1:]:
-            for entry in sorted(allowlists[first] - allowlists[second]):
-                warnings.append(f"{label}: `{entry}` is allowed in {first} but not {second}")
-            for entry in sorted(allowlists[second] - allowlists[first]):
-                warnings.append(f"{label}: `{entry}` is allowed in {second} but not {first}")
-    return warnings
 
 
 # ---------------------------------------------------------------------------
@@ -1327,42 +1106,9 @@ def all_specs() -> list[ServiceSpec]:
     return [ServiceSpec.load(engine) for engine in ENGINES]
 
 
-def start_dns_fixture(backend: Backend) -> str:
-    """Start the dnsmasq fixture container and return its address.
-
-    Only called for `up --test-policy`. No host port is published: the
-    fixture is reachable from the engine container and from nothing else.
-    """
-    spec = ServiceSpec.load(DNS_FIXTURE)
-    image = spec.run_image_ref()
-    if not backend.image_present(image):
-        raise Fail(
-            f"the DNS fixture image {image} is not built — run `./run.py setup`.\n"
-            "`up --test-policy` needs it to serve the mixed-answer records that "
-            "`check --full` grades (docs/security.md)."
-        )
-    backend.remove_container(spec.container_name)
-    backend.run_detached(
-        name=spec.container_name,
-        image=image,
-        publish_host="",
-        publish_port=0,
-        internal_port=spec.internal_port,
-        mounts=spec.mounts(False),
-        args=spec.args,
-        publish=False,
-    )
-    deadline = time.monotonic() + HEALTH_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        address = backend.container_ip(spec.container_name)
-        if address:
-            return address
-        if backend.container_state(spec.container_name) != "running":
-            break
-        time.sleep(0.5)
-    logs = backend.tail_logs(spec.container_name)
-    raise Fail(f"the DNS fixture container did not report an address\n"
-               f"--- last container logs ---\n{logs}")
+def _dedup(names: list[str]) -> list[str]:
+    """Order-preserving dedup — ./lab.py passes the fixture explicitly."""
+    return list(dict.fromkeys(names))
 
 
 def running_engine(backend: Backend) -> str | None:
@@ -1429,35 +1175,34 @@ def cmd_setup(opts: argparse.Namespace) -> int:
     problems: list[str] = []
     for engine in ENGINES:
         spec = ServiceSpec.load(engine)
-        for test_policy in (False, True):
-            try:
-                path = spec.config_path(test_policy)
-            except Fail as exc:
-                problems.append(str(exc))
-                continue
-            problems += validate_policy_file(engine, path)
+        try:
+            path = spec.config_path()
+        except Fail as exc:
+            problems.append(str(exc))
+            continue
+        problems += validate_policy_file(engine, path)
     if problems:
         for problem in problems:
             print(f"CONFIG ERROR: {problem}", file=sys.stderr)
         raise Fail("configuration validation failed")
     print("configs: valid")
-    for warning in check_allowlist_sync(False) + check_allowlist_sync(True):
-        print(f"WARNING: {warning}")
 
-    engines = ENGINES if opts.engine == "all" else (opts.engine,)
+    engines = ENGINES if opts.all else (opts.engine or DEFAULT_ENGINE,)
     for engine in engines:
-        spec = ServiceSpec.load(engine)
-        if engine == "pipelock":
-            _setup_pipelock(backend, spec)
-        elif spec.pin_kind == "package":
-            _setup_package_image(backend, spec, rebuild=opts.rebuild)
-        else:
-            _setup_smokescreen(backend, spec, rebuild=opts.rebuild)
-    # The DNS fixture is needed by `up --test-policy` whichever engine is
-    # chosen, so it is prepared unconditionally rather than per engine.
-    _setup_package_image(backend, ServiceSpec.load(DNS_FIXTURE), rebuild=opts.rebuild)
+        prepare_engine(backend, engine, rebuild=opts.rebuild)
     print("setup complete")
     return 0
+
+
+def prepare_engine(backend: Backend, engine: str, rebuild: bool = False) -> None:
+    """Pull or build one engine's pinned image. Also used by ./lab.py."""
+    spec = ServiceSpec.load(engine)
+    if engine == "pipelock":
+        _setup_pipelock(backend, spec)
+    elif spec.pin_kind == "package":
+        _setup_package_image(backend, spec, rebuild=rebuild)
+    else:
+        _setup_smokescreen(backend, spec, rebuild=rebuild)
 
 
 def _setup_pipelock(backend: Backend, spec: ServiceSpec) -> None:
@@ -1513,7 +1258,7 @@ def _setup_package_image(backend: Backend, spec: ServiceSpec, rebuild: bool = Fa
                   for name, version in spec.packages.items()}
     if spec.base_image:
         build_args["BASE_IMAGE"] = spec.base_image
-    context = REPO_ROOT / "images" / spec.engine
+    context = spec.image_context
     backend.build(tag=tag, dockerfile=context / "Dockerfile", context=context, build_args=build_args)
     print(f"{spec.engine}: built {tag}")
 
@@ -1599,42 +1344,55 @@ def cmd_up(opts: argparse.Namespace) -> int:
     # rather than replacing a working file.
     sync_policies_reporting()
 
-    config_path = spec.config_path(opts.test_policy)
+    config_path = spec.config_path()
     problems = validate_policy_file(engine, config_path)
     if problems:
         for problem in problems:
             print(f"CONFIG ERROR: {problem}", file=sys.stderr)
         raise Fail("refusing to start with an invalid policy (fail closed)")
-    for warning in check_allowlist_sync(opts.test_policy):
-        print(f"WARNING: {warning}")
-    if opts.test_policy:
-        print("NOTE: starting with the TEST policy (extra DNS fixture domains, and a "
-              "local dnsmasq serving the mixed-answer records). "
-              "Run `./run.py up` again without --test-policy for normal operation.")
 
+    start_engine(backend, spec, config_path)
+    print(f"clients: export HTTP_PROXY=http://{host}:{port} HTTPS_PROXY=http://{host}:{port}")
+    return 0
+
+
+def start_engine(backend: Backend, spec: ServiceSpec, config_path: Path,
+                 dns: str = "", keep_fixture: bool = False) -> None:
+    """Recreate one engine container on `config_path` and health-check it.
+
+    Shared by `./run.py up` and `./lab.py up`, which differ only in which
+    policy they mount and whether a DNS fixture is in the picture. Keeping
+    the recreate/publish/health sequence in one place is what stops the two
+    lanes from drifting into two different startup contracts.
+
+    The DNS fixture is swept along with the engines, so a stale resolver
+    can never outlive the engine pointed at it. `keep_fixture` is the one
+    exception: ./lab.py starts the fixture first — it has to, the engine
+    needs its address for `--dns` — so sweeping it here would delete the
+    resolver the engine is about to be pointed at.
+    """
+    engine = spec.engine
+    host, port = endpoint()
     image = spec.run_image_ref()
     if engine in BUILT_ENGINES and not backend.image_present(image):
         raise Fail(f"image {image} not built yet — run `./run.py --engine {engine} setup`")
 
-    # `up` recreates: remove every container owned by this repository first
-    # (every engine publishes the same endpoint, so they cannot coexist).
-    # The DNS fixture goes too — a stale one would outlive the engine that
-    # was pointed at it, and must never be left running under a real policy.
-    for owned in all_specs() + [ServiceSpec.load(DNS_FIXTURE)]:
-        if backend.remove_container(owned.container_name):
-            print(f"removed existing container {owned.container_name}")
+    # Recreate: remove every container owned by this repository first —
+    # every engine publishes the same endpoint, so they cannot coexist.
+    # The DNS fixture goes too, even from the operational lane: a stale one
+    # must never be left running alongside a real policy.
+    names = [spec.container_name for spec in all_specs()]
+    if not keep_fixture:
+        names.append(FIXTURE_CONTAINER)
+    for name in _dedup(names):
+        if backend.remove_container(name):
+            print(f"removed existing container {name}")
 
     if port_listening(host, port):
         raise Fail(
             f"{host}:{port} is already in use by something this repository does not own — "
             "refusing to start (choose down the other service or free the port)"
         )
-
-    fixture_dns = ""
-    if opts.test_policy:
-        fixture_dns = start_dns_fixture(backend)
-        print(f"started the DNS fixture at {fixture_dns} "
-              f"(serving {ServiceSpec.load(DNS_FIXTURE).config_file})")
 
     print(f"starting {engine} ({image}) on http://{host}:{port}")
     backend.run_detached(
@@ -1643,9 +1401,9 @@ def cmd_up(opts: argparse.Namespace) -> int:
         publish_host=host,
         publish_port=port,
         internal_port=spec.internal_port,
-        mounts=spec.mounts(opts.test_policy),
+        mounts=spec.mounts(config_path),
         args=spec.args,
-        dns=fixture_dns,
+        dns=dns,
     )
 
     deadline = time.monotonic() + HEALTH_WAIT_SECONDS
@@ -1667,16 +1425,15 @@ def cmd_up(opts: argparse.Namespace) -> int:
             f"(the container is left in place for debugging; `./run.py down` removes it)"
         )
     print(f"healthy: {detail}")
-    print(f"clients: export HTTP_PROXY=http://{host}:{port} HTTPS_PROXY=http://{host}:{port}")
-    return 0
 
 
 def cmd_down(opts: argparse.Namespace) -> int:
     backend = detect_backend(opts.backend)
     removed = False
-    for spec in all_specs() + [ServiceSpec.load(DNS_FIXTURE)]:
-        if backend.remove_container(spec.container_name):
-            print(f"removed {spec.container_name}")
+    for name in _dedup([spec.container_name for spec in all_specs()]
+                       + [FIXTURE_CONTAINER]):
+        if backend.remove_container(name):
+            print(f"removed {name}")
             removed = True
     if not removed:
         print("nothing to remove")
@@ -1729,29 +1486,41 @@ def cmd_logs(opts: argparse.Namespace) -> int:
     return backend.logs(spec.container_name, follow=opts.follow)
 
 
-def cmd_check(opts: argparse.Namespace) -> int:
-    backend = detect_backend(opts.backend)
+def egress_command(backend: Backend, engine: str | None, cli: str) -> list[str]:
+    """The checks/egress.py invocation for whichever engine is running.
+
+    Shared by `./run.py check` and `./lab.py check`, which differ only in
+    the group they ask for and whether the DNS fixture is in the picture.
+    Resolving "which engine is running" in one place is what stops the two
+    lanes from disagreeing about what they just measured. `cli` names the
+    calling entry point so each lane's errors quote the command that fixes
+    them.
+    """
     active = running_engine(backend)
     if not active:
-        raise Fail("no engine is running — `./run.py up` first")
-    engine = opts.engine or active
-    if engine != active:
-        raise Fail(f"--engine {engine} requested but {active} is running; `./run.py --engine {engine} up` first")
-    spec = ServiceSpec.load(engine)
+        raise Fail(f"no engine is running — `./{cli} up` first")
+    if engine and engine != active:
+        raise Fail(f"--engine {engine} requested but {active} is running; "
+                   f"`./{cli} --engine {engine} up` first")
+    spec = ServiceSpec.load(active)
     host, port = endpoint()
-    cmd = [sys.executable, str(REPO_ROOT / "checks" / "egress.py"),
-           "--proxy", f"http://{host}:{port}", "--engine", engine,
-           "--backend-bin", backend.bin, "--container", spec.container_name,
-           # Recorded in the JSON envelope so a result file states which
-           # build it measured; scripts/report.py reads it back into the
-           # conditions table in docs/engines.md.
-           "--image", spec.run_image_ref()]
-    # dns-rebinding grades on what the fixture observed, so the checker
-    # needs its log stream too. Only present under `up --test-policy`.
-    fixture = ServiceSpec.load(DNS_FIXTURE)
-    if backend.container_state(fixture.container_name) == "running":
-        cmd += ["--fixture-container", fixture.container_name]
-    cmd.append("--full" if opts.full else "--quick")
+    return [sys.executable, str(REPO_ROOT / "checks" / "egress.py"),
+            "--proxy", f"http://{host}:{port}", "--engine", active,
+            "--backend-bin", backend.bin, "--container", spec.container_name,
+            # Recorded in the JSON envelope so a result file states which
+            # build it measured; scripts/report.py reads it back into the
+            # conditions table in docs/findings.md.
+            "--image", spec.run_image_ref()]
+
+
+def cmd_check(opts: argparse.Namespace) -> int:
+    """The `quick` group of checks/egress.py: ordinary allow/deny behavior.
+
+    The adversarial `full` group needs the test policy and the DNS fixture,
+    so it belongs to the other lane — `./lab.py check` (docs/lab.md).
+    """
+    backend = detect_backend(opts.backend)
+    cmd = egress_command(backend, opts.engine, "run.py") + ["--quick"]
     if opts.json:
         cmd.append("--json")
     return subprocess.run(cmd).returncode
@@ -1784,16 +1553,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_setup = sub.add_parser("setup", help="validate prerequisites, pull/build pinned images")
     p_setup.add_argument("--rebuild", action="store_true",
                          help="rebuild a locally built image (smokescreen, squid) even if present")
+    p_setup.add_argument("--all", action="store_true",
+                         help="prepare every engine, not just the selected one")
     p_setup.set_defaults(func=cmd_setup)
 
-    p_up = sub.add_parser("up", help="(re)create the proxy container and health-check it")
-    p_up.add_argument("--test-policy", action="store_true",
-                      help="use config/<engine>.test.yaml (DNS fixture domains for `check --full`)")
-    p_up.set_defaults(func=cmd_up)
-
-    p_restart = sub.add_parser("restart", help="explicit teardown then up")
-    p_restart.add_argument("--test-policy", action="store_true")
-    p_restart.set_defaults(func=cmd_restart)
+    sub.add_parser("up", help="(re)create the proxy container and health-check it") \
+       .set_defaults(func=cmd_up)
+    sub.add_parser("restart", help="explicit teardown then up").set_defaults(func=cmd_restart)
 
     sub.add_parser("down", help="remove containers owned by this repository").set_defaults(func=cmd_down)
     sub.add_parser("status", help="show engine/backend/pin/endpoint state").set_defaults(func=cmd_status)
@@ -1802,30 +1568,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_logs.add_argument("--follow", "-f", action="store_true")
     p_logs.set_defaults(func=cmd_logs)
 
-    p_check = sub.add_parser("check", help="run the egress security test suite")
-    mode = p_check.add_mutually_exclusive_group()
-    mode.add_argument("--quick", action="store_true", help="ordinary allow/deny behavior (default)")
-    mode.add_argument("--full", action="store_true", help="include SSRF and CONNECT-abuse fixtures")
+    p_check = sub.add_parser("check",
+                             help="ordinary allow/deny behavior (the adversarial suite "
+                                  "is `./lab.py check`)")
     p_check.add_argument("--json", action="store_true", help="machine-readable results")
     p_check.set_defaults(func=cmd_check)
 
     p_pin = sub.add_parser("pin", help="record immutable pins in services/*.toml (needs network)")
-    p_pin.add_argument("target", choices=PINNABLE)
+    p_pin.add_argument("target", choices=ENGINES)
     p_pin.add_argument("--ref", help="smokescreen: pin a specific tag/branch instead of HEAD; "
                                      "squid: pin a specific apk version instead of the base image's")
     p_pin.set_defaults(func=cmd_pin)
-
-    # `setup` prepares one engine by default; allow all.
-    p_setup.add_argument("--all", dest="engine_all", action="store_true",
-                         help="prepare every engine")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     opts = parser.parse_args(argv)
-    if opts.command == "setup":
-        opts.engine = "all" if getattr(opts, "engine_all", False) else (opts.engine or DEFAULT_ENGINE)
     try:
         return opts.func(opts)
     except Fail as exc:

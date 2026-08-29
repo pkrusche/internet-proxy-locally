@@ -33,7 +33,6 @@ base_image = "alpine:3.22.1"
 name = "internet-proxy-squid"
 internal_port = 3128
 config_file = "config/squid.conf"
-test_config_file = "config/squid.test.conf"
 config_mount = "/etc/squid/squid.conf"
 # The entrypoint already carries `-N -f /etc/squid/squid.conf`; the policy
 # arrives entirely through the read-only bind mount above.

@@ -10,7 +10,7 @@
 # docs/policy.md.
 #
 # MCP / A2A / fetch-API features of Pipelock are intentionally unused.
-# TLS interception stays disabled for v1 (docs/architecture.md, "Non-goals").
+# TLS interception stays disabled for v1 (docs/security.md, "Non-goals").
 
 version: 1
 mode: strict

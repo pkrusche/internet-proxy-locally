@@ -131,7 +131,7 @@ class EgressSuiteTest(unittest.TestCase):
     def test_full_suite_lenient_squid_expectations(self) -> None:
         # Squid relays CONNECT tunnels without inspecting them, like
         # Smokescreen, so its tunnel behavior is recorded rather than
-        # graded (docs/engines.md).
+        # graded (docs/findings.md).
         results = self.run_suite("squid", "lenient", full=True)
         self.assertEqual(results["connect-sni-mismatch"].outcome, "record",
                          results["connect-sni-mismatch"].detail)
@@ -160,7 +160,7 @@ class EgressSuiteTest(unittest.TestCase):
         The mock decides by hostname, so it can stand in for an engine's
         *verdict* on the mixed names but not for the resolution behind it —
         which is fine: this exercises the check's own grading, and the real
-        resolution behavior is measured in docs/engines.md.
+        resolution behavior is measured in docs/findings.md.
         """
         port = free_port()
         allowed = set(mock_proxy.DEFAULT_ALLOWED) | {"1.1.1.1.nip.io"} | allowed_names
@@ -310,7 +310,7 @@ class SummarizeBodyTest(unittest.TestCase):
 
 
 class ClassifyDenialRealWordingTest(unittest.TestCase):
-    """Verbatim engine wording captured on 2026-08-19 (docs/engines.md).
+    """Verbatim engine wording captured on 2026-08-19 (docs/findings.md).
 
     The invented strings in ClassifyDenialTest all classified correctly
     while the taxonomy was still keying on bare addresses and on the word
@@ -436,7 +436,7 @@ class AggregateCauseTest(unittest.TestCase):
 
 
 class AnnotateTlsBytesTest(unittest.TestCase):
-    """Decoding the exact alert bytes docs/engines.md manually decoded."""
+    """Decoding the exact alert bytes docs/findings.md manually decoded."""
 
     def test_decodes_documented_alert_sequence(self) -> None:
         data = b"\x15\x03\x03\x00\x02\x02\x32" + b"\x15\x03\x03\x00\x02\x01\x00"
@@ -534,7 +534,7 @@ class PtrAllowlistTest(unittest.TestCase):
     """`ptr-allowlist` guards a bypass the rest of the suite cannot see:
     Squid retries a `dstdomain` miss as a reverse lookup, so an address
     whose PTR names an allowlisted host is allowed through. Measured before
-    the fix (docs/engines.md), and `direct-ip-connect` passed throughout
+    the fix (docs/findings.md), and `direct-ip-connect` passed throughout
     — it uses an address with no PTR claim."""
 
     def setUp(self) -> None:
@@ -613,7 +613,7 @@ class DnsRebindTest(unittest.TestCase):
     """`dns-rebinding` grades on one thing: whether the fixture saw a
     connection. The mock proxy stands in for the engine's verdict on each
     CONNECT; the fixture transcript is supplied directly, since the real
-    one is read from a container's log stream (docs/engines.md
+    one is read from a container's log stream (docs/findings.md
     "DNS rebinding")."""
 
     def setUp(self) -> None:

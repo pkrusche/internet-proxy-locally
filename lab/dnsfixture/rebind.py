@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""DNS rebinding fixture and connection trap for `check --full`.
+"""DNS rebinding fixture and connection trap for `./lab.py check`.
 
 Runs as PID 1 in the DNS-fixture container and does three things:
 
 1. supervises dnsmasq, which serves the static mixed-answer records and
-   forwards everything else upstream (images/dnsfixture/Dockerfile);
+   forwards everything else upstream (lab/dnsfixture/Dockerfile);
 2. answers the `rebind.fixture.test` zone, which dnsmasq delegates here.
    The *first* A query for a given name is answered with a public address;
    every later query for that same name is answered with this container's
@@ -36,13 +36,13 @@ import sys
 import threading
 
 REBIND_ZONE = "rebind.fixture.test"
-PUBLIC_ANSWER = "9.9.9.9"          # matches config/dns-fixture.hosts
+PUBLIC_ANSWER = "9.9.9.9"          # matches lab/config/dns-fixture.hosts
 
 # Reverse-DNS claim for the `ptr-allowlist` check: this address asserts a
 # PTR of an allowlisted hostname. An engine that resolves a bare-IP
 # destination backwards and matches the answer against its hostname
 # allowlist will let it through — which is exactly what Squid used to do
-# (docs/engines.md). Keep in sync with PTR_FIXTURE_* in
+# (docs/findings.md). Keep in sync with PTR_FIXTURE_* in
 # checks/egress.py. The address is public, so the SSRF floors do not fire
 # and the allowlist is genuinely the rule under test; it is deliberately
 # none of the addresses any other check connects to.

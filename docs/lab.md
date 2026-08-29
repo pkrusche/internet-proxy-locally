@@ -1,0 +1,174 @@
+# The lab
+
+The other lane. `./run.py` starts a proxy on the reviewed allowlist and
+knows nothing about any of this. `./lab.py` owns everything that exists to
+**measure** an engine rather than run one: the adversarial test policy, the
+local DNS fixture, the full egress suite, and the three-engine comparison
+in [findings.md](findings.md).
+
+Nothing here can reach an operational run. `./run.py` never reads
+`lab/fixtures.toml`, the fixture names live under `.test` (RFC 6761, can
+never resolve publicly), and any `./run.py up` removes the fixture
+container.
+
+```bash
+./lab.py setup     # all three engines + the DNS fixture image
+./lab.py up        # fixture, then an engine on the TEST policy
+./lab.py check     # the full adversarial suite
+./lab.py down      # remove both
+./lab.py measure   # all three engines end to end, then rewrite findings.md
+```
+
+`--engine` and `--backend` work as they do on `./run.py`.
+
+## The test policy
+
+`lab/fixtures.toml` holds `[policy.test]` — domains added **on top of**
+`config.toml`'s allowlist — and `[fixture]`, the DNS records. `./lab.py
+policy` renders both, with the same templates and the same Jinja
+environment `./run.py policy` uses, into `lab/config/`:
+
+| generated | from |
+| --- | --- |
+| `lab/config/{pipelock,smokescreen}.test.yaml`, `squid.test.conf` | `config.toml` + `[policy.test]` |
+| `lab/config/dns-fixture.hosts` | `[fixture.records]` |
+
+`./lab.py policy --check` reports drift as a diff without writing.
+
+The test policy is a **strict superset** of the operational one by
+construction, and `check_rendered_test_policies()` re-asserts that on the
+rendered text rather than trusting the construction: a `.test` run that
+measured a *narrower* policy than the one that ships would produce verdicts
+that do not transfer.
+
+Why the extra domains exist: `*.nip.io` and `*.sslip.io` resolve to
+caller-chosen addresses, and the fixture zones resolve to whatever the
+fixture says. Allowlisting them is the whole point — it makes a denial
+attributable to the IP-layer SSRF floors rather than to ordinary hostname
+policy. **Never put an operational domain in `[policy.test]`.**
+
+## The fixture records
+
+One edit must not half-land, so `load_lab_config()` refuses to render when
+the two halves disagree. It rejects a record the test policy does not
+allowlist (the fixture would be denied by name and grade nothing), a
+`.test` entry in `[policy.test]` with no record behind it (NXDOMAIN, so the
+check silently skips), a fixture name `config.toml` also allows, a control
+record with more than one address or a private one, a mixed record that is
+not one public plus one private, a record set that does not cover both
+orderings, and a `ptr_address` that collides with a record address.
+
+## The DNS fixture
+
+Public DNS cannot serve either fixture the suite needs — a mixed
+public+private answer set, or an answer that changes between lookups — so
+both run against a container this repository builds. `./lab.py up` starts
+it, reads its address, and starts the engine with `--dns <that address>`.
+It publishes no host port.
+
+**Mixed answers.** dnsmasq serves `lab/config/dns-fixture.hosts`: a control
+name with one public address, and two names carrying one public and one
+private address in both orderings, so an engine that validates only the
+first answer is distinguished from one that validates all of them. The
+control must establish before anything is graded; without it a denial could
+not be attributed to mixed-answer handling, and the row skips.
+
+**Rebinding.** dnsmasq delegates `rebind.fixture.test` to a small stdlib
+responder (`lab/dnsfixture/rebind.py`), which answers the *first* lookup of
+a name with a public address and every later one with the fixture's own
+private address — where it also listens. Each name is probed twice, with a
+pause between passes, so the second answer is actually handed out; two
+probes in the same second are served from one lookup by any resolver cache
+with second granularity, and the rebind never happens.
+
+That listener is the point. `dns-rebinding` grades on one thing: whether
+anything connected to the trap. "Did the engine reach a private address"
+stops being an inference from counts — which is what made the old
+`rbndr.us` row ungradable — and becomes an observation by the thing that
+would have received the connection. A repeat probe that succeeds while the
+trap stays silent is *not* a failure: it means the engine reused an address
+it had already validated, which is a legitimate defence. The engines split
+on exactly this ([findings.md](findings.md) §3).
+
+Two things to know before changing it:
+
+* **A bind-mounted `/etc/hosts` does not work**, though it looks like it
+  should. Duplicate names in a hosts file collapse to a single address —
+  musl's `getent hosts` returns the first, Squid's own parser keeps the
+  last — so the engine never sees more than one address and the check
+  silently measures which record survived. dnsmasq's `--addn-hosts`
+  aggregates them and returns both.
+* **`--host-record=name,addr1,addr2` does not give two IPv4 answers.** The
+  second slot is the IPv6 address; a second IPv4 there replaces the first
+  rather than adding to it (measured: the query returns only `10.0.0.1`).
+
+## Reproducing the comparison
+
+```bash
+./lab.py measure                    # all three engines, then rewrite findings.md
+./lab.py measure --backend docker   # or pin the backend
+./lab.py report                     # rewrite from the committed results/
+./lab.py report --check             # CI: exit 1 if the tables are stale
+```
+
+`measure` drives, per engine, `up` on the test policy and `check --json`
+into `results/<engine>.json`, and finishes with a `down` so no engine and
+no fixture is left running on a test allowlist. The result files are
+committed: without them the generated blocks of `findings.md` could not be
+re-derived, only believed.
+
+`report` rewrites only the regions of `findings.md` between
+`<!-- BEGIN GENERATED <name> -->` and `<!-- END GENERATED <name> -->`. The
+narrative around them is copied through byte for byte, and a missing or
+duplicated marker is fatal rather than silently skipped.
+
+To compare two runs directly rather than re-reading the tables:
+
+```bash
+checks/egress.py --diff results/pipelock.json results/smokescreen.json
+```
+
+## The end-to-end scripts
+
+The unit suite drives a fake backend: it pins down the CLI arguments
+`run.py` emits and the JSON it parses, but cannot tell whether a real
+runtime *acts* on them. These scripts assert the rest, each printing a
+named check per claim so a run can be pasted as evidence rather than
+summarized from memory.
+
+| | |
+| --- | --- |
+| `scripts/verify_loopback.py` | the endpoint is bound to loopback and nothing else — structurally (the runtime reports the binding) and behaviorally (it refuses on every non-loopback address) |
+| `scripts/verify_backend.py` | one backend end to end, fixture included: image, start, published port, fixture address read from *this* runtime's JSON shape, the engine resolving through it, and `down` removing both |
+| `scripts/verify_resilience.py` | crash and `restart` under continuous load: not one request for a denied host may ever succeed |
+| `scripts/verify_sandbox.py` | whether `project-sandbox` on this machine actually routes through this proxy (as of 2026-08-28: it does not) |
+
+Pass `--port 18081` to leave a proxy already serving 18080 alone.
+
+**Re-run `scripts/verify_loopback.py` after every backend upgrade.** The
+endpoint being loopback-only is one `--publish` argument, and a release that
+stopped honouring the address half would widen it to every interface with no
+error and no visible change in `run.py`'s output. If a release fails it,
+**do not substitute a broader binding** — a backend that cannot express a
+loopback-only publication is one this repository cannot use.
+
+## Backend parity
+
+Both backends are verified end to end for `setup`, image pull/build, `up`,
+loopback publication, `status`/`logs`/`check`/`down`, `pin`, and the DNS
+fixture. The fixture is the one place a real backend difference is
+load-bearing: the fixture container's address has to be read out of
+`inspect`, which Docker reports under `NetworkSettings` and Apple
+`container` under `status.networks[]` as a CIDR.
+
+| When | Backend and release | What |
+| --- | --- | --- |
+| 2026-08-25 | Apple `container` | Squid, and the DNS fixture on all three engines |
+| 2026-08-28 | Docker 29.7.2 (build a7dcaa6) | `verify_backend.py --engine squid`: 13/13 including the fixture chain; `verify_loopback.py`: 5/5; the full engine matrix |
+| 2026-08-28 | Apple `container` CLI 1.2.0 (commit 6e65319) | `verify_loopback.py --running`: 5/5 — `--publish ip:host:container` still honoured |
+
+## Upgrading the fixture
+
+`./lab.py pin` resolves the dnsmasq and python3 apk versions from the base
+image and writes them into `lab/dnsfixture.toml`; review, commit, then
+`./lab.py setup`. Engine pins are `./run.py pin <engine>`.

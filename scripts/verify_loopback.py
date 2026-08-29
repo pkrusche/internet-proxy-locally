@@ -24,7 +24,7 @@ Two independent pieces of evidence, because either alone can lie:
 
 **If a release fails this, do not widen the binding to make it pass.** The
 endpoint staying loopback-only is the invariant; a backend that cannot
-express it is a backend this repository cannot use (docs/backends.md).
+express it is a backend this repository cannot use (docs/lab.md).
 
     scripts/verify_loopback.py                 # every installed backend
     scripts/verify_loopback.py --backend docker
@@ -88,7 +88,7 @@ def reachable(host: str, port: int, timeout: float = 2.0) -> bool:
 def backend_release(backend: "run_mod.Backend") -> str:
     """The runtime's own version string — the thing this check is pinned to.
 
-    docs/backends.md records which release was verified; a result recorded
+    docs/lab.md records which release was verified; a result recorded
     against no version cannot be re-checked after an upgrade.
     """
     for args in (["--version"], ["version", "--format", "{{.Server.Version}}"]):
@@ -201,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
         except run_mod.Fail as exc:
             report.check(False, f"{name}: the engine started", str(exc))
     report.note("Record the outcome, with the release string above, in "
-                "docs/backends.md's parity checklist.")
+                "docs/lab.md's parity checklist.")
     return report.finish()
 
 

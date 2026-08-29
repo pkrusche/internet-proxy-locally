@@ -23,7 +23,6 @@ digest = "sha256:42b58a428defca8f57d74b005e865898deb9568c9d742e46b32c80b0d2b011f
 name = "internet-proxy-pipelock"
 internal_port = 8888
 config_file = "config/pipelock.yaml"
-test_config_file = "config/pipelock.test.yaml"
 config_mount = "/config/pipelock.yaml"
 args = [
     "run",

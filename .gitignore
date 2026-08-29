@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 .venv/
 
-# results/ is deliberately NOT ignored: docs/comparison.md is generated
-# from those files by scripts/report.py, so a checkout without them
-# cannot re-derive or check the published comparison — only believe it.
+# results/ is deliberately NOT ignored: the generated tables of
+# docs/findings.md are rendered from those files by scripts/report.py, so a
+# checkout without them cannot re-derive or check the published
+# comparison — only believe it.

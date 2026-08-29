@@ -28,7 +28,6 @@ runtime_image = "alpine:3.22.1"
 name = "internet-proxy-smokescreen"
 internal_port = 4750
 config_file = "config/smokescreen.yaml"
-test_config_file = "config/smokescreen.test.yaml"
 config_mount = "/etc/smokescreen/acl.yaml"
 # Daemon config, mounted alongside the ACL. Needed only because
 # `allow_missing_role` is a config-file key with no CLI equivalent.

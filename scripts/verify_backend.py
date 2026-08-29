@@ -4,7 +4,7 @@
 The unit suite drives a fake backend: it pins down the CLI arguments
 `run.py` emits and the JSON shapes it parses, but it cannot tell whether a
 real runtime *acts* on them. One place that gap is load-bearing is the DNS
-fixture. `up --test-policy` starts a resolver container, reads its address
+fixture. `./lab.py up` starts a resolver container, reads its address
 out of `inspect` — Docker reports it under `NetworkSettings`, Apple
 `container` under `status.networks[]` as a CIDR — and hands it to the
 engine as `--dns`. Both shapes are parsed and unit-tested; parsing the
@@ -91,7 +91,7 @@ def verify(backend_name: str, engine: str, port: int, report: Reporter) -> None:
         report.check(
             backend.container_state(fixture.container_name) == "running",
             f"the DNS fixture is running on {backend_name}",
-            "`up --test-policy` did not leave the fixture container running, so "
+            "`./lab.py up` did not leave the fixture container running, so "
             "the fixture-dependent checks below have nothing to answer them.")
 
         address = backend.container_ip(fixture.container_name)
@@ -182,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         verify(opts.backend, opts.engine, opts.port, report)
     except (run_mod.Fail, RuntimeError) as exc:
         report.check(False, "the lifecycle ran to completion", str(exc))
-    report.note("Record the outcome in docs/backends.md's parity checklist.")
+    report.note("Record the outcome in docs/lab.md's parity checklist.")
     return report.finish()
 
 

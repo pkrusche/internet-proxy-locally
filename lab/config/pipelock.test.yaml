@@ -1,15 +1,16 @@
 # GENERATED FILE — do not edit.
 #
-# Rendered from config.toml by ./run.py, via templates/pipelock.yaml.j2.
-# To change the allowlist, edit config.toml and run `./run.py policy`
-# (or just `./run.py up`, which regenerates first). A hand edit here is
-# silently overwritten and is caught by the test suite.
+# Rendered from config.toml + lab/fixtures.toml by ./lab.py,
+# via templates/pipelock.yaml.j2.
+# To change the test policy, edit lab/fixtures.toml and run
+# `./lab.py policy`. A hand edit here is silently overwritten and is
+# caught by the test suite.
 #
 # TEST POLICY — NEVER use for normal operation. config/pipelock.yaml plus
-# the `[policy.test]` fixtures. See docs/policy.md, "Test policy".
+# the `[policy.test]` fixtures from lab/fixtures.toml. See docs/lab.md.
 #
-# Activate with:  ./run.py --engine pipelock up --test-policy
-# Deactivate with a normal `./run.py up` (recreates with the real policy).
+# Activate with:  ./lab.py --engine pipelock up
+# Deactivate with `./run.py up` (recreates with the real policy).
 
 version: 1
 mode: strict
@@ -22,7 +23,7 @@ api_allowlist:
   - pypi.org
   - files.pythonhosted.org
   - registry.npmjs.org
-  # --- [policy.test] in config.toml: adversarial fixtures only ---
+  # --- [policy.test] in lab/fixtures.toml: adversarial fixtures only ---
   - "*.nip.io"
   - "*.sslip.io"
   - public-only.fixture.test

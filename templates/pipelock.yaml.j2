@@ -1,17 +1,17 @@
 {% include "_banner.j2" %}
 {% if test_policy %}
 # TEST POLICY — NEVER use for normal operation. config/pipelock.yaml plus
-# the `[policy.test]` fixtures. See docs/policy.md, "Test policy".
+# the `[policy.test]` fixtures from lab/fixtures.toml. See docs/lab.md.
 #
-# Activate with:  ./run.py --engine pipelock up --test-policy
-# Deactivate with a normal `./run.py up` (recreates with the real policy).
+# Activate with:  ./lab.py --engine pipelock up
+# Deactivate with `./run.py up` (recreates with the real policy).
 {% else %}
 # Pipelock configuration: strict standard forward proxy, default deny.
 # This is the Pipelock rendering of the shared logical policy in
 # docs/policy.md.
 #
 # MCP / A2A / fetch-API features of Pipelock are intentionally unused.
-# TLS interception stays disabled for v1 (docs/architecture.md, "Non-goals").
+# TLS interception stays disabled for v1 (docs/security.md, "Non-goals").
 {% endif %}
 
 version: 1
@@ -23,7 +23,7 @@ api_allowlist:
   - {{ domain | yaml_scalar }}
 {% endfor %}
 {% if test_policy %}
-  # --- [policy.test] in config.toml: adversarial fixtures only ---
+  # --- [policy.test] in lab/fixtures.toml: adversarial fixtures only ---
 {% for domain in allow_test %}
   - {{ domain | yaml_scalar }}
 {% endfor %}

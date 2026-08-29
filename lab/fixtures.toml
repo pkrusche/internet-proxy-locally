@@ -1,0 +1,92 @@
+# The adversarial test policy and the local DNS fixture.
+#
+# Read by ./lab.py only. `./run.py` never opens this file: nothing here is
+# ever part of an operational policy, and `./run.py up` cannot start an
+# engine on it. Every name below is a name that resolves to an
+# attacker-chosen address by design.
+#
+# ./lab.py renders this file, plus the real allowlist in config.toml,
+# into lab/config/*.test.* and lab/config/dns-fixture.hosts. Those files
+# are generated; `./lab.py policy --check` reports drift without writing.
+#
+# See docs/lab.md.
+
+[policy.test]
+# Added to the `.test` configs ONLY, on top of everything in
+# config.toml — the test policy is a strict superset by construction.
+# These exist so that `./lab.py check` can prove the IP-layer SSRF floors
+# hold even for an allowlisted hostname.
+#
+# Never add an operational domain here.
+allow = [
+    # Wildcard DNS services resolving to arbitrary caller-chosen IPs.
+    "*.nip.io",
+    "*.sslip.io",
+    # Mixed public+private answer sets, served by the local DNS fixture
+    # from lab/config/dns-fixture.hosts (lab/dnsfixture.toml).
+    "public-only.fixture.test",
+    "mixed-public-first.fixture.test",
+    "mixed-private-first.fixture.test",
+    # Rebinding zone, answered by lab/dnsfixture/rebind.py. Allowlisted
+    # so that a denial can only come from the address it was handed.
+    "*.rebind.fixture.test",
+]
+
+# ---------------------------------------------------------------------------
+
+[fixture]
+# The local DNS fixture (lab/dnsfixture.toml, lab/dnsfixture) — the source
+# of truth for the records it serves. `./lab.py policy` renders
+# lab/config/dns-fixture.hosts from this table, so the hosts file and the
+# `[policy.test]` allowlist above can no longer disagree: rendering refuses
+# a record name the test policy does not allowlist, and refuses a
+# `[policy.test]` `.fixture.test` name with no record behind it.
+#
+# The names live under `.test`, a reserved TLD (RFC 6761) that can never
+# resolve publicly, so a missing fixture degrades to NXDOMAIN rather than to
+# some real host.
+
+# The control record: one public address and nothing else. It must be
+# reachable through the proxy for `dns-mixed-answers` to mean anything — if
+# it is denied, the fixture is not running, not allowlisted or unreachable,
+# and the mixed results below could not be attributed to mixed-answer
+# handling. Every other record must carry one public and one private
+# address, and both orderings must appear, or an engine that validates only
+# the first answer would not be distinguished. Both rules are enforced when
+# the file is rendered.
+control = "public-only.fixture.test"
+
+# The rebinding zone, answered by lab/dnsfixture/rebind.py rather than
+# from the records below: the first A query for a name is answered with a
+# public address and every later one with the fixture's own — private —
+# address, on which it listens as a trap.
+rebind_zone = "rebind.fixture.test"
+
+# The reverse-DNS claim behind `ptr-allowlist`: the fixture answers PTR for
+# this address with this hostname, which has to be a *real* allowlist entry
+# (from config.toml) for the check to mean anything. The address is public,
+# so the SSRF floors stay out of it and the hostname allowlist is genuinely
+# the rule under test, and it is none of the addresses any other check
+# connects to.
+ptr_address = "1.0.0.1"
+ptr_claims = "pypi.org"
+
+# name -> the addresses it resolves to, in order.
+#
+# `dns-mixed-answers` asks whether an engine that resolves a name to
+# *several* addresses validates all of them, or silently picks the public
+# one and connects. No public wildcard-DNS service serves a mixed answer
+# set, so it has to be manufactured here.
+#
+# `9.9.9.9` is the public half throughout: it accepts TCP on 443, so an
+# engine that wrongly allowed one of the mixed names actually establishes a
+# tunnel and is caught, rather than failing for lack of a route and looking
+# like a denial. It is deliberately NOT `1.1.1.1`, which `direct-ip-connect`
+# uses — dnsmasq synthesizes PTR records from these entries, and Squid
+# retries an address-form destination as a reverse lookup, so a shared
+# address would let a bare-IP CONNECT satisfy the allowlist under a fixture
+# name (measured 2026-08-25, docs/findings.md).
+[fixture.records]
+"public-only.fixture.test" = ["9.9.9.9"]
+"mixed-public-first.fixture.test" = ["9.9.9.9", "10.0.0.1"]
+"mixed-private-first.fixture.test" = ["10.0.0.1", "9.9.9.9"]
