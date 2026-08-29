@@ -1,18 +1,6 @@
-# Smokescreen daemon configuration (NOT the egress policy).
-#
-# The policy/allowlist lives in config/smokescreen.yaml, which is passed
-# separately as --egress-acl-file so that `up --test-policy` can swap it.
-# This file exists only because `allow_missing_role` has no command-line
-# equivalent — it is a config-file-only key upstream.
-#
-# Everything else (listen address, ACL path) stays on the command line in
-# services/smokescreen.toml; CLI options override values set here.
+# Smokescreen daemon configuration (NOT the egress policy — that is
+# config/smokescreen.yaml). Rationale: docs/policy.md, "What is generated
+# and what is not".
 
 ---
-# v1 runs no client TLS, so requests carry no role. Without this, every
-# request is rejected before the ACL is consulted ("Unable to get role for
-# request") and the `default` service in the ACL is never reached.
-# This does NOT weaken the policy: a missing role resolves to the empty
-# role, which matches no named service and therefore falls through to the
-# `default` enforce rule.
 allow_missing_role: true

@@ -440,15 +440,13 @@ a while, and the reasons are reusable.
   third of the IPv6 SSRF evidence had been vacuous since the fixture was
   written. Now `0--1.sslip.io`. The classifier surfaced it: `unknown` on a
   passing row was the thing worth pulling on.
-* **`/etc/hosts` cannot express a mixed answer.** A bind-mounted hosts file
-  looked like a cheap fixture and is not: duplicate names collapse to one
-  address (musl keeps the first, Squid's own parser the last), so the
-  engine never sees more than one and the check measures which record
-  survived. An earlier revision reported a Squid result from exactly that
-  setup; it did not show what it was said to show.
-* **`--host-record=name,v4,v4` gives one address.** The second slot is the
-  IPv6 address, so a second IPv4 replaces the first. The dnsmasq recipe in
-  docs/security.md used to recommend it.
+* **`/etc/hosts` cannot express a mixed answer**, and neither does
+  `--host-record=name,v4,v4` — mechanism in docs/security.md, "The local
+  DNS fixture". An earlier revision reported a Squid result from a
+  bind-mounted hosts file; it did not show what it was said to show,
+  because duplicate names there collapse to one address. docs/security.md's
+  own dnsmasq recipe used to recommend the `--host-record` form that drops
+  the second IPv4.
 * **`rbndr.us` was never gradable.** It answered each query with one of its
   two addresses at random, so the checker's lookup and the engine's were
   independent draws and neither outcome attributed to anything; the

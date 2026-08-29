@@ -1,30 +1,17 @@
 {% include "_banner.j2" %}
 {% if test_policy %}
-# TEST POLICY — NEVER use for normal operation.
-#
-# config/pipelock.yaml plus the `[policy.test]` entries from config.toml:
-# wildcard DNS services and the names the local DNS fixture serves
-# (services/dnsfixture.toml). All of them resolve to arbitrary,
-# attacker-chosen IPs. Allowlisting them is the point of the test: with
-# the hostname allowed, the proxy's *IP-layer* SSRF floors (private,
-# loopback, link-local, metadata, DNS rebinding) must still block the
-# connection. See checks/egress.py and docs/security.md.
+# TEST POLICY — NEVER use for normal operation. config/pipelock.yaml plus
+# the `[policy.test]` fixtures. See docs/policy.md, "Test policy".
 #
 # Activate with:  ./run.py --engine pipelock up --test-policy
 # Deactivate with a normal `./run.py up` (recreates with the real policy).
 {% else %}
 # Pipelock configuration: strict standard forward proxy, default deny.
+# This is the Pipelock rendering of the shared logical policy in
+# docs/policy.md.
 #
-# This file is the Pipelock expression of the shared logical policy in
-# docs/policy.md. The allowlist below comes from config.toml and is
-# rendered identically into every engine's config, so the three cannot
-# drift apart.
-#
-# Notes:
-# - MCP / A2A / fetch-API features of Pipelock are intentionally unused.
-# - TLS interception stays disabled for v1 (docs/pipelock.md).
-# - Validate keys against the pinned release (services/pipelock.toml)
-#   after any upgrade: `./run.py setup && ./run.py check --quick`.
+# MCP / A2A / fetch-API features of Pipelock are intentionally unused.
+# TLS interception stays disabled for v1 (docs/architecture.md, "Non-goals").
 {% endif %}
 
 version: 1

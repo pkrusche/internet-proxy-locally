@@ -80,6 +80,17 @@ false`, Smokescreen's `action: enforce` — is literal text in
 Changing a rule means editing a template and reviewing that diff, which is
 the same review it needed before.
 
+One file is neither generated nor templated: `config/smokescreen.conf.yaml`
+holds `allow_missing_role: true`, the Smokescreen *daemon* setting (as
+opposed to the egress policy in `config/smokescreen.yaml`, passed
+separately via `--egress-acl-file`). It exists only because
+`allow_missing_role` has no CLI equivalent. v1 runs no client TLS, so every
+request carries no role; without this, Smokescreen rejects each one before
+the ACL is even consulted (`"Unable to get role for request"`) and the
+`default` service is never reached. This does not weaken the policy — a
+missing role resolves to the empty role, which matches no named service
+and falls through to the `default enforce` rule.
+
 ## Where each rule lives
 
 Pipelock and Smokescreen implement the IP-layer floors in engine code:

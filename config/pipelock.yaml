@@ -6,17 +6,11 @@
 # silently overwritten and is caught by the test suite.
 #
 # Pipelock configuration: strict standard forward proxy, default deny.
+# This is the Pipelock rendering of the shared logical policy in
+# docs/policy.md.
 #
-# This file is the Pipelock expression of the shared logical policy in
-# docs/policy.md. The allowlist below comes from config.toml and is
-# rendered identically into every engine's config, so the three cannot
-# drift apart.
-#
-# Notes:
-# - MCP / A2A / fetch-API features of Pipelock are intentionally unused.
-# - TLS interception stays disabled for v1 (docs/pipelock.md).
-# - Validate keys against the pinned release (services/pipelock.toml)
-#   after any upgrade: `./run.py setup && ./run.py check --quick`.
+# MCP / A2A / fetch-API features of Pipelock are intentionally unused.
+# TLS interception stays disabled for v1 (docs/architecture.md, "Non-goals").
 
 version: 1
 mode: strict

@@ -3,41 +3,10 @@
 # `./run.py up --test-policy` starts, and read only through it. Never
 # present in normal operation.
 #
-# The records come from `[fixture.records]` in config.toml, which is also
-# what `[policy.test].allow` is checked against: a record the test policy
-# does not allowlist, or an allowlisted `.test` name with no record behind
-# it, fails to render rather than turning into a check that silently grades
-# nothing (docs/policy.md, "Test policy").
-#
-# Why this exists: `dns-mixed-answers` asks whether an engine that resolves
-# a name to *several* addresses validates all of them, or silently picks
-# the public one and connects. No public wildcard-DNS service serves a
-# mixed answer set, so it has to be manufactured locally.
-#
-# Why it is not simply bind-mounted at /etc/hosts: it would not work.
-# Duplicate names in a hosts file are collapsed to a single address by both
-# resolvers involved — musl's `getent hosts` returns the first, Squid's own
-# hosts parser keeps the last — so the engine never sees more than one
-# address and the check would measure which record survived rather than how
-# a multi-address answer is handled. dnsmasq's `--addn-hosts` aggregates
-# them properly and returns both in one answer (verified 2026-08-25).
-#
-# The names are under `.test`, a reserved TLD (RFC 6761) that can never
-# resolve publicly, so a missing fixture degrades to NXDOMAIN rather than
-# to some real host.
-#
-# The public half accepts TCP on 443, so an engine that wrongly allowed one
-# of the mixed names actually establishes a tunnel and is caught, rather
-# than failing for lack of a route and looking like a denial. It is
-# deliberately not the address `direct-ip-connect` uses: dnsmasq
-# synthesizes PTR records from this file, and Squid's `dstdomain` falls
-# back to a reverse lookup when the destination is an IP literal and
-# nothing else matched — so a shared address let a bare-IP CONNECT through
-# the allowlist under a fixture name and turned `direct-ip-connect` into a
-# failure (measured 2026-08-25). config.toml refuses to render a fixture
-# that reuses `ptr_address`. The Squid behavior it exposed is real and is
-# written up in docs/engines.md, "Squid: a bare IP could satisfy the
-# allowlist through a reverse lookup".
+# Source of truth: `[fixture.records]` in config.toml. Full rationale for
+# what this fixture is for and why it has to be a local dnsmasq container
+# rather than a bind-mounted `/etc/hosts`: docs/policy.md ("The fixture
+# records") and docs/security.md ("The local DNS fixture").
 #
 # `{{ fixture.rebind_zone }}` is NOT here: its answers change between the
 # first lookup and the next, which no static file can express, so
@@ -45,16 +14,11 @@
 {% for record in fixture_records %}
 
 {% if record.role == "control" %}
-# Control: one public address, nothing else. It must be reachable through
-# the proxy for the check to mean anything — if this is denied, the fixture
-# is not running, not allowlisted, or unreachable, and the mixed results
-# below could not be attributed to mixed-answer handling. checks/egress.py
-# skips on that rather than banking a pass it did not earn.
+# Control: one public address, nothing else — must be reachable through
+# the proxy or the mixed-answer rows below cannot be attributed.
 {% else %}
 {% if loop.first or fixture_records[loop.index0 - 1].role == "control" %}
-# The mixed answers. Every ordering below is present because an engine that
-# validates only the first address returned would pass one and fail the
-# other, and a single ordering could not tell those apart.
+# Mixed answers, both orderings (docs/engines.md, "Mixed DNS answers").
 #
 {% endif %}
 # {{ record.shape }}.

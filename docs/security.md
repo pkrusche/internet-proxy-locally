@@ -107,14 +107,12 @@ Pipelock and Smokescreen, and Squid was measured on 2026-08-25. Two gaps
 the original run exposed are addressed at the tooling level:
 
 * **The rebinding check.** It used to report an aggregate `denied=N
-  established=M` against `rbndr.us`, with no way to tell a cached DNS
-  answer from a real defence — that fixture answered each query with one
-  of its two addresses at random, so the checker's lookup and the engine's
-  were independent draws and neither outcome attributed to anything. It is
-  now graded against the local fixture below, which hands out a private
-  address on the second lookup and listens on it, so the grade rests on
-  whether the engine connected there rather than on what the checker
-  guessed it resolved.
+  established=M` against `rbndr.us`, which turned out to be ungradable
+  (docs/engines.md, "Corrections to earlier runs"). It is now graded
+  against the local fixture below, which hands out a private address on
+  the second lookup and listens on it, so the grade rests on whether the
+  engine connected there rather than on what the checker guessed it
+  resolved.
 * **A denial's cause.** `classify_denial()` gives a best-effort taxonomy
   bucket per denial (see above) instead of only a status code. Its
   accuracy against each engine's real wording is pinned by
