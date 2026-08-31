@@ -58,7 +58,7 @@ class EgressSuiteTest(unittest.TestCase):
         port = free_port()
         server = mock_proxy.start_in_thread(
             port, mode=mode, certfile=self.certfile, keyfile=self.keyfile)
-        self.addCleanup(server.shutdown)
+        self.addCleanup(server.stop)
         return server, port
 
     def run_suite(self, engine: str, mode: str, full: bool) -> dict[str, "egress.Result"]:
@@ -92,7 +92,7 @@ class EgressSuiteTest(unittest.TestCase):
         server.host_allowed = lambda host: True  # type: ignore[method-assign]
         import threading
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.addCleanup(server.shutdown)
+        self.addCleanup(server.stop)
 
         results = {r.name: r for r in
                    egress.run_suite(f"http://127.0.0.1:{port}", "pipelock", full=False)}
@@ -160,7 +160,7 @@ class EgressSuiteTest(unittest.TestCase):
         server = mock_proxy.start_in_thread(
             port, allowed=allowed, mode="strict",
             certfile=self.certfile, keyfile=self.keyfile)
-        self.addCleanup(server.shutdown)
+        self.addCleanup(server.stop)
         return port
 
     def test_mixed_answers_denies_when_only_the_control_is_reachable(self) -> None:
@@ -233,7 +233,7 @@ class EgressSuiteTest(unittest.TestCase):
         server = mock_proxy.start_in_thread(
             port, allowed=allowed, mode="strict",
             certfile=self.certfile, keyfile=self.keyfile)
-        self.addCleanup(server.shutdown)
+        self.addCleanup(server.stop)
         client = egress.ProxyClient("127.0.0.1", port)
         self.assertTrue(egress.fixtures_active(client))
 
@@ -527,7 +527,7 @@ class LogCaptureTest(unittest.TestCase):
     def test_each_result_gets_a_distinct_log_window(self) -> None:
         port = free_port()
         server = mock_proxy.start_in_thread(port, mode="strict")
-        self.addCleanup(server.shutdown)
+        self.addCleanup(server.stop)
         results = egress.run_suite(f"http://127.0.0.1:{port}", "pipelock", full=False,
                                    backend_bin=self.backend_bin, container="fake")
         self.assertTrue(results)
@@ -539,7 +539,7 @@ class LogCaptureTest(unittest.TestCase):
     def test_no_capture_without_backend_args(self) -> None:
         port = free_port()
         server = mock_proxy.start_in_thread(port, mode="strict")
-        self.addCleanup(server.shutdown)
+        self.addCleanup(server.stop)
         results = egress.run_suite(f"http://127.0.0.1:{port}", "pipelock", full=False)
         self.assertTrue(all(r.engine_logs == [] for r in results))
 
@@ -590,7 +590,7 @@ class PtrAllowlistTest(unittest.TestCase):
             return allow
 
         server.host_allowed = host_allowed  # type: ignore[method-assign]
-        self.addCleanup(server.shutdown)
+        self.addCleanup(server.stop)
         return egress.ProxyClient("127.0.0.1", port)
 
     def test_fails_when_the_address_is_reachable(self) -> None:
@@ -676,7 +676,7 @@ class DnsRebindTest(unittest.TestCase):
             return allow
 
         server.host_allowed = host_allowed  # type: ignore[method-assign]
-        self.addCleanup(server.shutdown)
+        self.addCleanup(server.stop)
         return egress.ProxyClient("127.0.0.1", port)
 
     def transcript(self, lookups_per_name: int, trap: "list[str]" = ()) -> "list[str]":

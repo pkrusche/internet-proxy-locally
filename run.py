@@ -1576,12 +1576,12 @@ def cmd_status(opts: argparse.Namespace) -> int:
     print(f"endpoint: http://{host}:{port}")
     for spec in all_specs():
         state = backend.container_state(spec.container_name)
-        if spec.engine == "pipelock":
-            pin = spec.image_digest
-        elif spec.pin_kind == "package":
-            pin = spec.primary_package_version
-        else:
-            pin = spec.source_ref
+        # What to show as the pin is the same question `pin_kind` already
+        # answers; branching on the engine name here meant a fourth engine
+        # would have printed an empty pin rather than its own.
+        pin = {"digest": spec.image_digest,
+               "package": spec.primary_package_version,
+               "source": spec.source_ref}[spec.pin_kind]
         pin = pin or "(unpinned)"
         marker = " (active)" if spec.engine == active else ""
         print(f"{spec.engine}: {state}{marker}")

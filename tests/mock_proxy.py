@@ -47,6 +47,17 @@ class MockProxyServer(socketserver.ThreadingTCPServer):
             self.tls_ctx.load_cert_chain(certfile, keyfile)
         super().__init__(addr, Handler)
 
+    def stop(self) -> None:
+        """Stop serving *and* close the listening socket.
+
+        `shutdown()` alone only breaks out of `serve_forever`; the bound
+        socket stays open until the object is collected, which is one
+        leaked descriptor per test that starts a proxy. Registering this
+        as the single cleanup is what keeps the two from drifting apart.
+        """
+        self.shutdown()
+        self.server_close()
+
     def host_allowed(self, host: str) -> bool:
         host = host.strip("[]").lower()
         try:
