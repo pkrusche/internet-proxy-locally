@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet python
 """Shared plumbing for the end-to-end verification scripts in scripts/.
 
 These scripts test things the unit suite cannot: that a real container
@@ -7,7 +7,7 @@ CLI, on a real backend, and report in one consistent shape — a list of
 named checks and an exit code — so that a run can be pasted into
 docs/lab.md as evidence rather than summarized from memory.
 
-Stdlib only; Python 3.11+.
+Run through uv (see the shebang). No third-party imports of its own.
 """
 
 from __future__ import annotations

@@ -1,18 +1,28 @@
 # internet-proxy-locally.
 #
-# `run.py` and `checks/egress.py` remain stdlib-only at runtime: the one
-# dependency below is used by a single code path, the policy generator
-# (`render_policies()` in run.py), which renders templates/*.j2 into
-# config/. Jinja2 is imported lazily there so that `./run.py down`,
-# `status` and `logs` — the commands you want during an incident — keep
-# working with nothing but a Python interpreter.
+# Every entry point here is run through uv — the shebangs are
+# `#!/usr/bin/env -S uv run --quiet python`, so `./run.py ...` resolves the
+# interpreter from .python-version and the dependencies from this file.
+# There is no supported bare-interpreter path, and nothing is imported
+# lazily to preserve one.
+#
+#   jinja2  renders templates/*.j2 into config/  (`render_policies()`)
+#   pyyaml  reads the result back to validate it (`_load_yaml()`)
+#
+# PyYAML is not a convenience. The regexes it replaced read the *first*
+# match of a key and stopped, so a config whose effective value was unsafe
+# — set once safely, then overridden later in the file — passed validation
+# while every real parser, the engine's included, disagreed.
 
 [project]
 name = "internet-proxy-locally"
 version = "0.1.0"
 description = "Local containerized Internet filtering proxy for coding-agent sandboxes"
 requires-python = ">=3.11"
-dependencies = ["jinja2>=3.1"]
+dependencies = [
+    "jinja2>=3.1",
+    "pyyaml>=6.0.3",
+]
 
 [tool.uv]
 package = false

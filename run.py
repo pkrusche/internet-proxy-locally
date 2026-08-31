@@ -1,28 +1,17 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet python
 """internet-proxy-locally — local containerized Internet filtering proxy.
 
 One CLI for both Docker and Apple `container`. Exposes a single stable
 host endpoint (http://127.0.0.1:18080) backed by Pipelock, Smokescreen or
 Squid, with a default-deny destination policy.
 
-Stdlib only; Python 3.11+.
+Run it through uv — the shebang does that, so `./run.py ...` is enough.
+uv resolves the interpreter from .python-version and the dependencies from
+pyproject.toml, so there is no bare-interpreter path to keep working and
+nothing here is imported lazily to preserve one.
 """
 
 from __future__ import annotations
-
-import sys
-
-# Ahead of the stdlib imports on purpose. `tomllib` arrived in 3.11, so on
-# an older interpreter (macOS Command Line Tools still ships 3.9) the next
-# import would die with a bare ModuleNotFoundError that names a module the
-# reader has no reason to connect to a version requirement.
-if sys.version_info < (3, 11):
-    sys.exit(
-        f"error: Python 3.11+ required, found {sys.version.split()[0]} "
-        f"at {sys.executable}.\n"
-        "This repository is a uv project: run `uv sync` once, then "
-        "`uv run ./run.py ...`."
-    )
 
 import argparse
 import difflib
@@ -33,10 +22,14 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import time
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import yaml
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -662,14 +655,6 @@ def jinja_env():
     a way for the two lanes to disagree about whitespace or undefined
     handling rather than about policy.
     """
-    try:
-        from jinja2 import Environment, FileSystemLoader, StrictUndefined
-    except ModuleNotFoundError as exc:  # pragma: no cover - environment issue
-        raise Fail(
-            "jinja2 is required to render the engine policies from config.toml.\n"
-            "Run `uv sync` once, then use `uv run ./run.py ...` "
-            "(or install jinja2 into the interpreter you are using)."
-        ) from exc
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
         trim_blocks=True,
@@ -777,37 +762,55 @@ def sync_policies_reporting() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _yaml_list(text: str, key: str) -> list[str]:
-    """Extract a top-level-ish `key:` sequence of scalar items."""
-    match = re.search(rf"^(\s*){re.escape(key)}:\s*$", text, re.MULTILINE)
-    if not match:
-        return []
-    indent = len(match.group(1))
-    items: list[str] = []
-    for line in text[match.end():].splitlines():
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        this_indent = len(line) - len(line.lstrip())
-        stripped = line.strip()
-        if stripped.startswith("- ") and this_indent > indent:
-            items.append(stripped[2:].strip().strip('"').strip("'"))
-        elif this_indent <= indent:
-            break
-    return items
+class _StrictYamlLoader(yaml.SafeLoader):
+    """SafeLoader that refuses duplicate keys instead of resolving them.
+
+    This is the point of parsing the policies rather than matching them
+    with regexes. PyYAML resolves a repeated key by taking the last one;
+    the regex reader this replaced found the *first* and stopped, so a
+    config carrying both `tls_interception.enabled: false` and a later
+    `true` passed validation while every real YAML parser — the engine's
+    included — read it as enabled. These files are generated, so a repeated
+    key is a generator bug, and catching that before it is written is what
+    this validator is for.
+    """
 
 
-def _yaml_block(text: str, key: str) -> str:
-    match = re.search(rf"^(\s*){re.escape(key)}:\s*$", text, re.MULTILINE)
-    if not match:
-        return ""
-    indent = len(match.group(1))
-    lines: list[str] = []
-    for line in text[match.end():].splitlines():
-        if line.strip() and not line.lstrip().startswith("#"):
-            if len(line) - len(line.lstrip()) <= indent:
-                break
-        lines.append(line)
-    return "\n".join(lines)
+def _no_duplicate_keys(loader, node, deep=False):
+    mapping = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise yaml.constructor.ConstructorError(
+                None, None, f"duplicate key {key!r}", key_node.start_mark)
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_StrictYamlLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no_duplicate_keys)
+
+
+def _load_yaml(text: str, path: Path) -> dict:
+    """Parse a rendered YAML policy into a mapping, or fail closed."""
+    try:
+        doc = yaml.load(text, Loader=_StrictYamlLoader)
+    except yaml.YAMLError as exc:
+        raise Fail(f"{path}: not valid YAML: "
+                   f"{str(exc).replace(chr(10), ' ')}") from exc
+    if not isinstance(doc, dict):
+        raise Fail(f"{path}: expected a YAML mapping at the top level, "
+                   f"found {type(doc).__name__}")
+    return doc
+
+
+def _mappings(node) -> "list[dict]":
+    """Every mapping in a parsed document, nested ones included."""
+    if isinstance(node, dict):
+        return [node] + [m for v in node.values() for m in _mappings(v)]
+    if isinstance(node, list):
+        return [m for item in node for m in _mappings(item)]
+    return []
 
 
 # The IP ranges config/squid.conf must refuse. Pipelock and Smokescreen
@@ -965,32 +968,43 @@ def validate_policy_text(engine: str, text: str, path: Path) -> list[str]:
     one. `path` is used only to name the file in the messages.
     """
     problems: list[str] = []
+    if engine in ("pipelock", "smokescreen"):
+        try:
+            doc = _load_yaml(text, path)
+        except Fail as exc:
+            # A policy that cannot be parsed is a policy that cannot be
+            # checked: report it as a problem so the caller fails closed
+            # rather than starting on an unvalidated file.
+            return [str(exc)]
     if engine == "pipelock":
-        _require(re.search(r"^mode:\s*strict\b", text, re.M) is not None, path,
+        _require(doc.get("mode") == "strict", path,
                  "must set `mode: strict`", problems)
-        _require(re.search(r"^enforce:\s*true\b", text, re.M) is not None, path,
+        _require(doc.get("enforce") is True, path,
                  "must set `enforce: true`", problems)
-        fp = _yaml_block(text, "forward_proxy")
-        _require(bool(re.search(r"^\s*enabled:\s*true\b", fp, re.M)), path,
+        fp = doc.get("forward_proxy") or {}
+        _require(fp.get("enabled") is True, path,
                  "forward_proxy.enabled must be true", problems)
-        _require(bool(re.search(r"^\s*sni_verification:\s*true\b", fp, re.M)), path,
+        _require(fp.get("sni_verification") is True, path,
                  "forward_proxy.sni_verification must be true", problems)
-        _require(bool(re.search(r"^\s*sni_require_tls:\s*true\b", fp, re.M)), path,
+        _require(fp.get("sni_require_tls") is True, path,
                  "forward_proxy.sni_require_tls must be true", problems)
-        ti = _yaml_block(text, "tls_interception")
-        _require(bool(re.search(r"^\s*enabled:\s*false\b", ti, re.M)), path,
+        ti = doc.get("tls_interception") or {}
+        _require(ti.get("enabled") is False, path,
                  "tls_interception.enabled must be false in v1", problems)
-        _require(len(_yaml_list(text, "api_allowlist")) > 0, path,
+        _require(bool(doc.get("api_allowlist")), path,
                  "api_allowlist must not be empty (default deny needs explicit allows)", problems)
     elif engine == "smokescreen":
-        _require(re.search(r"^version:\s*v1\b", text, re.M) is not None, path,
+        _require(doc.get("version") == "v1", path,
                  "must set `version: v1`", problems)
-        _require(re.search(r"\baction:\s*open\b", text) is None, path,
+        # Every mapping, not just `default`: `services` carries per-role
+        # entries with the same shape, and one of those set to `open` is
+        # an open proxy for that role.
+        _require(not any(m.get("action") == "open" for m in _mappings(doc)), path,
                  "`action: open` is forbidden (no open proxy mode)", problems)
-        default_block = _yaml_block(text, "default")
-        _require(bool(re.search(r"^\s*action:\s*enforce\b", default_block, re.M)), path,
+        default_block = doc.get("default") or {}
+        _require(default_block.get("action") == "enforce", path,
                  "default.action must be `enforce`", problems)
-        _require(len(_yaml_list(default_block, "allowed_domains")) > 0, path,
+        _require(bool(default_block.get("allowed_domains")), path,
                  "default.allowed_domains must not be empty", problems)
     elif engine == "squid":
         rules = _squid_access_rules(text)
@@ -1037,14 +1051,15 @@ def policy_allowlist(engine: str, path: Path) -> set[str]:
 
 def policy_allowlist_text(engine: str, text: str) -> set[str]:
     """As `policy_allowlist`, on text that may not be on disk yet."""
-    if engine == "pipelock":
-        return set(_yaml_list(text, "api_allowlist"))
     if engine == "squid":
         entries = set(_squid_acl_values(text, "allowlist_exact", "dstdomain"))
         entries.update(_squid_regex_to_glob(pattern) for pattern
                        in _squid_acl_values(text, "allowlist_wild", "dstdom_regex"))
         return entries
-    return set(_yaml_list(_yaml_block(text, "default"), "allowed_domains"))
+    doc = _load_yaml(text, Path(f"<{engine} policy>"))
+    if engine == "pipelock":
+        return set(doc.get("api_allowlist") or ())
+    return set((doc.get("default") or {}).get("allowed_domains") or ())
 
 
 # ---------------------------------------------------------------------------

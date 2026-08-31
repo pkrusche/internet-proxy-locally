@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet python
 """Render the measured tables of docs/findings.md from result files.
 
 docs/findings.md holds two things: what the three engines actually did, and
@@ -16,7 +16,7 @@ It rewrites only the regions of docs/findings.md delimited by
 `<!-- BEGIN GENERATED <name> -->` / `<!-- END GENERATED <name> -->`; the
 narrative around them is copied through byte for byte.
 
-Stdlib only; Python 3.11+.
+Run through uv (see the shebang). No third-party imports of its own.
 """
 from __future__ import annotations
 

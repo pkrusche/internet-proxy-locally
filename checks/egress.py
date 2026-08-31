@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet python
 """Common adversarial egress test suite for internet-proxy-locally.
 
 Runs the same checks against any engine (Pipelock, Smokescreen or Squid)
 through the stable proxy endpoint, and produces comparable results.
 
-Stdlib only; Python 3.11+.
+Run through uv (see the shebang). No third-party imports of its own.
 
 Groups:
   quick — ordinary allow/deny behavior (docs/policy.md)

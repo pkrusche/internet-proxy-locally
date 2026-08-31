@@ -536,6 +536,81 @@ class RunPyUnitTest(unittest.TestCase):
         problems = self.run_mod.validate_policy_file("smokescreen", self.write(text))
         self.assertTrue(any("allowed_domains" in p for p in problems))
 
+    def test_every_entry_point_runs_through_uv(self) -> None:
+        """The docs say `./run.py ...`, so the shebang has to be the thing
+        that makes that true.
+
+        With `#!/usr/bin/env python3` it would pick up whatever interpreter
+        is on PATH — no jinja2, no pyyaml, possibly no `tomllib` — and the
+        failure would land on whoever was least equipped to read it. uv
+        resolves both the interpreter (.python-version) and the
+        dependencies (pyproject.toml), which is why nothing in this
+        repository is imported lazily any more.
+        """
+        expected = "#!/usr/bin/env -S uv run --quiet python"
+        entry_points = [REPO_ROOT / "run.py", REPO_ROOT / "lab.py",
+                        REPO_ROOT / "checks" / "egress.py"]
+        entry_points += sorted((REPO_ROOT / "scripts").glob("*.py"))
+        for path in entry_points:
+            first = path.read_text(encoding="utf-8").splitlines()[0]
+            self.assertEqual(first, expected, f"{path.name}: {first}")
+            self.assertTrue(os.access(path, os.X_OK), f"{path.name} is not executable")
+
+    # -- the properties that motivated parsing YAML rather than matching it --
+
+    def test_a_later_duplicate_key_cannot_hide_an_unsafe_value(self) -> None:
+        """Real YAML resolves a repeated key to the *last* one.
+
+        The regex reader this replaced found the first `tls_interception:`
+        and stopped, so a policy that set it safely and then overrode it
+        passed validation while the engine read the override. The values
+        below are the ones that matter: each is safe on its first
+        appearance and unsafe on its second.
+        """
+        base = (REPO_ROOT / "config" / "pipelock.yaml").read_text()
+        for label, override in (
+            ("tls_interception", "\ntls_interception:\n  enabled: true\n"),
+            ("mode", "\nmode: permissive\n"),
+            ("forward_proxy",
+             "\nforward_proxy:\n  enabled: true\n"
+             "  sni_verification: false\n  sni_require_tls: false\n"),
+        ):
+            problems = self.run_mod.validate_policy_file(
+                "pipelock", self.write(base + override))
+            self.assertTrue(problems, f"{label}: an override passed validation")
+            self.assertTrue(any("duplicate key" in p for p in problems),
+                            f"{label}: {problems}")
+
+    def test_a_quoted_scalar_is_read_as_its_value(self) -> None:
+        """`action: "open"` is the same policy as `action: open`.
+
+        A text search for the bare word missed the quoted form; a parser
+        cannot, because by the time it is compared the quotes are gone.
+        """
+        path = self.write((REPO_ROOT / "config" / "smokescreen.yaml").read_text()
+                          .replace("action: enforce", 'action: "open"'))
+        problems = self.run_mod.validate_policy_file("smokescreen", path)
+        self.assertTrue(any("open" in p for p in problems), problems)
+
+    def test_an_open_action_on_a_service_is_refused_too(self) -> None:
+        """`services:` entries carry the same shape as `default:`, and one
+        of them set to `open` is an open proxy for that role."""
+        path = self.write((REPO_ROOT / "config" / "smokescreen.yaml").read_text()
+                          .replace("services: []",
+                                   "services:\n  - name: x\n    action: open\n"
+                                   "    allowed_domains: [a.com]"))
+        problems = self.run_mod.validate_policy_file("smokescreen", path)
+        self.assertTrue(any("open" in p for p in problems), problems)
+
+    def test_unparseable_yaml_is_a_problem_not_a_traceback(self) -> None:
+        """A policy that cannot be parsed cannot be checked, so it has to
+        fail closed through the same list of problems every other failure
+        uses — not by raising past the caller that would refuse to start."""
+        path = self.write((REPO_ROOT / "config" / "pipelock.yaml").read_text()
+                          + "\n  : : broken\n")
+        problems = self.run_mod.validate_policy_file("pipelock", path)
+        self.assertTrue(any("not valid YAML" in p for p in problems), problems)
+
     def test_squid_policy_requires_default_deny_last(self) -> None:
         text = (REPO_ROOT / "config" / "squid.conf").read_text()
         path = self.write(text.replace("http_access deny all",

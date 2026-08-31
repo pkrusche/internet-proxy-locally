@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet python
 """End-to-end verification of one container backend, fixture included.
 
 The unit suite drives a fake backend: it pins down the CLI arguments
@@ -28,7 +28,7 @@ So this script asserts the whole chain on a real backend:
     scripts/verify_backend.py --backend docker
     scripts/verify_backend.py --backend docker --engine squid --port 18081
 
-Stdlib only; Python 3.11+.
+Run through uv (see the shebang). No third-party imports of its own.
 """
 
 from __future__ import annotations

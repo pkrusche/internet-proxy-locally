@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet python
 """internet-proxy-locally lab — the adversarial test policy and the engine
 comparison.
 
@@ -19,7 +19,7 @@ Nothing here can affect an operational run: the fixture names live under
 `.test`, `./run.py` never reads lab/fixtures.toml, and any `./run.py up`
 removes the fixture container.
 
-Stdlib only apart from Jinja2 (via run.py); Python 3.11+. See docs/lab.md.
+Run through uv (see the shebang). See docs/lab.md.
 """
 
 from __future__ import annotations

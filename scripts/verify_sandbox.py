@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet python
 """Is a sandbox on this machine actually routed through this proxy?
 
 docs/security.md draws `project-sandbox` sending its egress to
@@ -36,7 +36,7 @@ own filtering and could easily be misread as measuring this proxy's.
     scripts/verify_sandbox.py
     scripts/verify_sandbox.py --run-sandbox   # needs the routing to exist
 
-Stdlib only; Python 3.11+.
+Run through uv (see the shebang). No third-party imports of its own.
 """
 
 from __future__ import annotations

@@ -12,7 +12,7 @@ both first-class. No Docker Compose.
 ## Quick start
 
 ```bash
-uv sync                 # once: create .venv (Python 3.11+, Jinja2)
+uv sync                 # once: create the environment uv run uses
 ./run.py setup          # validate prerequisites, pull/build pinned images
 ./run.py up             # start the proxy and health-check it
 ./run.py check          # confirm allow/deny behavior
@@ -23,10 +23,12 @@ curl https://github.com          # allowlisted → works
 curl https://example.com         # not allowlisted → denied by the proxy
 ```
 
-Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and Docker or
-Apple `container`. The only dependency is Jinja2, used by one code path —
-rendering the engine configs from `config.toml`. It is imported lazily, so
-`down`, `status` and `logs` still work on a bare interpreter.
+Requires [uv](https://docs.astral.sh/uv/) and Docker or Apple `container`.
+Every entry point is run through uv — that is what the shebangs do, so
+`./run.py ...` works directly and picks up the interpreter from
+`.python-version` and the dependencies (Jinja2, PyYAML) from
+`pyproject.toml`. There is no bare-interpreter path to keep working, so
+nothing is imported lazily to preserve one.
 
 ## The allowlist
 

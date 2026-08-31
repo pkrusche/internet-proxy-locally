@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet python
 """Does the service fail closed when it breaks, and survive being restarted?
 
 docs/security.md asserts two things that follow from the design and had
@@ -30,7 +30,7 @@ graded: they are inputs to a judgement, not a pass or a fail.
     scripts/verify_resilience.py --backend docker --port 18081
     scripts/verify_resilience.py --backend docker --all --port 18081
 
-Stdlib only; Python 3.11+.
+Run through uv (see the shebang). No third-party imports of its own.
 """
 
 from __future__ import annotations

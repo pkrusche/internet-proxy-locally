@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet python
 """Re-confirm that the host endpoint is bound to loopback and nothing else.
 
 `run.py` publishes the endpoint as `--publish 127.0.0.1:18080:<port>`. That
@@ -31,7 +31,7 @@ express it is a backend this repository cannot use (docs/lab.md).
     scripts/verify_loopback.py --port 18081    # leave a running proxy alone
     scripts/verify_loopback.py --running       # check the proxy that is up now
 
-Stdlib only; Python 3.11+.
+Run through uv (see the shebang). No third-party imports of its own.
 """
 
 from __future__ import annotations
