@@ -1,9 +1,9 @@
 # GENERATED FILE — do not edit.
 #
-# Rendered from config.toml + lab/fixtures.toml by ./lab.py,
-# via templates/pipelock.yaml.j2.
+# Rendered from config.toml + lab/fixtures.toml by `ipl-lab`,
+# via data/templates/pipelock.yaml.j2.
 # To change the test policy, edit lab/fixtures.toml and run
-# `./lab.py policy`. A hand edit here is silently overwritten and is
+# `ipl-lab policy`. A hand edit here is silently overwritten and is
 # caught by the test suite.
 #
 # TEST POLICY — NEVER use for normal operation. config/pipelock.yaml plus

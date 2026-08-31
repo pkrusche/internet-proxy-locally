@@ -37,8 +37,15 @@ class MockProxyServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, addr, *, allowed: set[str], mode: str,
-                 certfile: str | None, keyfile: str | None):
+    def __init__(
+        self,
+        addr,
+        *,
+        allowed: set[str],
+        mode: str,
+        certfile: str | None,
+        keyfile: str | None,
+    ):
         self.allowed = allowed
         self.mode = mode
         self.tls_ctx: ssl.SSLContext | None = None
@@ -108,9 +115,11 @@ class Handler(socketserver.BaseRequestHandler):
 
     def _send(self, status: int, reason: str, body: str = "") -> None:
         payload = body.encode()
-        head = (f"HTTP/1.1 {status} {reason}\r\n"
-                f"Content-Length: {len(payload)}\r\n"
-                "Connection: close\r\n\r\n")
+        head = (
+            f"HTTP/1.1 {status} {reason}\r\n"
+            f"Content-Length: {len(payload)}\r\n"
+            "Connection: close\r\n\r\n"
+        )
         self.request.sendall(head.encode() + payload)
 
     def _handle(self) -> None:
@@ -179,10 +188,21 @@ class Handler(socketserver.BaseRequestHandler):
                 pass
 
 
-def start_in_thread(port: int, *, allowed: set[str] | None = None, mode: str = "strict",
-                    certfile: str | None = None, keyfile: str | None = None) -> MockProxyServer:
-    server = MockProxyServer(("127.0.0.1", port), allowed=allowed or set(DEFAULT_ALLOWED),
-                             mode=mode, certfile=certfile, keyfile=keyfile)
+def start_in_thread(
+    port: int,
+    *,
+    allowed: set[str] | None = None,
+    mode: str = "strict",
+    certfile: str | None = None,
+    keyfile: str | None = None,
+) -> MockProxyServer:
+    server = MockProxyServer(
+        ("127.0.0.1", port),
+        allowed=allowed or set(DEFAULT_ALLOWED),
+        mode=mode,
+        certfile=certfile,
+        keyfile=keyfile,
+    )
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 
@@ -196,8 +216,13 @@ def main() -> int:
     parser.add_argument("--key")
     opts = parser.parse_args()
     allowed = {h.strip() for h in opts.allow.split(",") if h.strip()}
-    server = MockProxyServer(("127.0.0.1", opts.port), allowed=allowed, mode=opts.mode,
-                             certfile=opts.cert, keyfile=opts.key)
+    server = MockProxyServer(
+        ("127.0.0.1", opts.port),
+        allowed=allowed,
+        mode=opts.mode,
+        certfile=opts.cert,
+        keyfile=opts.key,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -4,13 +4,13 @@ Three engines, one adversarial suite, one conclusion: **Pipelock is the
 default**, because it is the only one that enforces inside a CONNECT
 tunnel. Everything below is why, and what it costs.
 
-The tables are **generated** from `results/*.json` by `./lab.py report` and
+The tables are **generated** from `results/*.json` by `ipl-lab report` and
 hold no opinions. The prose around them is written by hand and holds
-nothing else. A stale table is therefore a diff (`./lab.py report --check`),
+nothing else. A stale table is therefore a diff (`ipl-lab report --check`),
 not a belief.
 
-The engine choice is empirical: run `checks/egress.py` against all three
-and record what happens. Feature tables do not decide it.
+The engine choice is empirical: run `ipl-check` against all three and
+record what happens. Feature tables do not decide it.
 
 ## Conditions
 
@@ -22,7 +22,7 @@ and record what happens. Feature tables do not decide it.
 | Backend | docker | docker | docker |
 | Host | Darwin 25.6.0 arm64 | Darwin 25.6.0 arm64 | Darwin 25.6.0 arm64 |
 | Image | `ghcr.io/luckypipewrench/pipelock@sha256:42b58a428defca8f57d74b005e865898deb9568c9d742e46b32c80b0d2b011f7` | `internet-proxy-locally/smokescreen:131fba29ce1e` | `internet-proxy-locally/squid:6.12-r0` |
-| Policy | test (`./lab.py up`) | test (`./lab.py up`) | test (`./lab.py up`) |
+| Policy | test (`ipl-lab up`) | test (`ipl-lab up`) | test (`ipl-lab up`) |
 | Endpoint | `http://127.0.0.1:18081` | `http://127.0.0.1:18081` | `http://127.0.0.1:18081` |
 | Result | 18 pass, 1 record | 15 pass, 4 record | 16 pass, 3 record |
 | Exit code | 0 | 0 | 0 |
@@ -34,14 +34,14 @@ Source files: `results/pipelock.json`, `results/smokescreen.json`, `results/squi
 To re-measure and rewrite every table in this file:
 
 ```bash
-./lab.py measure                    # all three engines, then rewrite
-./lab.py measure --backend docker   # or pin the backend
-./lab.py report --check             # CI: fail if these tables are stale
+ipl-lab measure                    # all three engines, then rewrite
+ipl-lab measure --backend docker   # or pin the backend
+ipl-lab report --check             # CI: fail if these tables are stale
 ```
 
 The result files are committed: without them the generated blocks could not
 be re-derived or checked, only believed. How the lab works — the test
-policy, the DNS fixture, what `./lab.py up` does — is [lab.md](lab.md).
+policy, the DNS fixture, what `ipl-lab up` does — is [lab.md](lab.md).
 
 ## Summary
 
@@ -122,7 +122,7 @@ a third engine with no change at all.
 Squid needed work to report *reasons* rather than just codes: its stock page
 says only "Access control configuration prevents your request", which
 classifies as `unknown`. `deny_info` plus five one-line templates in
-`images/squid/errors` make each denial state its cause, which is what fills
+`data/images/squid/errors` make each denial state its cause, which is what fills
 the bracketed column in the matrix. The exact strings are pinned in
 `tests/test_egress.py::ClassifyDenialRealWordingTest`, and
 `validate_policy_file()` refuses a Squid config whose `deny_info` lines have
@@ -258,7 +258,7 @@ count.
 
 Pipelock and Smokescreen block private destinations in engine code; the
 configuration only turns that on, and disabling it would take a deliberate
-`--unsafe-allow-private-ranges`, which `run.py` refuses to load. Squid has
+`--unsafe-allow-private-ranges`, which `ipl` refuses to load. Squid has
 no built-in, so `config/squid.conf` states the floors as `dst` ACLs *above*
 the allowlist — `http_access` is first-match-wins — and disabling one would
 take deleting a line.
@@ -280,7 +280,7 @@ precedes the first `http_access allow`, that the file ends in `http_access
 deny all` and never contains `http_access allow all`, that `cache deny all`
 survives, that no `ssl_bump ... bump` appears, and that each of the five
 `deny_info` page-to-ACL pairs is intact and names a page that exists in
-`images/squid/errors`. Squid says nothing about a `deny_info` whose ACL no
+`data/images/squid/errors`. Squid says nothing about a `deny_info` whose ACL no
 longer exists — the page never fires and the denial falls back to the stock
 page — so renaming `private_ip` without updating its page would turn every
 SSRF denial into `unknown` while leaving a config that starts, validates and
@@ -328,7 +328,7 @@ rules evaluated first — so the exposure was reaching a *public* address not
 on the allowlist.
 
 **The fix.** Squid has no switch to disable the fallback, so
-`templates/squid.conf.j2` refuses address-form destinations before any
+`data/templates/squid.conf.j2` refuses address-form destinations before any
 `dstdomain` rule is reached:
 
 ```squid
@@ -451,11 +451,11 @@ results, worst first:
    caller.
 
 So Squid ships without `ssl_bump`. The reasoning is repeated at the top of
-`templates/squid.conf.j2` so nobody re-enables it from first principles.
+`data/templates/squid.conf.j2` so nobody re-enables it from first principles.
 
 ## Operational numbers
 
-Measured 2026-08-28 on Docker by `scripts/verify_resilience.py`. Reported,
+Measured 2026-08-28 on Docker by `ipl-verify resilience`. Reported,
 not graded: they are inputs to a judgement, not a pass or a fail.
 
 | | Pipelock | Smokescreen | Squid |
@@ -476,7 +476,7 @@ Still uncollected: resource usage in steady state, and upgrade friction.
 
 ## Decision
 
-**Pipelock is the default** (`DEFAULT_ENGINE` in `run.py`). It passes every
+**Pipelock is the default** (`DEFAULT_ENGINE` in `constants.py`). It passes every
 graded check, and it is the only engine that enforces inside the CONNECT
 tunnel (§1). The one thing measured against it is redirect-following (§6): it
 is the only engine that answers a client from a URL the client did not ask
@@ -535,7 +535,7 @@ Bracketed values are the **attributed cause**: what the engine said it was rejec
 | [connect-raw-tunnel](#connect-raw-tunnel) | full | deny/record | PASS [non-tls-in-tunnel] | RECORD (allowed) | RECORD (allowed) |
 | [concurrency-sanity](#concurrency-sanity) | full | record | RECORD | RECORD | RECORD |
 
-Where the expectation column shows two values, the check is graded differently per engine (`ENGINE_EXPECTATIONS` in `checks/egress.py` says why).
+Where the expectation column shows two values, the check is graded differently per engine (`ENGINE_EXPECTATIONS` in `checks.egress` says why).
 
 <!-- END GENERATED matrix -->
 

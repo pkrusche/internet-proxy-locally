@@ -1,4 +1,3 @@
-#!/usr/bin/env -S uv run --quiet python
 """Does the service fail closed when it breaks, and survive being restarted?
 
 docs/security.md asserts two things that follow from the design and had
@@ -27,10 +26,10 @@ It also records the operational numbers nobody had collected — startup
 time to first healthy probe, and image size — which are reported, not
 graded: they are inputs to a judgement, not a pass or a fail.
 
-    scripts/verify_resilience.py --backend docker --port 18081
-    scripts/verify_resilience.py --backend docker --all --port 18081
+    ipl-verify resilience --backend docker --port 18081
+    ipl-verify resilience --backend docker --all --port 18081
 
-Run through uv (see the shebang). No third-party imports of its own.
+Reached as `uv run ipl-verify resilience`. Stdlib only.
 """
 
 from __future__ import annotations
@@ -41,13 +40,14 @@ import socket
 import sys
 import threading
 import time
-from pathlib import Path
+from typing import Self
 
-# The repository root, so `scripts.harness` and `run` resolve by name.
-# See the comment in scripts/harness.py.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from scripts.harness import Reporter, engine_up, run_cli, run_py_down, run  # noqa: E402
+from internet_proxy_locally.backend import Backend, detect_backend
+from internet_proxy_locally.constants import BACKENDS, DEFAULT_ENGINE, ENGINES
+from internet_proxy_locally.errors import Fail
+from internet_proxy_locally.net import port_listening, probe_proxy, wait_until
+from internet_proxy_locally.spec import ServiceSpec
+from internet_proxy_locally.verify.harness import Reporter, engine_up, run_cli, teardown
 
 # A host that must never be reachable, whichever policy is mounted. The
 # load generator asks for it continuously; a single success is a finding.
@@ -75,9 +75,11 @@ class Load:
         self._lock = threading.Lock()
         self._threads: list[threading.Thread] = []
 
-    def _request(self, host: str) -> "tuple[int | None, str]":
-        payload = (f"GET http://{host}/ HTTP/1.1\r\nHost: {host}\r\n"
-                   "User-Agent: ipl-resilience\r\nConnection: close\r\n\r\n")
+    def _request(self, host: str) -> tuple[int | None, str]:
+        payload = (
+            f"GET http://{host}/ HTTP/1.1\r\nHost: {host}\r\n"
+            "User-Agent: ipl-resilience\r\nConnection: close\r\n\r\n"
+        )
         try:
             with socket.create_connection(("127.0.0.1", self.port), timeout=4) as sock:
                 sock.settimeout(4)
@@ -108,10 +110,11 @@ class Load:
                     self.allowed_failed += 1
             time.sleep(SETTLE)
 
-    def __enter__(self) -> "Load":
+    def __enter__(self) -> Self:
         for host, denied in ((ALLOWED_HOST, False), (DENIED_HOST, True)):
-            thread = threading.Thread(target=self._drive, args=(host, denied),
-                                      daemon=True)
+            thread = threading.Thread(
+                target=self._drive, args=(host, denied), daemon=True
+            )
             thread.start()
             self._threads.append(thread)
         return self
@@ -122,54 +125,51 @@ class Load:
             thread.join(timeout=10)
 
     def summary(self) -> str:
-        return (f"allowed {self.allowed_ok} ok / {self.allowed_failed} failed; "
-                f"denied {self.denied_refused} refused / "
-                f"{len(self.denied_leaked)} leaked")
+        return (
+            f"allowed {self.allowed_ok} ok / {self.allowed_failed} failed; "
+            f"denied {self.denied_refused} refused / "
+            f"{len(self.denied_leaked)} leaked"
+        )
 
 
 def _wait(condition, seconds: float) -> bool:
-    """Poll `condition` until it holds or the budget runs out."""
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        if condition():
-            return True
-        time.sleep(0.1)
-    return condition()
+    """Poll `condition` until it holds or the budget runs out.
+
+    A shorter interval than the CLI's, deliberately: this measures how long
+    an engine takes to start, so the sampling granularity is the error bar
+    on the number it reports.
+    """
+    return bool(wait_until(lambda: condition() or None, seconds, interval=0.1))
 
 
-def accepts(port: int, timeout: float = 1.0) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
-            return True
-    except OSError:
-        return False
-
-
-def measure_startup(backend_name: str, engine: str, port: int,
-                    env: dict) -> "tuple[float, str]":
+def measure_startup(
+    backend_name: str, engine: str, port: int, env: dict
+) -> tuple[float, str]:
     """Seconds from `up` returning to the endpoint answering as a proxy."""
     start = time.monotonic()
     engine_up(backend_name, engine, port, test_policy=False, env=env)
     elapsed = time.monotonic() - start
-    _, detail, _ = run.probe_proxy("127.0.0.1", port)
+    _, detail, _ = probe_proxy("127.0.0.1", port)
     return elapsed, detail
 
 
-def image_size(backend: "run.Backend", ref: str) -> str:
+def image_size(backend: Backend, ref: str) -> str:
     size = backend.image_size(ref)
     return f"{size / 1e6:.0f} MB" if size else "unknown"
 
 
 def verify(engine: str, port: int, report: Reporter, backend_name: str) -> None:
-    backend = run.Backend(backend_name)
-    spec = run.ServiceSpec.load(engine)
+    backend = Backend(backend_name)
+    spec = ServiceSpec.load(engine)
     env = dict(os.environ, IPL_ENDPOINT=f"127.0.0.1:{port}")
 
     try:
         elapsed, detail = measure_startup(backend_name, engine, port, env)
         report.note(f"{engine}: up to healthy in {elapsed:.1f}s — {detail}")
-        report.note(f"{engine}: image {spec.run_image_ref()} — "
-                    f"{image_size(backend, spec.run_image_ref())}")
+        report.note(
+            f"{engine}: image {spec.run_image_ref()} — "
+            f"{image_size(backend, spec.run_image_ref())}"
+        )
 
         with Load(port) as load:
             # Wait for the stream rather than assuming a fixed warm-up. A
@@ -178,22 +178,25 @@ def verify(engine: str, port: int, report: Reporter, backend_name: str) -> None:
             # a fixed sleep here measured that race instead of the
             # property.
             flowing = _wait(lambda: load.allowed_ok > 0, 20.0)
-            report.check(flowing,
-                         f"{engine}: the allowed stream is flowing before the test",
-                         f"nothing succeeded against {ALLOWED_HOST} within 20s, so "
-                         "the recovery check below could not tell a restart from an "
-                         f"already-broken proxy ({load.summary()}).")
+            report.check(
+                flowing,
+                f"{engine}: the allowed stream is flowing before the test",
+                f"nothing succeeded against {ALLOWED_HOST} within 20s, so "
+                "the recovery check below could not tell a restart from an "
+                f"already-broken proxy ({load.summary()}).",
+            )
 
             # -- crash -------------------------------------------------
             report.note(f"{engine}: removing the container mid-load")
             backend.remove_container(spec.container_name)
             time.sleep(2.0)
             report.check(
-                not accepts(port),
+                not port_listening("127.0.0.1", port),
                 f"{engine}: nothing listens on the endpoint once the engine dies",
                 "the endpoint still accepts connections after the container was "
                 "removed. Something other than this repository is bound to it, and "
-                "a sandbox pointed there is talking to something unknown.")
+                "a sandbox pointed there is talking to something unknown.",
+            )
             crashed_leaks = len(load.denied_leaked)
             report.check(
                 crashed_leaks == 0,
@@ -202,54 +205,66 @@ def verify(engine: str, port: int, report: Reporter, backend_name: str) -> None:
                 f"a request for {DENIED_HOST} succeeded while the engine was going "
                 "down. That is the failure this property exists to exclude: the "
                 f"proxy must lose the Internet, not open it.\n"
-                + "\n".join(load.denied_leaked[:3]))
+                + "\n".join(load.denied_leaked[:3]),
+            )
 
             # -- restart under load ------------------------------------
             report.note(f"{engine}: `restart` under continuous load")
             before_ok = load.allowed_ok
-            proc = run_cli(["--backend", backend_name, "--engine", engine, "restart"],
-                           env=env, check=False)
-            report.check(proc.returncode == 0,
-                         f"{engine}: `restart` succeeded under load",
-                         f"exit {proc.returncode}:\n{proc.stderr.strip()}")
+            proc = run_cli(
+                ["--backend", backend_name, "--engine", engine, "restart"],
+                env=env,
+                check=False,
+            )
+            report.check(
+                proc.returncode == 0,
+                f"{engine}: `restart` succeeded under load",
+                f"exit {proc.returncode}:\n{proc.stderr.strip()}",
+            )
             recovered = _wait(lambda: load.allowed_ok > before_ok, 20.0)
             report.check(
                 recovered,
                 f"{engine}: the allowed stream recovered after the restart",
                 "no request to an allowlisted host succeeded within 20s of "
                 f"`restart` returning ({load.summary()}). The proxy came back "
-                "unhealthy.")
+                "unhealthy.",
+            )
             report.check(
                 not load.denied_leaked,
-                f"{engine}: nothing leaked across the whole run "
-                f"({load.summary()})",
+                f"{engine}: nothing leaked across the whole run ({load.summary()})",
                 "a request for a denied host succeeded at some point during the "
                 "crash or the restart. A half-started engine that accepts "
                 "connections before its policy is loaded looks exactly like "
-                "this.\n" + "\n".join(load.denied_leaked[:3]))
+                "this.\n" + "\n".join(load.denied_leaked[:3]),
+            )
         report.note(f"{engine}: final — {load.summary()}")
     finally:
-        run_py_down(backend_name, env=env)
+        teardown(backend_name, env=env)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--engine", choices=run.ENGINES, default=None)
-    parser.add_argument("--all", action="store_true",
-                        help="run against every engine in turn")
-    parser.add_argument("--backend", choices=run.BACKENDS, default=None)
-    parser.add_argument("--port", type=int, default=18080,
-                        help="host port to publish (default: 18080; pick another to "
-                             "leave a running proxy alone)")
+    parser.add_argument("--engine", choices=ENGINES, default=None)
+    parser.add_argument(
+        "--all", action="store_true", help="run against every engine in turn"
+    )
+    parser.add_argument("--backend", choices=BACKENDS, default=None)
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=18080,
+        help="host port to publish (default: 18080; pick another to "
+        "leave a running proxy alone)",
+    )
     opts = parser.parse_args(argv)
 
-    backend_name = opts.backend or run.detect_backend(None).name
-    engines = run.ENGINES if opts.all else (opts.engine or run.DEFAULT_ENGINE,)
+    backend_name = opts.backend or detect_backend(None).name
+    engines = ENGINES if opts.all else (opts.engine or DEFAULT_ENGINE,)
     report = Reporter("fail-closed on crash, and restart under load")
     for engine in engines:
         try:
             verify(engine, opts.port, report, backend_name)
-        except (run.Fail, RuntimeError) as exc:
+        except (Fail, RuntimeError) as exc:
             report.check(False, f"{engine}: the run completed", str(exc))
     report.note("Record the outcome in docs/security.md's fail-closed properties.")
     return report.finish()

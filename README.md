@@ -13,9 +13,9 @@ both first-class. No Docker Compose.
 
 ```bash
 uv sync                 # once: create the environment uv run uses
-./run.py setup          # validate prerequisites, pull/build pinned images
-./run.py up             # start the proxy and health-check it
-./run.py check          # confirm allow/deny behavior
+ipl setup          # validate prerequisites, pull/build pinned images
+ipl up             # start the proxy and health-check it
+ipl check          # confirm allow/deny behavior
 
 export HTTP_PROXY=http://127.0.0.1:18080
 export HTTPS_PROXY=http://127.0.0.1:18080
@@ -24,11 +24,17 @@ curl https://example.com         # not allowlisted → denied by the proxy
 ```
 
 Requires [uv](https://docs.astral.sh/uv/) and Docker or Apple `container`.
-Every entry point is run through uv — that is what the shebangs do, so
-`./run.py ...` works directly and picks up the interpreter from
-`.python-version` and the dependencies (Jinja2, PyYAML) from
-`pyproject.toml`. There is no bare-interpreter path to keep working, so
-nothing is imported lazily to preserve one.
+`uv sync` installs this repository as a package and puts `ipl`, `ipl-lab`,
+`ipl-check` and `ipl-verify` in the environment; `uv run ipl ...` picks up
+the interpreter from `.python-version` and the dependencies (Jinja2,
+PyYAML) from `pyproject.toml`. There is no bare-interpreter path to keep
+working, so nothing is imported lazily to preserve one.
+
+The Python lives in `src/internet_proxy_locally/`, and the templates,
+service specs and image build contexts ship inside it under `data/` — so
+the package can render a policy and build an image without a checkout.
+What stays at the repository root is what a person edits or the tool
+generates: `config.toml`, `config/`, `lab/config/`, `results/`.
 
 ## The allowlist
 
@@ -39,32 +45,32 @@ nothing is imported lazily to preserve one.
 allow = ["github.com", "*.github.com", "pypi.org", ...]
 ```
 
-`./run.py` renders it into all three engine configs (`config/*.yaml`,
-`config/squid.conf`) through `templates/`, and `setup` / `up` / `restart`
+`ipl` renders it into all three engine configs (`config/*.yaml`,
+`config/squid.conf`) through `data/templates/`, and `setup` / `up` / `restart`
 do that before starting anything — so the three engines cannot express
-different policies. Edit `config.toml`, run `./run.py up`, commit both.
-`./run.py policy --check` reports drift without writing. See
+different policies. Edit `config.toml`, run `ipl up`, commit both.
+`ipl policy --check` reports drift without writing. See
 [docs/policy.md](docs/policy.md).
 
 ## Commands
 
 | | |
 | --- | --- |
-| `./run.py setup` | validate prerequisites, pull/build pinned images |
-| `./run.py up` | (re)create the container and health-check it |
-| `./run.py status` | engine, backend, container state, pins, live health |
-| `./run.py logs` | engine logs |
-| `./run.py check` | allow/deny behavior against the live proxy |
-| `./run.py restart` | explicit teardown then up |
-| `./run.py down` | remove containers owned by this repository |
-| `./run.py policy` | render `config/*` from `config.toml` (`--check` for drift) |
-| `./run.py pin` | record immutable image/source pins |
+| `ipl setup` | validate prerequisites, pull/build pinned images |
+| `ipl up` | (re)create the container and health-check it |
+| `ipl status` | engine, backend, container state, pins, live health |
+| `ipl logs` | engine logs |
+| `ipl check` | allow/deny behavior against the live proxy |
+| `ipl restart` | explicit teardown then up |
+| `ipl down` | remove containers owned by this repository |
+| `ipl policy` | render `config/*` from `config.toml` (`--check` for drift) |
+| `ipl pin` | record immutable image/source pins |
 
 `--engine pipelock|smokescreen|squid` and `--backend docker|container`
-override the defaults; `./run.py --help` is the full reference.
+override the defaults; `ipl --help` is the full reference.
 
-To upgrade an engine: `./run.py pin <engine>` (needs network), review the
-change to `services/<engine>.toml`, commit it, then `./run.py setup`.
+To upgrade an engine: `ipl pin <engine>` (needs network), review the
+change to `data/services/<engine>.toml`, commit it, then `ipl setup`.
 
 ## Stable interface
 
@@ -78,11 +84,11 @@ behind it is not part of the contract.
 **Pipelock is the default: it is the only engine that enforces inside the
 CONNECT tunnel.** Squid is the alternative when the policy itself has to be
 auditable — its SSRF floors are ordinary `dst` ACLs in a file you can read,
-which `./run.py setup` then checks rather than trusts.
+which `ipl setup` then checks rather than trusts.
 
 Every engine, every check and every number behind that is in
 [docs/findings.md](docs/findings.md), where the tables are generated from
-the result files by `./lab.py report` rather than written by hand. This
+the result files by `ipl-lab report` rather than written by hand. This
 section deliberately does not restate them: a summary kept in step by
 memory is how a README ends up describing a measurement nobody has taken
 in a year.
@@ -108,5 +114,5 @@ still be pushed to an already-allowlisted HTTPS service.
 Separately: `project-sandbox` does **not** currently route sandboxes through
 this proxy. It sets no `HTTP_PROXY` and filters egress with its own
 allowlist, so exporting the variables by hand is what puts a client behind
-this proxy today. `scripts/verify_sandbox.py` checks that against the
+this proxy today. `ipl-verify sandbox` checks that against the
 installed tool rather than assuming it.

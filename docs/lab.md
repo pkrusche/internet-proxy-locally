@@ -1,39 +1,39 @@
 # The lab
 
-The other lane. `./run.py` starts a proxy on the reviewed allowlist and
-knows nothing about any of this. `./lab.py` owns everything that exists to
+The other lane. `ipl` starts a proxy on the reviewed allowlist and
+knows nothing about any of this. `ipl-lab` owns everything that exists to
 **measure** an engine rather than run one: the adversarial test policy, the
 local DNS fixture, the full egress suite, and the three-engine comparison
 in [findings.md](findings.md).
 
-Nothing here can reach an operational run. `./run.py` never reads
+Nothing here can reach an operational run. `ipl` never reads
 `lab/fixtures.toml`, the fixture names live under `.test` (RFC 6761, can
-never resolve publicly), and any `./run.py up` removes the fixture
+never resolve publicly), and any `ipl up` removes the fixture
 container.
 
 ```bash
-./lab.py setup     # all three engines + the DNS fixture image
-./lab.py up        # fixture, then an engine on the TEST policy
-./lab.py check     # the full adversarial suite
-./lab.py down      # remove both
-./lab.py measure   # all three engines end to end, then rewrite findings.md
+ipl-lab setup     # all three engines + the DNS fixture image
+ipl-lab up        # fixture, then an engine on the TEST policy
+ipl-lab check     # the full adversarial suite
+ipl-lab down      # remove both
+ipl-lab measure   # all three engines end to end, then rewrite findings.md
 ```
 
-`--engine` and `--backend` work as they do on `./run.py`.
+`--engine` and `--backend` work as they do on `ipl`.
 
 ## The test policy
 
 `lab/fixtures.toml` holds `[policy.test]` — domains added **on top of**
-`config.toml`'s allowlist — and `[fixture]`, the DNS records. `./lab.py
+`config.toml`'s allowlist — and `[fixture]`, the DNS records. `ipl-lab
 policy` renders both, with the same templates and the same Jinja
-environment `./run.py policy` uses, into `lab/config/`:
+environment `ipl policy` uses, into `lab/config/`:
 
 | generated | from |
 | --- | --- |
 | `lab/config/{pipelock,smokescreen}.test.yaml`, `squid.test.conf` | `config.toml` + `[policy.test]` |
 | `lab/config/dns-fixture.hosts` | `[fixture.records]` |
 
-`./lab.py policy --check` reports drift as a diff without writing.
+`ipl-lab policy --check` reports drift as a diff without writing.
 
 The test policy is a **strict superset** of the operational one by
 construction, and `check_rendered_test_policies()` re-asserts that on the
@@ -62,7 +62,7 @@ orderings, and a `ptr_address` that collides with a record address.
 
 Public DNS cannot serve either fixture the suite needs — a mixed
 public+private answer set, or an answer that changes between lookups — so
-both run against a container this repository builds. `./lab.py up` starts
+both run against a container this repository builds. `ipl-lab up` starts
 it, reads its address, and starts the engine with `--dns <that address>`.
 It publishes no host port.
 
@@ -105,10 +105,10 @@ Two things to know before changing it:
 ## Reproducing the comparison
 
 ```bash
-./lab.py measure                    # all three engines, then rewrite findings.md
-./lab.py measure --backend docker   # or pin the backend
-./lab.py report                     # rewrite from the committed results/
-./lab.py report --check             # CI: exit 1 if the tables are stale
+ipl-lab measure                    # all three engines, then rewrite findings.md
+ipl-lab measure --backend docker   # or pin the backend
+ipl-lab report                     # rewrite from the committed results/
+ipl-lab report --check             # CI: exit 1 if the tables are stale
 ```
 
 `measure` drives, per engine, `up` on the test policy and `check --json`
@@ -125,47 +125,53 @@ duplicated marker is fatal rather than silently skipped.
 To compare two runs directly rather than re-reading the tables:
 
 ```bash
-checks/egress.py --diff results/pipelock.json results/smokescreen.json
+uv run ipl-check --diff results/pipelock.json results/smokescreen.json
 ```
 
 ## The end-to-end scripts
 
 The unit suite drives a fake backend: it pins down the CLI arguments
-`run.py` emits and the JSON it parses, but cannot tell whether a real
+`ipl` emits and the JSON it parses, but cannot tell whether a real
 runtime *acts* on them. These scripts assert the rest, each printing a
 named check per claim so a run can be pasted as evidence rather than
 summarized from memory.
 
 | | |
 | --- | --- |
-| `scripts/verify_loopback.py` | the endpoint is bound to loopback and nothing else — structurally (the runtime reports the binding) and behaviorally (it refuses on every non-loopback address) |
-| `scripts/verify_backend.py` | one backend end to end, fixture included: image, start, published port, fixture address read from *this* runtime's JSON shape, the engine resolving through it, and `down` removing both |
-| `scripts/verify_resilience.py` | crash and `restart` under continuous load: not one request for a denied host may ever succeed |
-| `scripts/verify_sandbox.py` | whether `project-sandbox` on this machine actually routes through this proxy (as of 2026-08-28: it does not) |
+| `ipl-verify loopback` | the endpoint is bound to loopback and nothing else — structurally (the runtime reports the binding) and behaviorally (it refuses on every non-loopback address) |
+| `ipl-verify backend` | one backend end to end, fixture included: image, start, published port, fixture address read from *this* runtime's JSON shape, the engine resolving through it, and `down` removing both |
+| `ipl-verify resilience` | crash and `restart` under continuous load: not one request for a denied host may ever succeed |
+| `ipl-verify sandbox` | whether `project-sandbox` on this machine actually routes through this proxy (as of 2026-08-28: it does not) |
 
 Pass `--port 18081` to leave a proxy already serving 18080 alone.
 
-**Re-run `scripts/verify_loopback.py` after every backend upgrade.** The
+**Re-run `ipl-verify loopback` after every backend upgrade.** The
 endpoint being loopback-only is one `--publish` argument, and a release that
 stopped honouring the address half would widen it to every interface with no
-error and no visible change in `run.py`'s output. If a release fails it,
+error and no visible change in `ipl`'s output. If a release fails it,
 **do not substitute a broader binding** — a backend that cannot express a
 loopback-only publication is one this repository cannot use.
 
 ## Running the unit suite
 
 ```bash
-uv run python -m unittest discover -s tests -t .      # all 215
+uv run python -m unittest discover -s tests -t .      # all 216
 uv run python -m unittest tests.test_runpy            # one module
 uv run python -m unittest discover -s tests -t . -k rebind   # by name
 ```
 
-Both `-s tests` (where to look) and `-t .` (the import root) are needed:
-the tests import `run`, `checks.egress` and `scripts.report` by name, which
-only resolves with the repository root on `sys.path`. Discovery also
-requires `tests/__init__.py` — without it unittest refuses with "Start
-directory is not importable", and the modules get imported twice under two
-names, which silently runs every inherited CLI test a second time.
+Both `-s tests` (where to look) and `-t .` (the import root) are needed.
+The code under test resolves through the installed package rather than
+through `sys.path`, but `tests` itself still has to be importable as a
+package: without `tests/__init__.py` unittest refuses with "Start directory
+is not importable", and the modules get imported twice under two names,
+which silently runs every inherited CLI test a second time.
+
+The tests do not copy the code into a temporary directory. They copy the
+*data* — `IPL_DATA_ROOT` for the templates and service specs a test may
+edit a pin in, `IPL_ROOT` for the workspace `up` regenerates `config/` in
+— so what runs is always the checkout's code against an isolated
+repository.
 
 The end-to-end scripts above are **not** part of this suite: they need a
 real container runtime, and the unit suite runs against a fake backend and
@@ -188,6 +194,6 @@ load-bearing: the fixture container's address has to be read out of
 
 ## Upgrading the fixture
 
-`./lab.py pin` resolves the dnsmasq and python3 apk versions from the base
+`ipl-lab pin` resolves the dnsmasq and python3 apk versions from the base
 image and writes them into `lab/dnsfixture.toml`; review, commit, then
-`./lab.py setup`. Engine pins are `./run.py pin <engine>`.
+`ipl-lab setup`. Engine pins are `ipl pin <engine>`.

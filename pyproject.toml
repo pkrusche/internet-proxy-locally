@@ -1,12 +1,11 @@
 # internet-proxy-locally.
 #
-# Every entry point here is run through uv — the shebangs are
-# `#!/usr/bin/env -S uv run --quiet python`, so `./run.py ...` resolves the
-# interpreter from .python-version and the dependencies from this file.
-# There is no supported bare-interpreter path, and nothing is imported
-# lazily to preserve one.
+# Every entry point here is run through uv — `uv run ipl ...`,
+# `uv run ipl-lab ...` — so the interpreter comes from .python-version and
+# the dependencies from this file. There is no supported bare-interpreter
+# path, and nothing is imported lazily to preserve one.
 #
-#   jinja2  renders templates/*.j2 into config/  (`render_policies()`)
+#   jinja2  renders data/templates/*.j2 into config/  (`render_policies()`)
 #   pyyaml  reads the result back to validate it (`_load_yaml()`)
 #
 # PyYAML is not a convenience. The regexes it replaced read the *first*
@@ -24,5 +23,38 @@ dependencies = [
     "pyyaml>=6.0.3",
 ]
 
-[tool.uv]
-package = false
+# `ipl` is the operational lane and `ipl-lab` the measurement one; the
+# split between them is described in the package docstring. `ipl-check` is
+# the egress checker, which `ipl check` also invokes as a subprocess, and
+# `ipl-verify` runs the end-to-end scripts that need a real container
+# runtime.
+[project.scripts]
+ipl = "internet_proxy_locally.cli.run:main"
+ipl-lab = "internet_proxy_locally.cli.lab:main"
+ipl-check = "internet_proxy_locally.checks.egress:main"
+ipl-verify = "internet_proxy_locally.verify.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# data/ carries the templates, the service specs and the image build
+# contexts, so an installed wheel can render a policy and build an image
+# without a checkout. Hatchling ships every file under the package
+# directory, which is what makes that work — `unzip -l dist/*.whl` is the
+# check that it still does.
+[tool.hatch.build.targets.wheel]
+packages = ["src/internet_proxy_locally"]
+
+# Lint and format, run in CI by .github/workflows/lint.yml and locally by
+# `uv run ruff check .` / `uv run ruff format .`. No [tool.ruff] section: the
+# repo takes ruff's default rule set, so the exact set of rules is whatever
+# the pinned version ships. That pin lives in uv.lock and CI syncs with
+# --frozen, which is what keeps a CI run and a local run agreeing — bumping
+# ruff is therefore a deliberate `uv lock --upgrade-package ruff`, not
+# something a fresh checkout does on its own.
+[dependency-groups]
+dev = [
+    "ruff>=0.16.5",
+    "ty>=0.0.77",
+]

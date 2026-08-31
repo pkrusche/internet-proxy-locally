@@ -2,19 +2,19 @@
 
 One logical policy, written once. **`config.toml` at the repository root is
 the source of truth**; `config/pipelock.yaml`, `config/smokescreen.yaml`
-and `config/squid.conf` are rendered from it by `./run.py` through the
-templates in `templates/`, and carry a "GENERATED FILE — do not edit"
+and `config/squid.conf` are rendered from it by `ipl` through the
+templates in `data/templates/`, and carry a "GENERATED FILE — do not edit"
 banner saying so.
 
 `setup`, `up` and `restart` regenerate them first, so the policy a
 container runs is always the one `config.toml` states. The generated text
 is put through `validate_policy_file()` *before* it is written, so a bad
-`config.toml` fails without replacing a working config. `./run.py policy
+`config.toml` fails without replacing a working config. `ipl policy
 --check` reports drift as a diff and exits 1 without writing — the check to
 run in review.
 
 The adversarial test policy is a separate file in a separate lane
-(`lab/fixtures.toml`, [lab.md](lab.md)); `./run.py` never reads it.
+(`lab/fixtures.toml`, [lab.md](lab.md)); `ipl` never reads it.
 
 ## Mode
 
@@ -43,7 +43,7 @@ Written in `[policy].allow` in `config.toml`, in one of exactly two forms:
 Deliberately small. Expand only from demonstrated requirements, one
 reviewed change at a time.
 
-`./run.py` refuses anything that is not one of the two forms above: an
+`ipl` refuses anything that is not one of the two forms above: an
 address (`1.2.3.4`), a bare `.d` (Squid's own form, which silently covers
 the apex too), a hand-written regex, a single label, or anything carrying a
 scheme, port or path. An address-form entry is exactly what `http_access
@@ -79,7 +79,7 @@ Only domains are generated. Everything else in the three engine configs —
 Squid's deny floors and their order, `cache deny all`, `deny_info`,
 Pipelock's `sni_verification` / `sni_require_tls`, `tls_interception:
 false`, Smokescreen's `action: enforce` — is literal text in
-`templates/*.j2`, unparameterized and unreachable from `config.toml`.
+`data/templates/*.j2`, unparameterized and unreachable from `config.toml`.
 Changing a rule means editing a template and reviewing that diff, which is
 the same review it needed before.
 
@@ -97,12 +97,12 @@ falls through to the `default enforce` rule.
 ## Changing the policy
 
 1. Edit `[policy].allow` in `config.toml`.
-2. Run `./run.py policy` (or just `./run.py up`, which regenerates first).
+2. Run `ipl policy` (or just `ipl up`, which regenerates first).
 3. Review the diff to `config/*` — that is the change that ships.
 4. Commit `config.toml` and the generated files together.
-5. `./run.py check` to confirm the live proxy behaves as intended.
+5. `ipl check` to confirm the live proxy behaves as intended.
 
-`./run.py policy --check` in CI keeps the committed configs honest: it
+`ipl policy --check` in CI keeps the committed configs honest: it
 exits 1 with a diff if they no longer match `config.toml`.
 
 Removing a domain is the same loop. Nothing caches policy: `up` recreates

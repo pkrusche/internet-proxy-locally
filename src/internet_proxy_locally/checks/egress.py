@@ -1,10 +1,10 @@
-#!/usr/bin/env -S uv run --quiet python
 """Common adversarial egress test suite for internet-proxy-locally.
 
 Runs the same checks against any engine (Pipelock, Smokescreen or Squid)
 through the stable proxy endpoint, and produces comparable results.
 
-Run through uv (see the shebang). No third-party imports of its own.
+Reached as `uv run ipl-check`, and as a subprocess from
+`ipl check` / `ipl-lab check`. Stdlib only.
 
 Groups:
   quick — ordinary allow/deny behavior (docs/policy.md)
@@ -12,7 +12,7 @@ Groups:
 
 The DNS fixture tests (nip.io / sslip.io, plus the local mixed-answer and
 rebinding fixtures) only make sense when the *test* policy is mounted, which
-is what `./lab.py up` does: the fixture hostnames must be allowlisted so
+is what `ipl-lab up` does: the fixture hostnames must be allowlisted so
 that a rejection can only come from the IP-layer SSRF protections, not from
 ordinary hostname policy. The suite auto-detects whether the test policy is
 active and skips those tests otherwise. `dns-mixed-answers` and
@@ -32,7 +32,7 @@ Each result may carry: a best-effort denial `cause` classification, a
 wall-clock `elapsed_ms`, per-attempt evidence (`attempts` — used by the
 DNS fixtures), full response `headers` (allow-path checks), and the
 engine's own log lines for that test's window (`--backend-bin`/
-`--container`; `run.py check` and `lab.py check` wire this automatically).
+`--container`; `ipl check` and `ipl-lab check` wire this automatically).
 
 `--diff A.json B.json` compares two prior `--json` runs and prints only
 the rows that diverge, instead of running the suite.
@@ -52,42 +52,43 @@ import subprocess
 import sys
 import time
 import tomllib
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+from internet_proxy_locally import paths
 
 DEFAULT_PROXY = "http://127.0.0.1:18080"
 TIMEOUT = 8.0
 # 2: the envelope carries the run's conditions (engine image, backend,
-# which policy was mounted, host, timestamp) so that scripts/report.py can
+# which policy was mounted, host, timestamp) so that `report` can
 # generate docs/findings.md from the result files alone, rather than from
 # a table somebody remembered to update. v1 files still diff against v2
 # ones — `--diff` only reads `results` — with a warning.
 SCHEMA_VERSION = 2
 
-ALLOWED_HTTP_HOST = "pypi.org"          # must be on the allowlist
-ALLOWED_HTTPS_HOST = "pypi.org"         # must be on the allowlist
+ALLOWED_HTTP_HOST = "pypi.org"  # must be on the allowlist
+ALLOWED_HTTPS_HOST = "pypi.org"  # must be on the allowlist
 ALLOWED_ALT_HOST = "files.pythonhosted.org"  # allowlisted, used as mismatching SNI
-BLOCKED_HOST = "example.com"            # must NOT be on the allowlist
+BLOCKED_HOST = "example.com"  # must NOT be on the allowlist
 
 # ---------------------------------------------------------------------------
 # The DNS fixtures, read from the file that defines them
 # ---------------------------------------------------------------------------
 #
-# lab/fixtures.toml is the source of truth: ./lab.py renders the hosts file
-# and the test allowlist from it, and the fixture container serves what
-# that produces. These names used to be restated here as literals with a
-# "keep in sync" comment and nothing enforcing it — so a fixture rename
-# left the checker probing a name that no longer resolved, and the check
-# reported a denial that was really an NXDOMAIN.
+# data/lab/fixtures.toml is the source of truth: the lab lane renders the
+# hosts file and the test allowlist from it, and the fixture container
+# serves what that produces. These names used to be restated here as
+# literals with a "keep in sync" comment and nothing enforcing it — so a
+# fixture rename left the checker probing a name that no longer resolved,
+# and the check reported a denial that was really an NXDOMAIN.
 #
 # `tomllib` is stdlib, so reading it costs nothing this file is not allowed
-# to spend. lab/ is optional: without it there are no fixtures, and every
-# check that needs one already skips.
-
-FIXTURES_FILE = Path(__file__).resolve().parent.parent / "lab" / "fixtures.toml"
+# to spend. The fixtures are optional: without them there are no records,
+# and every check that needs one already skips.
 
 
-def _load_fixture_facts(path: Path = FIXTURES_FILE) -> dict:
+def _load_fixture_facts(path: Path | None = None) -> dict:
+    path = paths.fixture_file() if path is None else path
     if not path.is_file():
         return {}
     with path.open("rb") as fh:
@@ -97,22 +98,23 @@ def _load_fixture_facts(path: Path = FIXTURES_FILE) -> dict:
 _FIXTURE = _load_fixture_facts()
 
 # Mixed-answer fixture, served from lab/config/dns-fixture.hosts which
-# `./lab.py up` mounts into the engine container. The control resolves to
+# `ipl-lab up` mounts into the engine container. The control resolves to
 # one public address; the others resolve to the same public address *and* a
 # private one, in both orderings, so an engine that validates only the
 # first answer fails one of them.
 MIXED_FIXTURE_CONTROL = _FIXTURE.get("control", "")
-MIXED_FIXTURE_TARGETS = tuple(name for name in _FIXTURE.get("records", {})
-                              if name != MIXED_FIXTURE_CONTROL)
+MIXED_FIXTURE_TARGETS = tuple(
+    name for name in _FIXTURE.get("records", {}) if name != MIXED_FIXTURE_CONTROL
+)
 
-# Rebinding fixture, served by the same container (lab/dnsfixture).
+# Rebinding fixture, served by the same container (data/lab/dnsfixture).
 # The first A query for one of these names is answered with a public
 # address and every later query with the fixture's own private address,
 # where it listens as a trap. Each name is fresh, so no name can be served
 # from a cache an earlier one warmed, and each is probed twice so that the
 # second answer is actually handed out.
 REBIND_ZONE = _FIXTURE.get("rebind_zone", "")
-REBIND_NAMES = 3          # probed twice each, either side of REBIND_TTL_GAP
+REBIND_NAMES = 3  # probed twice each, either side of REBIND_TTL_GAP
 # The fixture answers with TTL 0, but a resolver cache keyed on a
 # whole-second clock — Squid's ipcache is one — will still serve two
 # probes issued in the same second from a single lookup, and the rebind
@@ -127,11 +129,11 @@ REBIND_TTL_GAP = 1.5
 PTR_FIXTURE_ADDRESS = _FIXTURE.get("ptr_address", "")
 PTR_FIXTURE_CLAIMS = _FIXTURE.get("ptr_claims", "")
 
-# The fixture's log stream, set by run_suite when `run.py check` passes
+# The fixture's log stream, set by run_suite when `ipl check` passes
 # --fixture-container. Kept as a module-level hook so the rebinding test
 # can read it without every test function growing a parameter, and so the
 # unit tests can substitute a canned transcript.
-FIXTURE_LOG_SOURCE: "callable" = lambda: []
+FIXTURE_LOG_SOURCE: callable = list
 
 # Engine-specific expectations for the CONNECT-abuse tests: Pipelock is
 # expected to reject; Smokescreen and Squid behavior is recorded
@@ -149,7 +151,7 @@ FIXTURE_LOG_SOURCE: "callable" = lambda: []
 # the public one; docs/policy.md says such a name is rejected, so it
 # deviates. It is graded `record` rather than `fail` because the row is
 # still the same measurement either way and the grade was doing a job it
-# cannot do: `./lab.py check` exited 1 on every Smokescreen run, so the exit
+# cannot do: `ipl-lab check` exited 1 on every Smokescreen run, so the exit
 # code stopped distinguishing "this engine has a known, bounded deviation"
 # from "something broke". Recording keeps the behavior in the report — the
 # row says `RECORD established` with both answer orderings — and leaves the
@@ -158,8 +160,11 @@ FIXTURE_LOG_SOURCE: "callable" = lambda: []
 # docs/findings.md §2.
 ENGINE_EXPECTATIONS = {
     "pipelock": {"connect-sni-mismatch": "deny", "connect-raw-tunnel": "deny"},
-    "smokescreen": {"connect-sni-mismatch": "record", "connect-raw-tunnel": "record",
-                    "dns-mixed-answers": "record"},
+    "smokescreen": {
+        "connect-sni-mismatch": "record",
+        "connect-raw-tunnel": "record",
+        "dns-mixed-answers": "record",
+    },
     "squid": {"connect-sni-mismatch": "record", "connect-raw-tunnel": "record"},
 }
 
@@ -169,24 +174,25 @@ ENGINES = tuple(ENGINE_EXPECTATIONS)
 @dataclass
 class Attempt:
     """One probe within a multi-target check (e.g. dns-rebinding)."""
+
     n: int
     target: str
-    local_resolved: list[str]   # IPs the checker itself resolved, if any
-    outcome: str                # "established" | "denied" | "error"
+    local_resolved: list[str]  # IPs the checker itself resolved, if any
+    outcome: str  # "established" | "denied" | "error"
     status: int | None
     elapsed_ms: float
     detail: str
-    cause: str | None = None    # filled in by the runner for denied attempts
+    cause: str | None = None  # filled in by the runner for denied attempts
 
 
 @dataclass
 class Result:
     name: str
-    group: str          # "quick" | "full"
-    expectation: str    # "allow" | "deny" | "record"
-    outcome: str        # "pass" | "fail" | "record" | "skip" | "error"
+    group: str  # "quick" | "full"
+    expectation: str  # "allow" | "deny" | "record"
+    outcome: str  # "pass" | "fail" | "record" | "skip" | "error"
     detail: str
-    cause: str | None = None            # best-effort denial classification
+    cause: str | None = None  # best-effort denial classification
     # What the engine actually did, for checks that report behavior rather
     # than grading themselves: "allowed" or "denied". A `record` grade says
     # only that no verdict is defined, so without this the result file would
@@ -202,6 +208,7 @@ class Result:
 @dataclass
 class RawOutcome:
     """What a test function returns when it has more than (outcome, detail)."""
+
     outcome: str
     detail: str
     attempts: list[Attempt] = field(default_factory=list)
@@ -216,7 +223,7 @@ class HttpResponse:
     first_line: str
 
 
-def _normalize(raw: "tuple[str, str] | RawOutcome") -> RawOutcome:
+def _normalize(raw: tuple[str, str] | RawOutcome) -> RawOutcome:
     if isinstance(raw, RawOutcome):
         return raw
     outcome, detail = raw
@@ -238,7 +245,6 @@ def resolve_locally(host: str) -> list[str]:
     return sorted({info[4][0] for info in infos})
 
 
-
 # ---------------------------------------------------------------------------
 # Denial-cause classification
 # ---------------------------------------------------------------------------
@@ -258,53 +264,98 @@ def resolve_locally(host: str) -> list[str]:
 # them out. "unknown" is expected and honest when nothing matches.
 _TAXONOMY: list[tuple[str, re.Pattern]] = [
     # An engine that resolved the name and rejected the answer states so.
-    ("metadata", re.compile(r"metadata", re.I)),
-    ("sni-mismatch", re.compile(r"\bsni\b|unrecognized_name|domain.?fronting", re.I)),
-    ("non-tls-in-tunnel", re.compile(r"non-tls|non.?tls.?in.?tunnel|decode_error|"
-                                      r"plain (http|bytes)|raw (protocol|bytes)", re.I)),
+    ("metadata", re.compile(r"metadata", re.IGNORECASE)),
+    (
+        "sni-mismatch",
+        re.compile(r"\bsni\b|unrecognized_name|domain.?fronting", re.IGNORECASE),
+    ),
+    (
+        "non-tls-in-tunnel",
+        re.compile(
+            r"non-tls|non.?tls.?in.?tunnel|decode_error|"
+            r"plain (http|bytes)|raw (protocol|bytes)",
+            re.IGNORECASE,
+        ),
+    ),
     # Pipelock: "SSRF blocked: X resolves to internal IP".
     # Smokescreen: "no valid IP found among resolved addresses - 10.0.0.1
     # denied by rule 'Deny: Private Range'".
-    ("private-ip", re.compile(r"\bssrf\b|private range|"
-                               r"no valid ip found among resolved|"
-                               r"resolves? to (a |an )?(non.?overridable )?"
-                               r"(internal|private|loopback|link.?local|reserved)|"
-                               r"(private|loopback|link.?local|rfc.?1918|reserved|internal)"
-                               r" (ip|address)", re.I)),
+    (
+        "private-ip",
+        re.compile(
+            r"\bssrf\b|private range|"
+            r"no valid ip found among resolved|"
+            r"resolves? to (a |an )?(non.?overridable )?"
+            r"(internal|private|loopback|link.?local|reserved)|"
+            r"(private|loopback|link.?local|rfc.?1918|reserved|internal)"
+            r" (ip|address)",
+            re.IGNORECASE,
+        ),
+    ),
     # Resolution never produced an answer: not a policy verdict at all.
     # Pipelock: "DNS lookup for X returned no such host".
     # Smokescreen: "502 Failed to resolve remote hostname: lookup X ...".
     # Squid: ERR_DNS_FAIL — "Unable to determine IP address from host name
     # X / The DNS server returned: Server Failure".
-    ("dns-failure", re.compile(r"no such host|nxdomain|name or service not known|"
-                                r"dns lookup .*(failed|returned)|"
-                                r"(failed|unable) to resolve|"
-                                r"unable to determine ip address from host name|"
-                                r"the dns server returned", re.I)),
+    (
+        "dns-failure",
+        re.compile(
+            r"no such host|nxdomain|name or service not known|"
+            r"dns lookup .*(failed|returned)|"
+            r"(failed|unable) to resolve|"
+            r"unable to determine ip address from host name|"
+            r"the dns server returned",
+            re.IGNORECASE,
+        ),
+    ),
     # Smokescreen rejects bracketed IPv6 literals before any policy applies
     # ("Destination host cannot be determined"), so its pass on the
     # private-IPv6 checks says nothing about private-IP defence. Kept as its
     # own bucket precisely so that row cannot be read as one.
-    ("unparseable-destination", re.compile(r"destination host cannot be determined|"
-                                            r"invalid domain|invalid label|\bidna\b|"
-                                            r"could not parse (the )?(destination|host)", re.I)),
+    (
+        "unparseable-destination",
+        re.compile(
+            r"destination host cannot be determined|"
+            r"invalid domain|invalid label|\bidna\b|"
+            r"could not parse (the )?(destination|host)",
+            re.IGNORECASE,
+        ),
+    ),
     # Squid: "the destination is a bare IP address" (config/squid.conf
     # refuses address-form destinations so that `dstdomain` can never fall
     # back to a PTR lookup). Distinct from a plain allowlist miss, because
     # the point is that the name was never consulted.
-    ("ip-literal-destination", re.compile(r"bare ip address|"
-                                           r"allowlists? destinations by hostname", re.I)),
+    (
+        "ip-literal-destination",
+        re.compile(
+            r"bare ip address|"
+            r"allowlists? destinations by hostname",
+            re.IGNORECASE,
+        ),
+    ),
     # Squid: "CONNECT to this port is not allowed" (config/squid.conf
     # restricts tunnels to 443). Not a hostname verdict — the destination
     # may well be allowlisted — so it gets its own bucket.
-    ("port-not-allowed", re.compile(r"connect to this port|port .{0,20}not (allowed|permitted)|"
-                                     r"unsafe port|disallowed port", re.I)),
-    ("timeout", re.compile(r"timed out|timeout", re.I)),
+    (
+        "port-not-allowed",
+        re.compile(
+            r"connect to this port|port .{0,20}not (allowed|permitted)|"
+            r"unsafe port|disallowed port",
+            re.IGNORECASE,
+        ),
+    ),
+    ("timeout", re.compile(r"timed out|timeout", re.IGNORECASE)),
     # Smokescreen's default-deny ACL verdict is "default rule policy used".
-    ("hostname-not-allowlisted", re.compile(r"not (on|in)( the)? allowlist|not.?allowlisted|"
-                                             r"not.?whitelist|denied by (mock )?policy|"
-                                             r"default rule policy|"
-                                             r"no matching allow|blacklist", re.I)),
+    (
+        "hostname-not-allowlisted",
+        re.compile(
+            r"not (on|in)( the)? allowlist|not.?allowlisted|"
+            r"not.?whitelist|denied by (mock )?policy|"
+            r"default rule policy|"
+            r"no matching allow|blacklist",
+            re.IGNORECASE,
+        ),
+    ),
 ]
 
 
@@ -315,7 +366,7 @@ def classify_denial(text: str) -> str:
     return "unknown"
 
 
-def aggregate_cause(detail: str, attempts: "list[Attempt]") -> str:
+def aggregate_cause(detail: str, attempts: list[Attempt]) -> str:
     """One cause for a whole check.
 
     With per-attempt evidence, classify each attempt and combine, rather
@@ -345,19 +396,40 @@ def aggregate_cause(detail: str, attempts: "list[Attempt]") -> str:
 # TLS record decoding
 # ---------------------------------------------------------------------------
 
-_TLS_CONTENT_TYPES = {20: "change_cipher_spec", 21: "alert", 22: "handshake", 23: "application_data"}
+_TLS_CONTENT_TYPES = {
+    20: "change_cipher_spec",
+    21: "alert",
+    22: "handshake",
+    23: "application_data",
+}
 _TLS_VERSIONS = {0x0301: "TLS1.0", 0x0302: "TLS1.1", 0x0303: "TLS1.2", 0x0304: "TLS1.3"}
 _TLS_ALERT_LEVELS = {1: "warning", 2: "fatal"}
 _TLS_ALERT_DESCRIPTIONS = {
-    0: "close_notify", 10: "unexpected_message", 20: "bad_record_mac",
-    21: "decryption_failed", 22: "record_overflow", 30: "decompression_failure",
-    40: "handshake_failure", 42: "bad_certificate", 43: "unsupported_certificate",
-    44: "certificate_revoked", 45: "certificate_expired", 46: "certificate_unknown",
-    47: "illegal_parameter", 48: "unknown_ca", 49: "access_denied",
-    50: "decode_error", 51: "decrypt_error", 70: "protocol_version",
-    71: "insufficient_security", 80: "internal_error", 90: "user_canceled",
-    109: "missing_extension", 110: "unsupported_extension",
-    112: "unrecognized_name", 116: "certificate_required",
+    0: "close_notify",
+    10: "unexpected_message",
+    20: "bad_record_mac",
+    21: "decryption_failed",
+    22: "record_overflow",
+    30: "decompression_failure",
+    40: "handshake_failure",
+    42: "bad_certificate",
+    43: "unsupported_certificate",
+    44: "certificate_revoked",
+    45: "certificate_expired",
+    46: "certificate_unknown",
+    47: "illegal_parameter",
+    48: "unknown_ca",
+    49: "access_denied",
+    50: "decode_error",
+    51: "decrypt_error",
+    70: "protocol_version",
+    71: "insufficient_security",
+    80: "internal_error",
+    90: "user_canceled",
+    109: "missing_extension",
+    110: "unsupported_extension",
+    112: "unrecognized_name",
+    116: "certificate_required",
 }
 
 
@@ -369,11 +441,11 @@ def annotate_tls_bytes(data: bytes) -> str:
     offset = 0
     while offset + 5 <= len(data) and len(records) < 8:
         ctype = data[offset]
-        version = int.from_bytes(data[offset + 1:offset + 3], "big")
-        length = int.from_bytes(data[offset + 3:offset + 5], "big")
+        version = int.from_bytes(data[offset + 1 : offset + 3], "big")
+        length = int.from_bytes(data[offset + 3 : offset + 5], "big")
         if ctype not in _TLS_CONTENT_TYPES:
             break
-        body = data[offset + 5:offset + 5 + length]
+        body = data[offset + 5 : offset + 5 + length]
         ctype_name = _TLS_CONTENT_TYPES.get(ctype, f"unknown({ctype})")
         version_name = _TLS_VERSIONS.get(version, f"0x{version:04x}")
         line = f"type={ctype_name}({ctype}) version={version_name} length={length}"
@@ -389,7 +461,9 @@ def annotate_tls_bytes(data: bytes) -> str:
         if remaining:
             summary += f"; +{len(remaining)} trailing bytes: {remaining[:32].hex()}"
         return summary
-    return f"not a recognized TLS record; first bytes: {data[:32].hex()} ({data[:32]!r})"
+    return (
+        f"not a recognized TLS record; first bytes: {data[:32].hex()} ({data[:32]!r})"
+    )
 
 
 class ProxyClient:
@@ -426,17 +500,18 @@ class ProxyClient:
             return HttpResponse(None, {}, "", f"connection error: {exc}")
         status = self._status_of(data)
         first = data.split(b"\r\n", 1)[0].decode("latin-1", "replace")
-        return HttpResponse(status, _parse_headers(data), _parse_body(data),
-                            first or "(connection closed, no data)")
+        return HttpResponse(
+            status,
+            _parse_headers(data),
+            _parse_body(data),
+            first or "(connection closed, no data)",
+        )
 
     def connect(self, target: str) -> tuple[socket.socket | None, int | None, str]:
         """CONNECT to `host:port`. On 200, returns the open tunnel socket.
         On denial, `detail` includes a short response body when the engine
         sent one, for cause classification."""
-        request = (
-            f"CONNECT {target} HTTP/1.1\r\n"
-            f"Host: {target}\r\n\r\n"
-        )
+        request = f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n"
         sock = None
         try:
             sock = self._sock()
@@ -466,7 +541,9 @@ class ProxyClient:
                 pass
         sock.close()
         body = summarize_body(extra.decode("latin-1", "replace"))
-        detail = f"{first} — {body}" if body else (first or "(connection closed, no data)")
+        detail = (
+            f"{first} — {body}" if body else (first or "(connection closed, no data)")
+        )
         return None, status, detail
 
     def _recv_headers(self, sock: socket.socket) -> bytes:
@@ -496,7 +573,7 @@ class ProxyClient:
         Certificate verification is deliberately off: this tests whether
         the proxy lets the handshake through, not upstream authenticity.
         """
-        sock, status, first = self.connect(target)
+        sock, _status, first = self.connect(target)
         if sock is None:
             return False, f"CONNECT denied: {first}"
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -507,13 +584,16 @@ class ProxyClient:
                 version = tls.version() or "TLS"
                 return True, f"tunnel established, {version} handshake OK (SNI={sni})"
         except (ssl.SSLError, OSError) as exc:
-            return False, f"tunnel established but TLS handshake failed (SNI={sni}): {exc}"
+            return (
+                False,
+                f"tunnel established but TLS handshake failed (SNI={sni}): {exc}",
+            )
         finally:
             sock.close()
 
     def raw_in_tunnel(self, target: str, payload: bytes) -> tuple[bytes, str]:
         """CONNECT then send non-TLS bytes; returns (response, detail)."""
-        sock, status, first = self.connect(target)
+        sock, _status, first = self.connect(target)
         if sock is None:
             return b"", f"CONNECT denied: {first}"
         try:
@@ -524,8 +604,10 @@ class ProxyClient:
             return b"", f"tunnel reset while sending raw bytes: {exc}"
         sock.close()
         if not data:
-            return b"", ("tunnel established; connection closed with no response to raw "
-                        "(non-TLS) bytes — consistent with a non-TLS-in-tunnel policy check")
+            return b"", (
+                "tunnel established; connection closed with no response to raw "
+                "(non-TLS) bytes — consistent with a non-TLS-in-tunnel policy check"
+            )
         annotated = annotate_tls_bytes(data)
         return data, f"raw bytes traversed the tunnel; response: {annotated}"
 
@@ -566,7 +648,7 @@ def _parse_body(data: bytes) -> str:
 
 
 def _classify_deny_connect(client: ProxyClient, target: str) -> tuple[str, str]:
-    sock, status, detail = client.connect(target)
+    sock, _status, detail = client.connect(target)
     if sock is not None:
         sock.close()
         return "fail", f"tunnel to {target} was ESTABLISHED: {detail}"
@@ -585,7 +667,11 @@ def _classify_deny_http(client: ProxyClient, url: str) -> tuple[str, str]:
 def test_allowed_http(client: ProxyClient) -> RawOutcome:
     resp = client.http_get(f"http://{ALLOWED_HTTP_HOST}/")
     if resp.status is not None and resp.status < 400:
-        return RawOutcome("pass", f"reached {ALLOWED_HTTP_HOST} ({resp.first_line})", headers=resp.headers)
+        return RawOutcome(
+            "pass",
+            f"reached {ALLOWED_HTTP_HOST} ({resp.first_line})",
+            headers=resp.headers,
+        )
     return RawOutcome("fail", f"expected success, got: {resp.first_line}")
 
 
@@ -660,19 +746,26 @@ def test_ipv6_private(client: ProxyClient) -> tuple[str, str]:
 def fixtures_active(client: ProxyClient) -> bool:
     """True when *.nip.io is allowlisted (test policy) — a public-IP nip.io
     name should then tunnel; under the normal policy it is hostname-denied."""
-    sock, status, _ = client.connect("1.1.1.1.nip.io:443")
+    sock, _status, _ = client.connect("1.1.1.1.nip.io:443")
     if sock is not None:
         sock.close()
         return True
     return False
 
 
-FIXTURE_SKIP = ("test policy not active — run `./lab.py up` "
-                "to exercise DNS/SSRF fixtures, then re-run")
+FIXTURE_SKIP = (
+    "test policy not active — run `ipl-lab up` "
+    "to exercise DNS/SSRF fixtures, then re-run"
+)
 
 
-def _connect_attempt(client: ProxyClient, n: int, target: str, host_for_resolution: str,
-                     resolve: bool = True) -> Attempt:
+def _connect_attempt(
+    client: ProxyClient,
+    n: int,
+    target: str,
+    host_for_resolution: str,
+    resolve: bool = True,
+) -> Attempt:
     """One CONNECT probe. `resolve=False` skips the checker's own lookup —
     used for fixture names that exist only inside the engine's container,
     where the lookup can only ever NXDOMAIN after a timeout."""
@@ -683,20 +776,35 @@ def _connect_attempt(client: ProxyClient, n: int, target: str, host_for_resoluti
     established = sock is not None
     if established:
         sock.close()
-    outcome = "established" if established else ("error" if status is None else "denied")
+    outcome = (
+        "established" if established else ("error" if status is None else "denied")
+    )
     return Attempt(n, target, local, outcome, status, elapsed, detail)
 
 
 def test_dns_private_v4(client: ProxyClient) -> RawOutcome:
-    targets = ("10.0.0.1.nip.io:80", "192.168.1.1.nip.io:80",
-               "127.0.0.1.nip.io:80", "169.254.169.254.nip.io:80")
-    attempts = [_connect_attempt(client, i, t, t.rsplit(":", 1)[0]) for i, t in enumerate(targets)]
+    targets = (
+        "10.0.0.1.nip.io:80",
+        "192.168.1.1.nip.io:80",
+        "127.0.0.1.nip.io:80",
+        "169.254.169.254.nip.io:80",
+    )
+    attempts = [
+        _connect_attempt(client, i, t, t.rsplit(":", 1)[0])
+        for i, t in enumerate(targets)
+    ]
     bad = [a for a in attempts if a.outcome == "established"]
     if bad:
-        detail = "; ".join(f"{a.target} established (resolved {a.local_resolved})" for a in bad)
+        detail = "; ".join(
+            f"{a.target} established (resolved {a.local_resolved})" for a in bad
+        )
         return RawOutcome("fail", detail, attempts=attempts)
-    return RawOutcome("pass", "allowlisted hostnames resolving to private/loopback/metadata IPv4 "
-                              "all denied; resolved IPs recorded per attempt", attempts=attempts)
+    return RawOutcome(
+        "pass",
+        "allowlisted hostnames resolving to private/loopback/metadata IPv4 "
+        "all denied; resolved IPs recorded per attempt",
+        attempts=attempts,
+    )
 
 
 def test_dns_private_v6(client: ProxyClient) -> RawOutcome:
@@ -708,13 +816,22 @@ def test_dns_private_v6(client: ProxyClient) -> RawOutcome:
     # the SSRF check and the row scored a pass for the wrong reason
     # (measured 2026-08-19). "0--1" is the equivalent, valid spelling.
     targets = ("0--1.sslip.io:80", "fe80--1.sslip.io:80", "fd00--1.sslip.io:80")
-    attempts = [_connect_attempt(client, i, t, t.rsplit(":", 1)[0]) for i, t in enumerate(targets)]
+    attempts = [
+        _connect_attempt(client, i, t, t.rsplit(":", 1)[0])
+        for i, t in enumerate(targets)
+    ]
     bad = [a for a in attempts if a.outcome == "established"]
     if bad:
-        detail = "; ".join(f"{a.target} established (resolved {a.local_resolved})" for a in bad)
+        detail = "; ".join(
+            f"{a.target} established (resolved {a.local_resolved})" for a in bad
+        )
         return RawOutcome("fail", detail, attempts=attempts)
-    return RawOutcome("pass", "allowlisted hostnames resolving to private/loopback IPv6 all "
-                              "denied; resolved IPs recorded per attempt", attempts=attempts)
+    return RawOutcome(
+        "pass",
+        "allowlisted hostnames resolving to private/loopback IPv6 all "
+        "denied; resolved IPs recorded per attempt",
+        attempts=attempts,
+    )
 
 
 def _rebind_name(index: int, token: str) -> str:
@@ -729,7 +846,7 @@ def _rebind_name(index: int, token: str) -> str:
     return f"a{index}-{token}.{REBIND_ZONE}"
 
 
-def parse_fixture_log(lines: "list[str]") -> "tuple[dict[str, list[str]], list[str]]":
+def parse_fixture_log(lines: list[str]) -> tuple[dict[str, list[str]], list[str]]:
     """Split the fixture's `IPL-FIXTURE` lines into (answers, trap hits).
 
     `answers` maps each queried name to the addresses handed out, in order,
@@ -789,54 +906,70 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
 
     attempts: list[Attempt] = []
     for name in names:
-        attempts.append(_connect_attempt(client, len(attempts), f"{name}:443",
-                                         name, resolve=False))
+        attempts.append(
+            _connect_attempt(client, len(attempts), f"{name}:443", name, resolve=False)
+        )
     time.sleep(REBIND_TTL_GAP)
     for name in names:
-        attempts.append(_connect_attempt(client, len(attempts), f"{name}:443",
-                                         name, resolve=False))
+        attempts.append(
+            _connect_attempt(client, len(attempts), f"{name}:443", name, resolve=False)
+        )
 
     answers, trap = parse_fixture_log(FIXTURE_LOG_SOURCE())
     # The names are unique to this run, so their answers need no delta;
     # trap hits accumulate in a long-lived container and do.
-    trap = trap[len(before_trap):]
+    trap = trap[len(before_trap) :]
     ours = {name: answers.get(name, []) for name in names}
     lookups = sum(len(seen) for seen in ours.values())
     if not lookups:
-        return RawOutcome("skip", (
-            f"the DNS fixture reported no lookups for *.{REBIND_ZONE} — it is not "
-            "running, the engine is not resolving through it, or its log stream is not "
-            "readable from here. Run `./lab.py up` and `./run.py check "
-            "--full`, which wires the fixture's container through automatically"),
-            attempts=attempts)
+        return RawOutcome(
+            "skip",
+            (
+                f"the DNS fixture reported no lookups for *.{REBIND_ZONE} — it is not "
+                "running, the engine is not resolving through it, or its log stream is not "
+                "readable from here. Run `ipl-lab up` and `ipl check "
+                "--full`, which wires the fixture's container through automatically"
+            ),
+            attempts=attempts,
+        )
 
     for attempt in attempts:
         attempt.local_resolved = list(ours.get(attempt.target.rsplit(":", 1)[0], []))
 
     if trap:
-        return RawOutcome("fail", (
-            f"{len(trap)} connection(s) reached the fixture's private address "
-            f"(from {', '.join(sorted(set(trap)))}) after a repeat lookup handed it "
-            "over — the engine followed a rebind instead of re-validating"),
-            attempts=attempts)
+        return RawOutcome(
+            "fail",
+            (
+                f"{len(trap)} connection(s) reached the fixture's private address "
+                f"(from {', '.join(sorted(set(trap)))}) after a repeat lookup handed it "
+                "over — the engine followed a rebind instead of re-validating"
+            ),
+            attempts=attempts,
+        )
 
     # No trap hits: say why, because "never offered the rebind" and
     # "offered it and refused" are very different amounts of evidence.
     rebound = [name for name, seen in ours.items() if len(seen) > 1]
     second_probes = attempts[REBIND_NAMES:]
     established = sum(1 for a in second_probes if a.outcome == "established")
-    detail = (f"no connection reached the trap. {len(rebound)}/{REBIND_NAMES} names were "
-              f"resolved more than once and so were handed the private address "
-              f"({lookups} lookups total); of the {len(second_probes)} repeat probes, "
-              f"{len(second_probes) - established} were denied and {established} "
-              "established")
+    detail = (
+        f"no connection reached the trap. {len(rebound)}/{REBIND_NAMES} names were "
+        f"resolved more than once and so were handed the private address "
+        f"({lookups} lookups total); of the {len(second_probes)} repeat probes, "
+        f"{len(second_probes) - established} were denied and {established} "
+        "established"
+    )
     if not rebound:
-        detail += (" — but the engine resolved each name only once, so it was never "
-                   "offered the rebind and this run did not exercise one")
+        detail += (
+            " — but the engine resolved each name only once, so it was never "
+            "offered the rebind and this run did not exercise one"
+        )
     elif established:
-        detail += (" — an established repeat probe with a silent trap means the engine "
-                   "reused the address it had already validated rather than following "
-                   "the new answer")
+        detail += (
+            " — an established repeat probe with a silent trap means the engine "
+            "reused the address it had already validated rather than following "
+            "the new answer"
+        )
     return RawOutcome("pass", detail, attempts=attempts)
 
 
@@ -866,32 +999,44 @@ def test_ptr_allowlist(client: ProxyClient) -> RawOutcome:
     """
     fixture_lines = FIXTURE_LOG_SOURCE()
     if not any("IPL-FIXTURE" in line for line in fixture_lines):
-        return RawOutcome("skip", (
-            "the local DNS fixture is not observable from here, so the PTR claim "
-            f"for {PTR_FIXTURE_ADDRESS} cannot be known to be live. Run "
-            "`./lab.py up` and `./lab.py check`, which wires "
-            "the fixture's container through automatically"))
+        return RawOutcome(
+            "skip",
+            (
+                "the local DNS fixture is not observable from here, so the PTR claim "
+                f"for {PTR_FIXTURE_ADDRESS} cannot be known to be live. Run "
+                "`ipl-lab up` and `ipl-lab check`, which wires "
+                "the fixture's container through automatically"
+            ),
+        )
 
     target = f"{PTR_FIXTURE_ADDRESS}:443"
     attempt = _connect_attempt(client, 0, target, PTR_FIXTURE_ADDRESS, resolve=False)
-    asked = _ptr_queries(FIXTURE_LOG_SOURCE(), PTR_FIXTURE_ADDRESS) - \
-        _ptr_queries(fixture_lines, PTR_FIXTURE_ADDRESS)
+    asked = _ptr_queries(FIXTURE_LOG_SOURCE(), PTR_FIXTURE_ADDRESS) - _ptr_queries(
+        fixture_lines, PTR_FIXTURE_ADDRESS
+    )
 
     if attempt.outcome == "established":
-        return RawOutcome("fail", (
-            f"{target} was reached even though only {PTR_FIXTURE_CLAIMS} is "
-            f"allowlisted — the address inherited an allowlisted name from its "
-            f"reverse record"), attempts=[attempt])
+        return RawOutcome(
+            "fail",
+            (
+                f"{target} was reached even though only {PTR_FIXTURE_CLAIMS} is "
+                f"allowlisted — the address inherited an allowlisted name from its "
+                f"reverse record"
+            ),
+            attempts=[attempt],
+        )
 
     detail = f"denied: {attempt.detail}"
-    detail += (f"; the engine made {asked} reverse lookup(s) for it and refused anyway"
-               if asked else
-               "; the engine performed no reverse lookup, so the allowlist was never "
-               "offered the PTR name")
+    detail += (
+        f"; the engine made {asked} reverse lookup(s) for it and refused anyway"
+        if asked
+        else "; the engine performed no reverse lookup, so the allowlist was never "
+        "offered the PTR name"
+    )
     return RawOutcome("pass", detail, attempts=[attempt])
 
 
-def _ptr_queries(lines: "list[str]", address: str) -> int:
+def _ptr_queries(lines: list[str], address: str) -> int:
     """How many PTR lookups for `address` the fixture logged. dnsmasq's
     `--log-queries` writes `query[PTR] <reversed>.in-addr.arpa from ...`."""
     reversed_name = ".".join(reversed(address.split("."))) + ".in-addr.arpa"
@@ -904,7 +1049,7 @@ def test_dns_mixed(client: ProxyClient) -> RawOutcome:
 
     This is the one check whose fixture cannot come from public DNS, so it
     is manufactured in lab/config/dns-fixture.hosts, served by the dnsmasq
-    container `./lab.py up` starts. The control probe is what makes the result
+    container `ipl-lab up` starts. The control probe is what makes the result
     attributable: it resolves to the same public address as the mixed names
     and nothing else, so if it does not establish, the fixture is missing,
     unallowlisted or unreachable and a denial below would prove nothing.
@@ -914,19 +1059,27 @@ def test_dns_mixed(client: ProxyClient) -> RawOutcome:
     inside the engine's container — so `local_resolved` is empty on every
     attempt here by design, not by failure.
     """
-    control = _connect_attempt(client, 0, f"{MIXED_FIXTURE_CONTROL}:443",
-                               MIXED_FIXTURE_CONTROL, resolve=False)
+    control = _connect_attempt(
+        client, 0, f"{MIXED_FIXTURE_CONTROL}:443", MIXED_FIXTURE_CONTROL, resolve=False
+    )
     if control.outcome != "established":
-        return RawOutcome("skip", (
-            f"control probe to {MIXED_FIXTURE_CONTROL} did not establish "
-            f"({control.detail}) — the mixed-answer fixture is not mounted, not "
-            "allowlisted, or its public address is unreachable from here. Run "
-            "`./lab.py up`, which serves lab/config/dns-fixture.hosts, "
-            "and re-run"), attempts=[control])
+        return RawOutcome(
+            "skip",
+            (
+                f"control probe to {MIXED_FIXTURE_CONTROL} did not establish "
+                f"({control.detail}) — the mixed-answer fixture is not mounted, not "
+                "allowlisted, or its public address is unreachable from here. Run "
+                "`ipl-lab up`, which serves lab/config/dns-fixture.hosts, "
+                "and re-run"
+            ),
+            attempts=[control],
+        )
 
     attempts = [control]
-    attempts += [_connect_attempt(client, i, f"{name}:443", name, resolve=False)
-                 for i, name in enumerate(MIXED_FIXTURE_TARGETS, start=1)]
+    attempts += [
+        _connect_attempt(client, i, f"{name}:443", name, resolve=False)
+        for i, name in enumerate(MIXED_FIXTURE_TARGETS, start=1)
+    ]
     established = [a for a in attempts[1:] if a.outcome == "established"]
     if established:
         # Behavioral, not graded: `_finalize` maps it through the engine's
@@ -935,13 +1088,24 @@ def test_dns_mixed(client: ProxyClient) -> RawOutcome:
         #
         # Deliberately phrased without a taxonomy reason word: this detail
         # is fed to classify_denial(), and nothing here was denied.
-        return RawOutcome("allowed", "; ".join(
-            f"{a.target} established — the engine connected although a private address "
-            "was in the answer set" for a in established), attempts=attempts)
-    return RawOutcome("denied", (
-        f"control {MIXED_FIXTURE_CONTROL} established, and both mixed-answer names "
-        "(public-first and private-first) were denied — every address in the answer set "
-        "is validated, not only the first one or the routable one"), attempts=attempts)
+        return RawOutcome(
+            "allowed",
+            "; ".join(
+                f"{a.target} established — the engine connected although a private address "
+                "was in the answer set"
+                for a in established
+            ),
+            attempts=attempts,
+        )
+    return RawOutcome(
+        "denied",
+        (
+            f"control {MIXED_FIXTURE_CONTROL} established, and both mixed-answer names "
+            "(public-first and private-first) were denied — every address in the answer set "
+            "is validated, not only the first one or the routable one"
+        ),
+        attempts=attempts,
+    )
 
 
 # -- CONNECT abuse ----------------------------------------------------------
@@ -956,7 +1120,9 @@ def test_sni_mismatch(client: ProxyClient) -> tuple[str, str]:
 
 
 def test_raw_tunnel(client: ProxyClient) -> tuple[str, str]:
-    payload = (f"GET / HTTP/1.1\r\nHost: {ALLOWED_HTTPS_HOST}\r\nConnection: close\r\n\r\n").encode()
+    payload = (
+        f"GET / HTTP/1.1\r\nHost: {ALLOWED_HTTPS_HOST}\r\nConnection: close\r\n\r\n"
+    ).encode()
     data, detail = client.raw_in_tunnel(f"{ALLOWED_HTTPS_HOST}:443", payload)
     if not data:
         return "denied", detail
@@ -965,7 +1131,7 @@ def test_raw_tunnel(client: ProxyClient) -> tuple[str, str]:
 
 def test_concurrency(client: ProxyClient) -> tuple[str, str]:
     def one(_: int) -> bool:
-        sock, status, _ = client.connect(f"{ALLOWED_HTTPS_HOST}:443")
+        sock, _status, _ = client.connect(f"{ALLOWED_HTTPS_HOST}:443")
         if sock is not None:
             sock.close()
             return True
@@ -974,12 +1140,16 @@ def test_concurrency(client: ProxyClient) -> tuple[str, str]:
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
         results = list(pool.map(one, range(10)))
     ok = sum(results)
-    return "record", f"10 concurrent CONNECTs to an allowed host: {ok} established, {10 - ok} denied/failed"
+    return (
+        "record",
+        f"10 concurrent CONNECTs to an allowed host: {ok} established, {10 - ok} denied/failed",
+    )
 
 
 # ---------------------------------------------------------------------------
 # Suite driver
 # ---------------------------------------------------------------------------
+
 
 # (name, group, default expectation, callable, needs_fixtures)
 @dataclass(frozen=True)
@@ -993,75 +1163,189 @@ class Check:
     alike will eventually disagree. They needed a test to catch orphans
     between them; a single row cannot have any.
 
-    scripts/report.py prints `purpose` above the measured outcomes, so
+    `report` prints `purpose` above the measured outcomes, so
     docs/findings.md is generated whole instead of pairing generated rows
     with a hand-written key that drifts.
     """
+
     name: str
-    group: str              # "quick" or "full"
-    expectation: str        # "allow", "deny" or "record"
-    fn: "callable"
+    group: str  # "quick" or "full"
+    expectation: str  # "allow", "deny" or "record"
+    fn: callable
     needs_fixtures: bool
-    purpose: str            # the question this check asks, in one sentence
+    purpose: str  # the question this check asks, in one sentence
 
 
 TESTS = [
-    Check("allowed-http", "quick", "allow", test_allowed_http, False,
-          "A plain-HTTP GET to an allowlisted host reaches it."),
-    Check("allowed-https", "quick", "allow", test_allowed_https, False,
-          "A CONNECT tunnel to an allowlisted host completes a real TLS "
-          "handshake, so ordinary HTTPS works through the proxy."),
-    Check("blocked-host-connect", "quick", "deny", test_blocked_host_connect, False,
-          "CONNECT to a host that is not on the allowlist is refused "
-          "— the default-deny rule, on the tunnel path."),
-    Check("blocked-host-http", "quick", "deny", test_blocked_host_http, False,
-          "A plain-HTTP GET to a host that is not on the allowlist is "
-          "refused — the same rule on the request path."),
-    Check("direct-ip-connect", "quick", "deny", test_direct_ip_connect, False,
-          "A destination written as a bare address is refused. Under a "
-          "hostname allowlist it can only ever be denied; which rule "
-          "denies it is what the cause column shows."),
-    Check("loopback-ipv4", "quick", "deny", test_loopback, False,
-          "CONNECT to 127.0.0.1 is refused."),
-    Check("rfc1918-ipv4", "quick", "deny", test_rfc1918, False,
-          "CONNECT to RFC1918 space (10/8, 172.16/12, 192.168/16) is refused."),
-    Check("link-local-ipv4", "quick", "deny", test_link_local, False,
-          "CONNECT to 169.254.0.0/16 is refused."),
-    Check("metadata-endpoint", "quick", "deny", test_metadata, False,
-          "The cloud metadata address is refused over both CONNECT and "
-          "plain HTTP."),
-    Check("loopback-ipv6", "quick", "deny", test_ipv6_loopback, False,
-          "CONNECT to [::1] is refused."),
-    Check("private-ipv6", "quick", "deny", test_ipv6_private, False,
-          "CONNECT to ULA and link-local IPv6 (fd00::1, fe80::1) is refused."),
-    Check("dns-private-ipv4", "full", "deny", test_dns_private_v4, True,
-          "An *allowlisted* name that resolves to a private IPv4 address "
-          "is refused, so the denial can only have come from validating "
-          "the resolved address (nip.io)."),
-    Check("dns-private-ipv6", "full", "deny", test_dns_private_v6, True,
-          "The same, for IPv6 (sslip.io)."),
-    Check("dns-rebinding", "full", "deny", test_dns_rebind, True,
-          "A name whose answer changes between the first lookup and the "
-          "next does not get the engine to a private address. Graded on "
-          "whether the fixture's trap was reached, not on counts."),
-    Check("dns-mixed-answers", "full", "deny", test_dns_mixed, True,
-          "A name resolving to a public *and* a private address is "
-          "refused, in both answer orderings — every address in the "
-          "answer set is validated, not just the first or the routable "
-          "one."),
-    Check("ptr-allowlist", "full", "deny", test_ptr_allowlist, True,
-          "An address whose PTR record claims an allowlisted hostname is "
-          "still refused, so a reverse lookup cannot satisfy the allowlist."),
-    Check("connect-sni-mismatch", "full", "record", test_sni_mismatch, False,
-          "What the engine does when a tunnel to one allowlisted host "
-          "carries a ClientHello for another: enforcement inside the "
-          "tunnel, or none."),
-    Check("connect-raw-tunnel", "full", "record", test_raw_tunnel, False,
-          "What the engine does when a tunnel to an allowlisted host on "
-          "443 carries plaintext rather than TLS."),
-    Check("concurrency-sanity", "full", "record", test_concurrency, False,
-          "Ten simultaneous CONNECTs to an allowed host all succeed — "
-          "the proxy is not serializing or dropping under trivial load."),
+    Check(
+        "allowed-http",
+        "quick",
+        "allow",
+        test_allowed_http,
+        False,
+        "A plain-HTTP GET to an allowlisted host reaches it.",
+    ),
+    Check(
+        "allowed-https",
+        "quick",
+        "allow",
+        test_allowed_https,
+        False,
+        "A CONNECT tunnel to an allowlisted host completes a real TLS "
+        "handshake, so ordinary HTTPS works through the proxy.",
+    ),
+    Check(
+        "blocked-host-connect",
+        "quick",
+        "deny",
+        test_blocked_host_connect,
+        False,
+        "CONNECT to a host that is not on the allowlist is refused "
+        "— the default-deny rule, on the tunnel path.",
+    ),
+    Check(
+        "blocked-host-http",
+        "quick",
+        "deny",
+        test_blocked_host_http,
+        False,
+        "A plain-HTTP GET to a host that is not on the allowlist is "
+        "refused — the same rule on the request path.",
+    ),
+    Check(
+        "direct-ip-connect",
+        "quick",
+        "deny",
+        test_direct_ip_connect,
+        False,
+        "A destination written as a bare address is refused. Under a "
+        "hostname allowlist it can only ever be denied; which rule "
+        "denies it is what the cause column shows.",
+    ),
+    Check(
+        "loopback-ipv4",
+        "quick",
+        "deny",
+        test_loopback,
+        False,
+        "CONNECT to 127.0.0.1 is refused.",
+    ),
+    Check(
+        "rfc1918-ipv4",
+        "quick",
+        "deny",
+        test_rfc1918,
+        False,
+        "CONNECT to RFC1918 space (10/8, 172.16/12, 192.168/16) is refused.",
+    ),
+    Check(
+        "link-local-ipv4",
+        "quick",
+        "deny",
+        test_link_local,
+        False,
+        "CONNECT to 169.254.0.0/16 is refused.",
+    ),
+    Check(
+        "metadata-endpoint",
+        "quick",
+        "deny",
+        test_metadata,
+        False,
+        "The cloud metadata address is refused over both CONNECT and plain HTTP.",
+    ),
+    Check(
+        "loopback-ipv6",
+        "quick",
+        "deny",
+        test_ipv6_loopback,
+        False,
+        "CONNECT to [::1] is refused.",
+    ),
+    Check(
+        "private-ipv6",
+        "quick",
+        "deny",
+        test_ipv6_private,
+        False,
+        "CONNECT to ULA and link-local IPv6 (fd00::1, fe80::1) is refused.",
+    ),
+    Check(
+        "dns-private-ipv4",
+        "full",
+        "deny",
+        test_dns_private_v4,
+        True,
+        "An *allowlisted* name that resolves to a private IPv4 address "
+        "is refused, so the denial can only have come from validating "
+        "the resolved address (nip.io).",
+    ),
+    Check(
+        "dns-private-ipv6",
+        "full",
+        "deny",
+        test_dns_private_v6,
+        True,
+        "The same, for IPv6 (sslip.io).",
+    ),
+    Check(
+        "dns-rebinding",
+        "full",
+        "deny",
+        test_dns_rebind,
+        True,
+        "A name whose answer changes between the first lookup and the "
+        "next does not get the engine to a private address. Graded on "
+        "whether the fixture's trap was reached, not on counts.",
+    ),
+    Check(
+        "dns-mixed-answers",
+        "full",
+        "deny",
+        test_dns_mixed,
+        True,
+        "A name resolving to a public *and* a private address is "
+        "refused, in both answer orderings — every address in the "
+        "answer set is validated, not just the first or the routable "
+        "one.",
+    ),
+    Check(
+        "ptr-allowlist",
+        "full",
+        "deny",
+        test_ptr_allowlist,
+        True,
+        "An address whose PTR record claims an allowlisted hostname is "
+        "still refused, so a reverse lookup cannot satisfy the allowlist.",
+    ),
+    Check(
+        "connect-sni-mismatch",
+        "full",
+        "record",
+        test_sni_mismatch,
+        False,
+        "What the engine does when a tunnel to one allowlisted host "
+        "carries a ClientHello for another: enforcement inside the "
+        "tunnel, or none.",
+    ),
+    Check(
+        "connect-raw-tunnel",
+        "full",
+        "record",
+        test_raw_tunnel,
+        False,
+        "What the engine does when a tunnel to an allowlisted host on "
+        "443 carries plaintext rather than TLS.",
+    ),
+    Check(
+        "concurrency-sanity",
+        "full",
+        "record",
+        test_concurrency,
+        False,
+        "Ten simultaneous CONNECTs to an allowed host all succeed — "
+        "the proxy is not serializing or dropping under trivial load.",
+    ),
 ]
 
 CHECKS_BY_NAME = {check.name: check for check in TESTS}
@@ -1090,8 +1374,8 @@ def _finalize(name: str, expectation: str, raw: tuple[str, str]) -> tuple[str, s
 def _log_delta(before: list[str], after: list[str]) -> list[str]:
     """New lines since `before`. Falls back to the full `after` snapshot
     if the log stream rotated/truncated between the two reads."""
-    if after[:len(before)] == before:
-        return after[len(before):]
+    if after[: len(before)] == before:
+        return after[len(before) :]
     return after
 
 
@@ -1099,16 +1383,26 @@ def _fetch_logs(backend_bin: str | None, container: str | None) -> list[str]:
     if not backend_bin or not container:
         return []
     try:
-        proc = subprocess.run([backend_bin, "logs", container],
-                              capture_output=True, text=True, timeout=5)
+        proc = subprocess.run(
+            [backend_bin, "logs", container],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return []
     return ((proc.stdout or "") + (proc.stderr or "")).splitlines()
 
 
-def run_suite(proxy: str, engine: str, full: bool,
-             backend_bin: str | None = None, container: str | None = None,
-             fixture_container: str | None = None) -> list[Result]:
+def run_suite(
+    proxy: str,
+    engine: str,
+    full: bool,
+    backend_bin: str | None = None,
+    container: str | None = None,
+    fixture_container: str | None = None,
+) -> list[Result]:
     match = re.match(r"(?:http://)?([^:/]+):(\d+)/?$", proxy)
     if not match:
         raise SystemExit(f"cannot parse proxy endpoint: {proxy}")
@@ -1146,7 +1440,7 @@ def run_suite(proxy: str, engine: str, full: bool,
             raw = _normalize(fn(client))
             observed = raw.outcome if raw.outcome in ("allowed", "denied") else None
             outcome, detail = _finalize(name, expectation, (raw.outcome, raw.detail))
-        except Exception as exc:  # a test must never take down the suite
+        except Exception as exc:  # noqa: BLE001 - a test must never kill the suite
             outcome, detail = "error", f"{type(exc).__name__}: {exc}"
             raw = RawOutcome(outcome, detail)
         elapsed_ms = round((time.monotonic() - t0) * 1000, 1)
@@ -1160,12 +1454,26 @@ def run_suite(proxy: str, engine: str, full: bool,
         # falls back to matching the checker's own summary, which on a row
         # nothing denied would invent a cause (docs/security.md).
         gradable = outcome in ("pass", "fail", "record")
-        cause = (aggregate_cause(detail, raw.attempts)
-                 if gradable and (expectation == "deny" or raw.attempts) else None)
-        results.append(Result(name, group, expectation, outcome, detail,
-                              cause=cause, observed=observed, elapsed_ms=elapsed_ms,
-                              attempts=raw.attempts, headers=raw.headers,
-                              engine_logs=_log_delta(before_logs, after_logs)))
+        cause = (
+            aggregate_cause(detail, raw.attempts)
+            if gradable and (expectation == "deny" or raw.attempts)
+            else None
+        )
+        results.append(
+            Result(
+                name,
+                group,
+                expectation,
+                outcome,
+                detail,
+                cause=cause,
+                observed=observed,
+                elapsed_ms=elapsed_ms,
+                attempts=raw.attempts,
+                headers=raw.headers,
+                engine_logs=_log_delta(before_logs, after_logs),
+            )
+        )
     return results
 
 
@@ -1177,8 +1485,9 @@ def policy_in_use(results: list[Result]) -> str:
     one, so the rows themselves say which was mounted. A `--quick` run has
     no such rows and reports `unknown` rather than guessing.
     """
-    fixture_rows = [r for r in results
-                    if r.name in {c.name for c in TESTS if c.needs_fixtures}]
+    fixture_rows = [
+        r for r in results if r.name in {c.name for c in TESTS if c.needs_fixtures}
+    ]
     if not fixture_rows:
         return "unknown"
     if all(r.outcome == "skip" and r.detail == FIXTURE_SKIP for r in fixture_rows):
@@ -1186,10 +1495,16 @@ def policy_in_use(results: list[Result]) -> str:
     return "test"
 
 
-def envelope(results: list[Result], engine: str, proxy: str, full: bool,
-             backend: str | None = None, image: str | None = None) -> dict:
+def envelope(
+    results: list[Result],
+    engine: str,
+    proxy: str,
+    full: bool,
+    backend: str | None = None,
+    image: str | None = None,
+) -> dict:
     """The `--json` document: the results plus the conditions they were
-    measured under, which is what scripts/report.py generates
+    measured under, which is what `report` generates
     docs/findings.md from."""
     return {
         "schema_version": SCHEMA_VERSION,
@@ -1215,7 +1530,9 @@ def print_text(results: list[Result], engine: str) -> None:
             extra = f" ({r.observed})" + extra
         timing = f" ({r.elapsed_ms:.0f}ms)" if r.elapsed_ms is not None else ""
         attempts = f" [{len(r.attempts)} attempts]" if r.attempts else ""
-        print(f"  {r.name:<{width}}  [{r.expectation:^6}]  {r.outcome.upper():<6}{extra}{timing}{attempts}  {r.detail}")
+        print(
+            f"  {r.name:<{width}}  [{r.expectation:^6}]  {r.outcome.upper():<6}{extra}{timing}{attempts}  {r.detail}"
+        )
     counts: dict[str, int] = {}
     for r in results:
         counts[r.outcome] = counts.get(r.outcome, 0) + 1
@@ -1246,22 +1563,33 @@ def diff_results(a: dict, b: dict) -> list[str]:
             lines.append(f"{name}: only in A — {ra['outcome']} ({ra['detail']})")
             continue
         if ra["outcome"] != rb["outcome"] or ra.get("cause") != rb.get("cause"):
-            a_tag = f"{ra['outcome']}" + (f" [{ra['cause']}]" if ra.get("cause") else "")
-            b_tag = f"{rb['outcome']}" + (f" [{rb['cause']}]" if rb.get("cause") else "")
-            lines.append(f"{name}: A={a_tag} vs B={b_tag}\n    A: {ra['detail']}\n    B: {rb['detail']}")
+            a_tag = f"{ra['outcome']}" + (
+                f" [{ra['cause']}]" if ra.get("cause") else ""
+            )
+            b_tag = f"{rb['outcome']}" + (
+                f" [{rb['cause']}]" if rb.get("cause") else ""
+            )
+            lines.append(
+                f"{name}: A={a_tag} vs B={b_tag}\n    A: {ra['detail']}\n    B: {rb['detail']}"
+            )
     return lines
 
 
 def cmd_diff(path_a: str, path_b: str) -> int:
     a, b = _load_results(path_a), _load_results(path_b)
     if a.get("schema_version") != b.get("schema_version"):
-        print(f"warning: schema_version mismatch ({a.get('schema_version')} vs "
-              f"{b.get('schema_version')}); fields may not align", file=sys.stderr)
+        print(
+            f"warning: schema_version mismatch ({a.get('schema_version')} vs "
+            f"{b.get('schema_version')}); fields may not align",
+            file=sys.stderr,
+        )
     lines = diff_results(a, b)
     label_a, label_b = a.get("engine", path_a), b.get("engine", path_b)
     if not lines:
-        print(f"no divergence between {label_a} ({path_a}) and {label_b} ({path_b}): "
-              f"all {len(a.get('results', []))} checks agree")
+        print(
+            f"no divergence between {label_a} ({path_a}) and {label_b} ({path_b}): "
+            f"all {len(a.get('results', []))} checks agree"
+        )
         return 0
     print(f"divergences between {label_a} ({path_a}) and {label_b} ({path_b}):")
     for line in lines:
@@ -1273,22 +1601,38 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--proxy", default=DEFAULT_PROXY)
     parser.add_argument("--engine", choices=ENGINES, default=None)
-    parser.add_argument("--backend-bin", default=None,
-                        help="container backend binary (docker/container), for engine log capture")
-    parser.add_argument("--container", default=None,
-                        help="container name, paired with --backend-bin, for engine log capture")
-    parser.add_argument("--fixture-container", default=None,
-                        help="DNS fixture container name, paired with --backend-bin; "
-                             "dns-rebinding grades on what the fixture observed")
-    parser.add_argument("--image", default=None,
-                        help="the engine image reference, recorded in --json output so "
-                             "a result file says what it measured (run.py check passes it)")
+    parser.add_argument(
+        "--backend-bin",
+        default=None,
+        help="container backend binary (docker/container), for engine log capture",
+    )
+    parser.add_argument(
+        "--container",
+        default=None,
+        help="container name, paired with --backend-bin, for engine log capture",
+    )
+    parser.add_argument(
+        "--fixture-container",
+        default=None,
+        help="DNS fixture container name, paired with --backend-bin; "
+        "dns-rebinding grades on what the fixture observed",
+    )
+    parser.add_argument(
+        "--image",
+        default=None,
+        help="the engine image reference, recorded in --json output so "
+        "a result file says what it measured (`ipl check` passes it)",
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--quick", action="store_true")
     mode.add_argument("--full", action="store_true")
     parser.add_argument("--json", action="store_true", dest="as_json")
-    parser.add_argument("--diff", nargs=2, metavar=("RESULTS_A", "RESULTS_B"),
-                        help="compare two prior --json result files instead of running the suite")
+    parser.add_argument(
+        "--diff",
+        nargs=2,
+        metavar=("RESULTS_A", "RESULTS_B"),
+        help="compare two prior --json result files instead of running the suite",
+    )
     opts = parser.parse_args(argv)
 
     if opts.diff:
@@ -1296,12 +1640,28 @@ def main(argv: list[str] | None = None) -> int:
     if not opts.engine:
         parser.error("--engine is required unless --diff is given")
 
-    results = run_suite(opts.proxy, opts.engine, full=opts.full,
-                        backend_bin=opts.backend_bin, container=opts.container,
-                        fixture_container=opts.fixture_container)
+    results = run_suite(
+        opts.proxy,
+        opts.engine,
+        full=opts.full,
+        backend_bin=opts.backend_bin,
+        container=opts.container,
+        fixture_container=opts.fixture_container,
+    )
     if opts.as_json:
-        print(json.dumps(envelope(results, opts.engine, opts.proxy, full=opts.full,
-                                  backend=opts.backend_bin, image=opts.image), indent=2))
+        print(
+            json.dumps(
+                envelope(
+                    results,
+                    opts.engine,
+                    opts.proxy,
+                    full=opts.full,
+                    backend=opts.backend_bin,
+                    image=opts.image,
+                ),
+                indent=2,
+            )
+        )
     else:
         print_text(results, opts.engine)
     return 1 if any(r.outcome in ("fail", "error") for r in results) else 0

@@ -3,9 +3,14 @@
 .devcontainer/
 __pycache__/
 *.pyc
+.ruff_cache/
 .venv/
 
+# `uv build` output.
+dist/
+*.egg-info/
+
 # results/ is deliberately NOT ignored: the generated tables of
-# docs/findings.md are rendered from those files by scripts/report.py, so a
-# checkout without them cannot re-derive or check the published
-# comparison — only believe it.
+# docs/findings.md are rendered from those files by
+# src/internet_proxy_locally/report.py, so a checkout without them cannot
+# re-derive or check the published comparison — only believe it.

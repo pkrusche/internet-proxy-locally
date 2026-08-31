@@ -1,4 +1,4 @@
-"""Tests for checks/egress.py against the policy-enforcing mock proxy.
+"""Tests for `checks.egress` against the policy-enforcing mock proxy.
 
 No network egress: the mock proxy answers everything locally, terminating
 TLS with a throwaway self-signed certificate generated at setup time.
@@ -11,23 +11,23 @@ import shutil
 import socket
 import struct
 import subprocess
-import threading
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Run from the repository root, so everything imports by name. See the
-# comment in scripts/harness.py.
-from checks import egress  # noqa: E402
-from tests import mock_proxy, quiet  # noqa: E402
+from internet_proxy_locally.checks import egress
+from tests import mock_proxy, quiet
 
 OPENSSL = shutil.which("openssl")
 
 
 def free_port() -> int:
     import socket
+
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
@@ -45,10 +45,25 @@ class EgressSuiteTest(unittest.TestCase):
         cls.certfile = f"{cls.tmp}/cert.pem"
         cls.keyfile = f"{cls.tmp}/key.pem"
         subprocess.run(
-            [OPENSSL, "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-             "-keyout", cls.keyfile, "-out", cls.certfile, "-days", "1",
-             "-subj", "/CN=mock-proxy.test"],
-            check=True, capture_output=True)
+            [
+                OPENSSL,
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                cls.keyfile,
+                "-out",
+                cls.certfile,
+                "-days",
+                "1",
+                "-subj",
+                "/CN=mock-proxy.test",
+            ],
+            check=True,
+            capture_output=True,
+        )
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -57,11 +72,12 @@ class EgressSuiteTest(unittest.TestCase):
     def start(self, mode: str) -> tuple[mock_proxy.MockProxyServer, int]:
         port = free_port()
         server = mock_proxy.start_in_thread(
-            port, mode=mode, certfile=self.certfile, keyfile=self.keyfile)
+            port, mode=mode, certfile=self.certfile, keyfile=self.keyfile
+        )
         self.addCleanup(server.stop)
         return server, port
 
-    def run_suite(self, engine: str, mode: str, full: bool) -> dict[str, "egress.Result"]:
+    def run_suite(self, engine: str, mode: str, full: bool) -> dict[str, egress.Result]:
         _, port = self.start(mode)
         results = egress.run_suite(f"http://127.0.0.1:{port}", engine, full=full)
         return {r.name: r for r in results}
@@ -71,31 +87,46 @@ class EgressSuiteTest(unittest.TestCase):
     def test_quick_suite_strict(self) -> None:
         results = self.run_suite("pipelock", "strict", full=False)
         expected_pass = [
-            "allowed-http", "allowed-https",
-            "blocked-host-connect", "blocked-host-http",
-            "direct-ip-connect", "loopback-ipv4", "rfc1918-ipv4",
-            "link-local-ipv4", "metadata-endpoint",
-            "loopback-ipv6", "private-ipv6",
+            "allowed-http",
+            "allowed-https",
+            "blocked-host-connect",
+            "blocked-host-http",
+            "direct-ip-connect",
+            "loopback-ipv4",
+            "rfc1918-ipv4",
+            "link-local-ipv4",
+            "metadata-endpoint",
+            "loopback-ipv6",
+            "private-ipv6",
         ]
         for name in expected_pass:
-            self.assertEqual(results[name].outcome, "pass",
-                             f"{name}: {results[name].detail}")
+            self.assertEqual(
+                results[name].outcome, "pass", f"{name}: {results[name].detail}"
+            )
 
     def test_open_proxy_is_reported_as_failure(self) -> None:
         # A mock that allows everything must make the deny tests fail.
         port = free_port()
         server = mock_proxy.MockProxyServer(
             ("127.0.0.1", port),
-            allowed=set(), mode="lenient",
-            certfile=self.certfile, keyfile=self.keyfile)
+            allowed=set(),
+            mode="lenient",
+            certfile=self.certfile,
+            keyfile=self.keyfile,
+        )
         # Everything-allowed policy: patch the decision method.
         server.host_allowed = lambda host: True  # type: ignore[method-assign]
         import threading
+
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.stop)
 
-        results = {r.name: r for r in
-                   egress.run_suite(f"http://127.0.0.1:{port}", "pipelock", full=False)}
+        results = {
+            r.name: r
+            for r in egress.run_suite(
+                f"http://127.0.0.1:{port}", "pipelock", full=False
+            )
+        }
         self.assertEqual(results["blocked-host-connect"].outcome, "fail")
         self.assertEqual(results["loopback-ipv4"].outcome, "fail")
 
@@ -104,10 +135,16 @@ class EgressSuiteTest(unittest.TestCase):
     def test_full_suite_strict_pipelock_expectations(self) -> None:
         results = self.run_suite("pipelock", "strict", full=True)
         # Strict mock rejects mismatched SNI and raw bytes => pipelock passes.
-        self.assertEqual(results["connect-sni-mismatch"].outcome, "pass",
-                         results["connect-sni-mismatch"].detail)
-        self.assertEqual(results["connect-raw-tunnel"].outcome, "pass",
-                         results["connect-raw-tunnel"].detail)
+        self.assertEqual(
+            results["connect-sni-mismatch"].outcome,
+            "pass",
+            results["connect-sni-mismatch"].detail,
+        )
+        self.assertEqual(
+            results["connect-raw-tunnel"].outcome,
+            "pass",
+            results["connect-raw-tunnel"].detail,
+        )
         # Fixture-dependent tests skip: *.nip.io is not in the mock allowlist.
         self.assertEqual(results["dns-private-ipv4"].outcome, "skip")
         self.assertEqual(results["dns-rebinding"].outcome, "skip")
@@ -116,20 +153,32 @@ class EgressSuiteTest(unittest.TestCase):
     def test_full_suite_lenient_smokescreen_expectations(self) -> None:
         results = self.run_suite("smokescreen", "lenient", full=True)
         # Smokescreen behavior is recorded, not judged.
-        self.assertEqual(results["connect-sni-mismatch"].outcome, "record",
-                         results["connect-sni-mismatch"].detail)
-        self.assertEqual(results["connect-raw-tunnel"].outcome, "record",
-                         results["connect-raw-tunnel"].detail)
+        self.assertEqual(
+            results["connect-sni-mismatch"].outcome,
+            "record",
+            results["connect-sni-mismatch"].detail,
+        )
+        self.assertEqual(
+            results["connect-raw-tunnel"].outcome,
+            "record",
+            results["connect-raw-tunnel"].detail,
+        )
 
     def test_full_suite_lenient_squid_expectations(self) -> None:
         # Squid relays CONNECT tunnels without inspecting them, like
         # Smokescreen, so its tunnel behavior is recorded rather than
         # graded (docs/findings.md).
         results = self.run_suite("squid", "lenient", full=True)
-        self.assertEqual(results["connect-sni-mismatch"].outcome, "record",
-                         results["connect-sni-mismatch"].detail)
-        self.assertEqual(results["connect-raw-tunnel"].outcome, "record",
-                         results["connect-raw-tunnel"].detail)
+        self.assertEqual(
+            results["connect-sni-mismatch"].outcome,
+            "record",
+            results["connect-sni-mismatch"].detail,
+        )
+        self.assertEqual(
+            results["connect-raw-tunnel"].outcome,
+            "record",
+            results["connect-raw-tunnel"].detail,
+        )
 
     def test_quick_suite_strict_squid(self) -> None:
         # The graded deny/allow floors are engine-independent; Squid must
@@ -141,10 +190,16 @@ class EgressSuiteTest(unittest.TestCase):
     def test_lenient_behavior_would_fail_pipelock_expectations(self) -> None:
         # If Pipelock behaved leniently, the suite must flag it.
         results = self.run_suite("pipelock", "lenient", full=True)
-        self.assertEqual(results["connect-sni-mismatch"].outcome, "fail",
-                         results["connect-sni-mismatch"].detail)
-        self.assertEqual(results["connect-raw-tunnel"].outcome, "fail",
-                         results["connect-raw-tunnel"].detail)
+        self.assertEqual(
+            results["connect-sni-mismatch"].outcome,
+            "fail",
+            results["connect-sni-mismatch"].detail,
+        )
+        self.assertEqual(
+            results["connect-raw-tunnel"].outcome,
+            "fail",
+            results["connect-raw-tunnel"].detail,
+        )
 
     def _mixed_fixture_server(self, allowed_names: set[str]) -> int:
         """A mock allowing exactly `allowed_names` on top of the nip.io probe
@@ -158,8 +213,12 @@ class EgressSuiteTest(unittest.TestCase):
         port = free_port()
         allowed = set(mock_proxy.DEFAULT_ALLOWED) | {"1.1.1.1.nip.io"} | allowed_names
         server = mock_proxy.start_in_thread(
-            port, allowed=allowed, mode="strict",
-            certfile=self.certfile, keyfile=self.keyfile)
+            port,
+            allowed=allowed,
+            mode="strict",
+            certfile=self.certfile,
+            keyfile=self.keyfile,
+        )
         self.addCleanup(server.stop)
         return port
 
@@ -172,7 +231,8 @@ class EgressSuiteTest(unittest.TestCase):
 
     def test_mixed_answers_reports_allowed_when_a_mixed_name_is_reachable(self) -> None:
         port = self._mixed_fixture_server(
-            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS})
+            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS}
+        )
         client = egress.ProxyClient("127.0.0.1", port)
         raw = egress.test_dns_mixed(client)
         self.assertEqual(raw.outcome, "allowed", raw.detail)
@@ -184,11 +244,14 @@ class EgressSuiteTest(unittest.TestCase):
         to refuse it and a recorded deviation on Smokescreen, which is not
         (ENGINE_EXPECTATIONS)."""
         port = self._mixed_fixture_server(
-            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS})
+            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS}
+        )
         graded = {}
         for engine in ("pipelock", "squid", "smokescreen"):
-            results = {r.name: r for r in
-                       egress.run_suite(f"http://127.0.0.1:{port}", engine, full=True)}
+            results = {
+                r.name: r
+                for r in egress.run_suite(f"http://127.0.0.1:{port}", engine, full=True)
+            }
             graded[engine] = results["dns-mixed-answers"].outcome
         self.assertEqual(graded["pipelock"], "fail")
         self.assertEqual(graded["squid"], "fail")
@@ -198,7 +261,8 @@ class EgressSuiteTest(unittest.TestCase):
         # The point of the grade: a known, bounded deviation must not make
         # `check --full` indistinguishable from a broken engine.
         port = self._mixed_fixture_server(
-            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS})
+            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS}
+        )
         results = egress.run_suite(f"http://127.0.0.1:{port}", "smokescreen", full=True)
         row = {r.name: r for r in results}["dns-mixed-answers"]
         self.assertEqual(row.outcome, "record")
@@ -220,9 +284,12 @@ class EgressSuiteTest(unittest.TestCase):
         not read back as one — an earlier revision said "a private address"
         and got itself classified as `private-ip`."""
         port = self._mixed_fixture_server(
-            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS})
-        results = {r.name: r for r in
-                   egress.run_suite(f"http://127.0.0.1:{port}", "squid", full=True)}
+            {egress.MIXED_FIXTURE_CONTROL, *egress.MIXED_FIXTURE_TARGETS}
+        )
+        results = {
+            r.name: r
+            for r in egress.run_suite(f"http://127.0.0.1:{port}", "squid", full=True)
+        }
         row = results["dns-mixed-answers"]
         self.assertEqual(row.outcome, "fail", row.detail)
         self.assertIsNone(row.cause)
@@ -231,8 +298,12 @@ class EgressSuiteTest(unittest.TestCase):
         port = free_port()
         allowed = set(mock_proxy.DEFAULT_ALLOWED) | {"1.1.1.1.nip.io"}
         server = mock_proxy.start_in_thread(
-            port, allowed=allowed, mode="strict",
-            certfile=self.certfile, keyfile=self.keyfile)
+            port,
+            allowed=allowed,
+            mode="strict",
+            certfile=self.certfile,
+            keyfile=self.keyfile,
+        )
         self.addCleanup(server.stop)
         client = egress.ProxyClient("127.0.0.1", port)
         self.assertTrue(egress.fixtures_active(client))
@@ -260,8 +331,9 @@ class EgressSuiteTest(unittest.TestCase):
             conn, _ = server.accept()
             # Linger 0 => RST rather than a clean FIN, so the client's
             # recv raises instead of returning b"".
-            conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
-                            struct.pack("ii", 1, 0))
+            conn.setsockopt(
+                socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
+            )
             conn.close()
 
         thread = threading.Thread(target=accept_and_reset, daemon=True)
@@ -271,18 +343,29 @@ class EgressSuiteTest(unittest.TestCase):
         client = egress.ProxyClient("127.0.0.1", port, timeout=2.0)
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always", ResourceWarning)
-            sock, status, detail = client.connect("example.com:443")
+            sock, _status, detail = client.connect("example.com:443")
             self.assertIsNone(sock)
             gc.collect()
-        leaked = [w for w in caught if issubclass(w.category, ResourceWarning)
-                  and "socket" in str(w.message)]
+        leaked = [
+            w
+            for w in caught
+            if issubclass(w.category, ResourceWarning) and "socket" in str(w.message)
+        ]
         self.assertEqual(leaked, [], f"connect() leaked a socket: {detail}")
 
     def test_exit_code_reflects_failures(self) -> None:
         _, port = self.start("strict")
         with quiet() as printed:
-            rc_ok = egress.main(["--proxy", f"http://127.0.0.1:{port}",
-                                 "--engine", "pipelock", "--quick", "--json"])
+            rc_ok = egress.main(
+                [
+                    "--proxy",
+                    f"http://127.0.0.1:{port}",
+                    "--engine",
+                    "pipelock",
+                    "--quick",
+                    "--json",
+                ]
+            )
         self.assertEqual(rc_ok, 0)
         # --json means the envelope is the whole of stdout, so assert that
         # rather than letting it scroll past.
@@ -301,8 +384,10 @@ class ClassifyDenialTest(unittest.TestCase):
         self.assertEqual(egress.classify_denial(text), "sni-mismatch")
 
     def test_non_tls_in_tunnel(self) -> None:
-        text = ("tunnel established; connection closed with no response to raw (non-TLS) "
-                "bytes — consistent with a non-TLS-in-tunnel policy check")
+        text = (
+            "tunnel established; connection closed with no response to raw (non-TLS) "
+            "bytes — consistent with a non-TLS-in-tunnel policy check"
+        )
         self.assertEqual(egress.classify_denial(text), "non-tls-in-tunnel")
 
     def test_private_ip(self) -> None:
@@ -310,10 +395,14 @@ class ClassifyDenialTest(unittest.TestCase):
         self.assertEqual(egress.classify_denial(text), "private-ip")
 
     def test_timeout(self) -> None:
-        self.assertEqual(egress.classify_denial("connection error: timed out"), "timeout")
+        self.assertEqual(
+            egress.classify_denial("connection error: timed out"), "timeout"
+        )
 
     def test_hostname_not_allowlisted(self) -> None:
-        text = "HTTP/1.1 403 Forbidden — denied by mock policy: hostname not on allowlist"
+        text = (
+            "HTTP/1.1 403 Forbidden — denied by mock policy: hostname not on allowlist"
+        )
         self.assertEqual(egress.classify_denial(text), "hostname-not-allowlisted")
 
     def test_unknown_fallback(self) -> None:
@@ -326,9 +415,11 @@ class SummarizeBodyTest(unittest.TestCase):
     classify_denial() reads out of `detail`."""
 
     def test_strips_tags_and_collapses_whitespace(self) -> None:
-        body = ("<html><head><title>403 Forbidden</title></head><body>\n"
-                "<p>internet-proxy-locally denied this   request:\n"
-                "the destination is not in the allowlist.</p>\n</body></html>")
+        body = (
+            "<html><head><title>403 Forbidden</title></head><body>\n"
+            "<p>internet-proxy-locally denied this   request:\n"
+            "the destination is not in the allowlist.</p>\n</body></html>"
+        )
         summary = egress.summarize_body(body)
         self.assertNotIn("<", summary)
         self.assertIn("the destination is not in the allowlist.", summary)
@@ -336,7 +427,9 @@ class SummarizeBodyTest(unittest.TestCase):
 
     def test_reason_survives_for_classification(self) -> None:
         body = "<html><body><p>SSRF blocked, the destination resolves to a private address.</p></body></html>"
-        self.assertEqual(egress.classify_denial(egress.summarize_body(body)), "private-ip")
+        self.assertEqual(
+            egress.classify_denial(egress.summarize_body(body)), "private-ip"
+        )
 
     def test_truncates_overlong_bodies(self) -> None:
         summary = egress.summarize_body("x " * 4000, limit=100)
@@ -344,7 +437,9 @@ class SummarizeBodyTest(unittest.TestCase):
         self.assertTrue(summary.endswith("…"))
 
     def test_short_body_is_unchanged(self) -> None:
-        self.assertEqual(egress.summarize_body("  denied by policy  "), "denied by policy")
+        self.assertEqual(
+            egress.summarize_body("  denied by policy  "), "denied by policy"
+        )
 
 
 class ClassifyDenialRealWordingTest(unittest.TestCase):
@@ -356,68 +451,157 @@ class ClassifyDenialRealWordingTest(unittest.TestCase):
     caught it, so they are the ones worth pinning.
     """
 
-    PIPELOCK = [
+    PIPELOCK: ClassVar[list[tuple[str, str]]] = [
         # A destination echoed back is not a reason: all of these are
         # allowlist denials even though the text contains a private address.
-        ("HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 127.0.0.1",
-         "hostname-not-allowlisted"),
-        ("HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: fd00::1",
-         "hostname-not-allowlisted"),
-        ("HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 169.254.169.254",
-         "hostname-not-allowlisted"),
-        ("HTTP/1.1 403 Forbidden — CONNECT blocked: SSRF blocked: 10.0.0.1.nip.io "
-         "resolves to internal IP 10.0.0.1", "private-ip"),
-        ("HTTP/1.1 403 Forbidden — CONNECT blocked: SSRF blocked: fe80--1.sslip.io "
-         "resolves to non-overridable internal IP fe80::1", "private-ip"),
-        ("HTTP/1.1 403 Forbidden — CONNECT blocked: SSRF blocked: 169.254.169.254.nip.io "
-         "resolves to cloud metadata endpoint 169.254.169.254", "metadata"),
-        ("HTTP/1.1 403 Forbidden — CONNECT blocked: DNS lookup for "
-         "01010101.7f000002.rbndr.us returned no such host", "dns-failure"),
+        (
+            "HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 127.0.0.1",
+            "hostname-not-allowlisted",
+        ),
+        (
+            "HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: fd00::1",
+            "hostname-not-allowlisted",
+        ),
+        (
+            "HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 169.254.169.254",
+            "hostname-not-allowlisted",
+        ),
+        (
+            (
+                "HTTP/1.1 403 Forbidden — CONNECT blocked: SSRF blocked: 10.0.0.1.nip.io "
+                "resolves to internal IP 10.0.0.1"
+            ),
+            "private-ip",
+        ),
+        (
+            (
+                "HTTP/1.1 403 Forbidden — CONNECT blocked: SSRF blocked: fe80--1.sslip.io "
+                "resolves to non-overridable internal IP fe80::1"
+            ),
+            "private-ip",
+        ),
+        (
+            (
+                "HTTP/1.1 403 Forbidden — CONNECT blocked: SSRF blocked: 169.254.169.254.nip.io "
+                "resolves to cloud metadata endpoint 169.254.169.254"
+            ),
+            "metadata",
+        ),
+        (
+            (
+                "HTTP/1.1 403 Forbidden — CONNECT blocked: DNS lookup for "
+                "01010101.7f000002.rbndr.us returned no such host"
+            ),
+            "dns-failure",
+        ),
     ]
 
-    SMOKESCREEN = [
-        ("HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
-         "'example.com:443': default rule policy used.", "hostname-not-allowlisted"),
-        ("HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
-         "'127.0.0.1:80': default rule policy used.", "hostname-not-allowlisted"),
-        ("HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
-         "'[fd00::1]:80': Destination host cannot be determined.", "unparseable-destination"),
-        ("HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
-         "'10.0.0.1.nip.io:80': no valid IP found among resolved addresses - 10.0.0.1 "
-         "denied by rule 'Deny: Private Range'. .", "private-ip"),
-        ("HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
-         "'fe80--1.sslip.io:80': no valid IP found among resolved addresses - fe80::1 "
-         "denied by rule 'Deny: Not Global Unicast'. .", "private-ip"),
-        ("HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
-         "'--1.sslip.io:80': invalid domain \"--1.sslip.io\": idna: invalid label \"--1\".",
-         "unparseable-destination"),
-        ("HTTP/1.1 502 Bad gateway — Failed to resolve remote hostname: lookup "
-         "01010101.7f000002.rbndr.us: no such host", "dns-failure"),
+    SMOKESCREEN: ClassVar[list[tuple[str, str]]] = [
+        (
+            (
+                "HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
+                "'example.com:443': default rule policy used."
+            ),
+            "hostname-not-allowlisted",
+        ),
+        (
+            (
+                "HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
+                "'127.0.0.1:80': default rule policy used."
+            ),
+            "hostname-not-allowlisted",
+        ),
+        (
+            (
+                "HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
+                "'[fd00::1]:80': Destination host cannot be determined."
+            ),
+            "unparseable-destination",
+        ),
+        (
+            (
+                "HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
+                "'10.0.0.1.nip.io:80': no valid IP found among resolved addresses - 10.0.0.1 "
+                "denied by rule 'Deny: Private Range'. ."
+            ),
+            "private-ip",
+        ),
+        (
+            (
+                "HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
+                "'fe80--1.sslip.io:80': no valid IP found among resolved addresses - fe80::1 "
+                "denied by rule 'Deny: Not Global Unicast'. ."
+            ),
+            "private-ip",
+        ),
+        (
+            (
+                "HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host "
+                '\'--1.sslip.io:80\': invalid domain "--1.sslip.io": idna: invalid label "--1".'
+            ),
+            "unparseable-destination",
+        ),
+        (
+            (
+                "HTTP/1.1 502 Bad gateway — Failed to resolve remote hostname: lookup "
+                "01010101.7f000002.rbndr.us: no such host"
+            ),
+            "dns-failure",
+        ),
     ]
 
     # Measured against real Squid 6.12 on 2026-08-25. The first four are
-    # the custom `deny_info` pages in images/squid/errors, which exist so a
+    # the custom `deny_info` pages in data/images/squid/errors, which exist so a
     # Squid denial states its cause the way the other two engines' do; the
     # last is Squid's own ERR_DNS_FAIL, which is not a policy verdict.
-    SQUID = [
-        ("HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
-         "the destination is not in the allowlist.", "hostname-not-allowlisted"),
-        ("HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
-         "SSRF blocked, the destination resolves to a private, loopback, link-local or "
-         "otherwise non-public address.", "private-ip"),
-        ("HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
-         "SSRF blocked, the destination resolves to a cloud metadata endpoint.", "metadata"),
-        ("HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
-         "CONNECT to this port is not allowed, tunnels are permitted to port 443 only.",
-         "port-not-allowed"),
-        ("HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
-         "the destination is a bare IP address, and this proxy allowlists destinations by "
-         "hostname only.", "ip-literal-destination"),
-        ("HTTP/1.1 503 Service Unavailable — ERROR: The requested URL could not be retrieved "
-         "The following error was encountered while trying to retrieve the URL: "
-         "https://01010101.7f000002.rbndr.us/* Unable to determine IP address from host name "
-         "01010101.7f000002.rbndr.us The DNS server returned: Server Failure: The name server "
-         "was unable to process this query.", "dns-failure"),
+    SQUID: ClassVar[list[tuple[str, str]]] = [
+        (
+            (
+                "HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
+                "the destination is not in the allowlist."
+            ),
+            "hostname-not-allowlisted",
+        ),
+        (
+            (
+                "HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
+                "SSRF blocked, the destination resolves to a private, loopback, link-local or "
+                "otherwise non-public address."
+            ),
+            "private-ip",
+        ),
+        (
+            (
+                "HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
+                "SSRF blocked, the destination resolves to a cloud metadata endpoint."
+            ),
+            "metadata",
+        ),
+        (
+            (
+                "HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
+                "CONNECT to this port is not allowed, tunnels are permitted to port 443 only."
+            ),
+            "port-not-allowed",
+        ),
+        (
+            (
+                "HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: "
+                "the destination is a bare IP address, and this proxy allowlists destinations by "
+                "hostname only."
+            ),
+            "ip-literal-destination",
+        ),
+        (
+            (
+                "HTTP/1.1 503 Service Unavailable — ERROR: The requested URL could not be retrieved "
+                "The following error was encountered while trying to retrieve the URL: "
+                "https://01010101.7f000002.rbndr.us/* Unable to determine IP address from host name "
+                "01010101.7f000002.rbndr.us The DNS server returned: Server Failure: The name server "
+                "was unable to process this query."
+            ),
+            "dns-failure",
+        ),
     ]
 
     def test_squid_wording(self) -> None:
@@ -445,9 +629,17 @@ class AggregateCauseTest(unittest.TestCase):
     """A mixed attempt set must not report a minority reason (docs/security.md)."""
 
     @staticmethod
-    def _attempt(n: int, cause: str) -> "egress.Attempt":
-        return egress.Attempt(n=n, target=f"t{n}", local_resolved=[], outcome="denied",
-                              status=403, elapsed_ms=1.0, detail="", cause=cause)
+    def _attempt(n: int, cause: str) -> egress.Attempt:
+        return egress.Attempt(
+            n=n,
+            target=f"t{n}",
+            local_resolved=[],
+            outcome="denied",
+            status=403,
+            elapsed_ms=1.0,
+            detail="",
+            cause=cause,
+        )
 
     def test_uniform_attempts_report_that_cause(self) -> None:
         attempts = [self._attempt(i, "private-ip") for i in range(3)]
@@ -458,19 +650,34 @@ class AggregateCauseTest(unittest.TestCase):
         # the concatenated detail would have reported "metadata" alone.
         attempts = [self._attempt(i, "private-ip") for i in range(3)]
         attempts.append(self._attempt(3, "metadata"))
-        self.assertEqual(egress.aggregate_cause("ignored", attempts),
-                         "metadata+private-ip")
+        self.assertEqual(
+            egress.aggregate_cause("ignored", attempts), "metadata+private-ip"
+        )
 
     def test_no_cause_when_attempts_exist_but_none_was_denied(self) -> None:
-        established = egress.Attempt(n=0, target="t", local_resolved=[], outcome="established",
-                                     status=200, elapsed_ms=1.0, detail="HTTP/1.1 200 OK")
-        self.assertIsNone(egress.aggregate_cause(
-            "the engine connected although 10.0.0.1 was in the answer set", [established]))
+        established = egress.Attempt(
+            n=0,
+            target="t",
+            local_resolved=[],
+            outcome="established",
+            status=200,
+            elapsed_ms=1.0,
+            detail="HTTP/1.1 200 OK",
+        )
+        self.assertIsNone(
+            egress.aggregate_cause(
+                "the engine connected although 10.0.0.1 was in the answer set",
+                [established],
+            )
+        )
 
     def test_falls_back_to_detail_without_attempts(self) -> None:
         self.assertEqual(
-            egress.aggregate_cause("denied by mock policy: hostname not on allowlist", []),
-            "hostname-not-allowlisted")
+            egress.aggregate_cause(
+                "denied by mock policy: hostname not on allowlist", []
+            ),
+            "hostname-not-allowlisted",
+        )
 
 
 class AnnotateTlsBytesTest(unittest.TestCase):
@@ -492,7 +699,9 @@ class AnnotateTlsBytesTest(unittest.TestCase):
 
 class LogDeltaTest(unittest.TestCase):
     def test_returns_new_lines(self) -> None:
-        self.assertEqual(egress._log_delta(["a", "b"], ["a", "b", "c", "d"]), ["c", "d"])
+        self.assertEqual(
+            egress._log_delta(["a", "b"], ["a", "b", "c", "d"]), ["c", "d"]
+        )
 
     def test_empty_before(self) -> None:
         self.assertEqual(egress._log_delta([], ["x"]), ["x"])
@@ -528,13 +737,20 @@ class LogCaptureTest(unittest.TestCase):
         port = free_port()
         server = mock_proxy.start_in_thread(port, mode="strict")
         self.addCleanup(server.stop)
-        results = egress.run_suite(f"http://127.0.0.1:{port}", "pipelock", full=False,
-                                   backend_bin=self.backend_bin, container="fake")
+        results = egress.run_suite(
+            f"http://127.0.0.1:{port}",
+            "pipelock",
+            full=False,
+            backend_bin=self.backend_bin,
+            container="fake",
+        )
         self.assertTrue(results)
         for r in results:
             self.assertEqual(len(r.engine_logs), 1, f"{r.name}: {r.engine_logs}")
         lines = [r.engine_logs[0] for r in results]
-        self.assertEqual(len(lines), len(set(lines)), "each test's window should be distinct")
+        self.assertEqual(
+            len(lines), len(set(lines)), "each test's window should be distinct"
+        )
 
     def test_no_capture_without_backend_args(self) -> None:
         port = free_port()
@@ -548,7 +764,7 @@ class ParseFixtureLogTest(unittest.TestCase):
     """The fixture's own transcript is what grades dns-rebinding, so
     reading it has to be exact."""
 
-    LINES = [
+    LINES: ClassVar[list[str]] = [
         "IPL-FIXTURE starting address=192.168.64.60 public=9.9.9.9",
         "IPL-FIXTURE dns name=a0-ab12cd.rebind.fixture.test query=1 answer=9.9.9.9",
         "dnsmasq: query[A] something.else from 192.168.64.1",
@@ -558,13 +774,15 @@ class ParseFixtureLogTest(unittest.TestCase):
 
     def test_collects_answers_in_order_and_trap_hits(self) -> None:
         answers, trap = egress.parse_fixture_log(self.LINES)
-        self.assertEqual(answers["a0-ab12cd.rebind.fixture.test"],
-                         ["9.9.9.9", "192.168.64.60"])
+        self.assertEqual(
+            answers["a0-ab12cd.rebind.fixture.test"], ["9.9.9.9", "192.168.64.60"]
+        )
         self.assertEqual(trap, ["192.168.64.47:51102"])
 
     def test_ignores_unrelated_lines(self) -> None:
         answers, trap = egress.parse_fixture_log(
-            ["dnsmasq: started", "random noise", ""])
+            ["dnsmasq: started", "random noise", ""]
+        )
         self.assertEqual((answers, trap), ({}, []))
 
 
@@ -579,9 +797,11 @@ class PtrAllowlistTest(unittest.TestCase):
         self._source = egress.FIXTURE_LOG_SOURCE
         self.addCleanup(lambda: setattr(egress, "FIXTURE_LOG_SOURCE", self._source))
         self.asked = False
-        egress.FIXTURE_LOG_SOURCE = lambda: ["IPL-FIXTURE trap listening on 10.0.0.2:443"]
+        egress.FIXTURE_LOG_SOURCE = lambda: [
+            "IPL-FIXTURE trap listening on 10.0.0.2:443"
+        ]
 
-    def client(self, allow: bool) -> "egress.ProxyClient":
+    def client(self, allow: bool) -> egress.ProxyClient:
         port = free_port()
         server = mock_proxy.start_in_thread(port, mode="strict")
 
@@ -612,16 +832,25 @@ class PtrAllowlistTest(unittest.TestCase):
         # The query line appears only once the probe has been made, as it
         # would in a live fixture — the check subtracts what was already
         # there so an earlier run's lookups are not counted as this one's.
-        reversed_name = ".".join(reversed(egress.PTR_FIXTURE_ADDRESS.split("."))) + ".in-addr.arpa"
+        reversed_name = (
+            ".".join(reversed(egress.PTR_FIXTURE_ADDRESS.split("."))) + ".in-addr.arpa"
+        )
         self.asked = False
         egress.FIXTURE_LOG_SOURCE = lambda: (
             ["IPL-FIXTURE trap listening on 10.0.0.2:443"]
-            + ([f"dnsmasq: query[PTR] {reversed_name} from 192.168.64.1"] if self.asked else []))
+            + (
+                [f"dnsmasq: query[PTR] {reversed_name} from 192.168.64.1"]
+                if self.asked
+                else []
+            )
+        )
         raw = egress.test_ptr_allowlist(self.client(allow=False))
         self.assertIn("1 reverse lookup(s)", raw.detail)
 
     def test_a_previous_runs_lookup_is_not_counted(self) -> None:
-        reversed_name = ".".join(reversed(egress.PTR_FIXTURE_ADDRESS.split("."))) + ".in-addr.arpa"
+        reversed_name = (
+            ".".join(reversed(egress.PTR_FIXTURE_ADDRESS.split("."))) + ".in-addr.arpa"
+        )
         egress.FIXTURE_LOG_SOURCE = lambda: [
             "IPL-FIXTURE trap listening on 10.0.0.2:443",
             f"dnsmasq: query[PTR] {reversed_name} from 192.168.64.1",
@@ -632,16 +861,19 @@ class PtrAllowlistTest(unittest.TestCase):
     def test_skips_without_an_observable_fixture(self) -> None:
         # Without the fixture the PTR claim is not live, and the address
         # would be denied for the ordinary reason — a pass proving nothing.
-        egress.FIXTURE_LOG_SOURCE = lambda: []
+        egress.FIXTURE_LOG_SOURCE = list
         raw = egress.test_ptr_allowlist(self.client(allow=False))
         self.assertEqual(raw.outcome, "skip", raw.detail)
 
     def test_the_fixture_address_is_public_and_unused_elsewhere(self) -> None:
         import ipaddress
+
         address = ipaddress.ip_address(egress.PTR_FIXTURE_ADDRESS)
-        self.assertFalse(address.is_private or address.is_loopback or address.is_link_local,
-                         "a private address would trip the SSRF floors instead of the allowlist")
-        source = (REPO_ROOT / "checks" / "egress.py").read_text()
+        self.assertFalse(
+            address.is_private or address.is_loopback or address.is_link_local,
+            "a private address would trip the SSRF floors instead of the allowlist",
+        )
+        source = Path(egress.__file__).read_text()
         # It must not collide with an address another check connects to, or
         # the fixture's PTR claim would leak into that check's result.
         self.assertNotIn(f'"{egress.PTR_FIXTURE_ADDRESS}:', source)
@@ -664,7 +896,7 @@ class DnsRebindTest(unittest.TestCase):
         self.addCleanup(lambda: setattr(egress, "REBIND_TTL_GAP", self._gap))
         self.asked: list[str] = []
 
-    def client(self, allow: bool) -> "egress.ProxyClient":
+    def client(self, allow: bool) -> egress.ProxyClient:
         """A mock that records every host it is asked about, so a
         transcript can be built for exactly the names the check invented."""
         port = free_port()
@@ -679,7 +911,7 @@ class DnsRebindTest(unittest.TestCase):
         self.addCleanup(server.stop)
         return egress.ProxyClient("127.0.0.1", port)
 
-    def transcript(self, lookups_per_name: int, trap: "list[str]" = ()) -> "list[str]":
+    def transcript(self, lookups_per_name: int, trap: list[str] = ()) -> list[str]:
         lines = []
         for name in sorted(set(self.asked)):
             answers = ["9.9.9.9", "192.168.64.60"][:lookups_per_name]
@@ -695,7 +927,8 @@ class DnsRebindTest(unittest.TestCase):
         # The hit appears only once probing has started, as it would in a
         # live fixture — the check subtracts whatever was already there.
         egress.FIXTURE_LOG_SOURCE = lambda: self.transcript(
-            2, ["192.168.64.47:51102"] if self.asked else [])
+            2, ["192.168.64.47:51102"] if self.asked else []
+        )
         raw = egress.test_dns_rebind(client)
         self.assertEqual(raw.outcome, "fail", raw.detail)
         self.assertIn("192.168.64.47", raw.detail)
@@ -728,7 +961,7 @@ class DnsRebindTest(unittest.TestCase):
 
     def test_skips_when_the_fixture_saw_nothing(self) -> None:
         client = self.client(allow=False)
-        egress.FIXTURE_LOG_SOURCE = lambda: []
+        egress.FIXTURE_LOG_SOURCE = list
         raw = egress.test_dns_rebind(client)
         self.assertEqual(raw.outcome, "skip", raw.detail)
         self.assertIn("no lookups", raw.detail)
@@ -739,7 +972,10 @@ class DnsRebindTest(unittest.TestCase):
         raw = egress.test_dns_rebind(client)
         self.assertEqual(len(raw.attempts), 2 * egress.REBIND_NAMES)
         targets = [a.target for a in raw.attempts]
-        first_pass, second_pass = targets[:egress.REBIND_NAMES], targets[egress.REBIND_NAMES:]
+        first_pass, second_pass = (
+            targets[: egress.REBIND_NAMES],
+            targets[egress.REBIND_NAMES :],
+        )
         self.assertEqual(first_pass, second_pass)
         self.assertEqual(len(set(first_pass)), egress.REBIND_NAMES)
 
@@ -768,24 +1004,56 @@ class DnsRebindTest(unittest.TestCase):
 
 class DiffModeTest(unittest.TestCase):
     def test_flags_only_divergent_checks(self) -> None:
-        a = {"schema_version": 1, "engine": "pipelock", "results": [
-            {"name": "connect-sni-mismatch", "outcome": "pass", "cause": None, "detail": "denied"},
-            {"name": "allowed-http", "outcome": "pass", "cause": None, "detail": "200"},
-        ]}
-        b = {"schema_version": 1, "engine": "smokescreen", "results": [
-            {"name": "connect-sni-mismatch", "outcome": "record", "cause": None, "detail": "allowed"},
-            {"name": "allowed-http", "outcome": "pass", "cause": None, "detail": "301"},
-        ]}
+        a = {
+            "schema_version": 1,
+            "engine": "pipelock",
+            "results": [
+                {
+                    "name": "connect-sni-mismatch",
+                    "outcome": "pass",
+                    "cause": None,
+                    "detail": "denied",
+                },
+                {
+                    "name": "allowed-http",
+                    "outcome": "pass",
+                    "cause": None,
+                    "detail": "200",
+                },
+            ],
+        }
+        b = {
+            "schema_version": 1,
+            "engine": "smokescreen",
+            "results": [
+                {
+                    "name": "connect-sni-mismatch",
+                    "outcome": "record",
+                    "cause": None,
+                    "detail": "allowed",
+                },
+                {
+                    "name": "allowed-http",
+                    "outcome": "pass",
+                    "cause": None,
+                    "detail": "301",
+                },
+            ],
+        }
         lines = egress.diff_results(a, b)
         self.assertEqual(len(lines), 1)
         self.assertIn("connect-sni-mismatch", lines[0])
 
     def test_no_divergence_when_identical(self) -> None:
-        a = {"results": [{"name": "x", "outcome": "pass", "cause": None, "detail": "d"}]}
+        a = {
+            "results": [{"name": "x", "outcome": "pass", "cause": None, "detail": "d"}]
+        }
         self.assertEqual(egress.diff_results(a, a), [])
 
     def test_flags_checks_present_in_only_one_file(self) -> None:
-        a = {"results": [{"name": "x", "outcome": "pass", "cause": None, "detail": "d"}]}
+        a = {
+            "results": [{"name": "x", "outcome": "pass", "cause": None, "detail": "d"}]
+        }
         b = {"results": []}
         lines = egress.diff_results(a, b)
         self.assertEqual(len(lines), 1)

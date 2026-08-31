@@ -34,7 +34,7 @@ an engine other than the default.
   repository. This service controls destinations only.
 * Anything reachable without traversing the proxy. Preventing direct egress
   is `project-sandbox`'s iptables responsibility — and
-  `scripts/verify_sandbox.py` records that, as installed here, it does not
+  `ipl-verify sandbox` records that, as installed here, it does not
   yet route through this proxy at all.
 * Malicious content in allowed responses.
 
@@ -85,7 +85,7 @@ different policies. v1 has one.
   sandbox loses Internet rather than gaining unfiltered access. There is no
   automatic restart policy; restarts are explicit.
 
-  **Measured 2026-08-28** (`scripts/verify_resilience.py`, all three
+  **Measured 2026-08-28** (`ipl-verify resilience`, all three
   engines): with two request streams running continuously — one for an
   allowlisted host, one for a denied host — the container was removed
   mid-load and then restarted. The endpoint stopped accepting the moment
@@ -97,12 +97,12 @@ different policies. v1 has one.
 
 ## The adversarial suite
 
-`checks/egress.py` runs identically against every engine and emits
+`src/internet_proxy_locally/checks/egress.py` runs identically against every engine and emits
 comparable text or `--json` results.
 
 ```bash
-./run.py check     # ordinary allow/deny behavior, against the live proxy
-./lab.py up && ./lab.py check    # the full adversarial suite (docs/lab.md)
+ipl check     # ordinary allow/deny behavior, against the live proxy
+ipl-lab up && ipl-lab check    # the full adversarial suite (docs/lab.md)
 ```
 
 The full group covers private IPv4/IPv6, metadata, DNS-resolved private
@@ -140,7 +140,7 @@ traffic reaching the engine's internal address from another local container.
 
 That binding is one `--publish 127.0.0.1:…` argument, and a backend release
 that stopped honouring the address half would widen the endpoint to every
-interface silently. `scripts/verify_loopback.py` re-checks it against each
+interface silently. `ipl-verify loopback` re-checks it against each
 installed runtime — from the runtime's own report of the binding *and* by
 confirming the endpoint refuses every non-loopback address this host has —
 and is meant to be re-run after a backend upgrade ([lab.md](lab.md)). If a
@@ -148,7 +148,7 @@ release ever fails it, the binding must not be widened to compensate.
 
 ## Logging
 
-Engine logs are the audit trail (`./run.py logs`). They record request
+Engine logs are the audit trail (`ipl logs`). They record request
 targets, verdicts and denial reasons — hostnames, not payloads. No request
 bodies are captured, because none are decrypted. `forwarded_for delete` in
 the Squid configuration keeps the client address internal.

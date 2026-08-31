@@ -141,11 +141,11 @@ def parse_question(packet: bytes) -> tuple[str, int] | None:
         if length & 0xC0:
             return None
         offset += 1
-        labels.append(packet[offset:offset + length].decode("ascii", "replace"))
+        labels.append(packet[offset : offset + length].decode("ascii", "replace"))
         offset += length
     if offset + 4 > len(packet):
         return None
-    qtype = struct.unpack("!H", packet[offset:offset + 2])[0]
+    qtype = struct.unpack("!H", packet[offset : offset + 2])[0]
     return ".".join(labels).lower(), qtype
 
 
@@ -170,8 +170,8 @@ def build_response(query: bytes, address: str | None) -> bytes:
     if address is None:
         return header + question
     answer = (
-        b"\xc0\x0c"                       # pointer to the question's name
-        + struct.pack("!HHIH", TYPE_A, 1, 0, 4)   # A, IN, TTL 0, 4 bytes
+        b"\xc0\x0c"  # pointer to the question's name
+        + struct.pack("!HHIH", TYPE_A, 1, 0, 4)  # A, IN, TTL 0, 4 bytes
         + socket.inet_aton(address)
     )
     return header + question + answer

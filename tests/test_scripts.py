@@ -9,35 +9,59 @@ the committed docs/findings.md is what the committed results render to.
 from __future__ import annotations
 
 import json
-import sys
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Run from the repository root, so everything imports by name. See the
-# comment in scripts/harness.py.
-from checks import egress  # noqa: E402
-from scripts import harness, report  # noqa: E402
-from scripts import verify_resilience, verify_sandbox  # noqa: E402
-from tests import quiet  # noqa: E402
+# comment in `verify.harness`.
+from internet_proxy_locally import report
+from internet_proxy_locally.checks import egress
+from internet_proxy_locally.verify import harness
+from internet_proxy_locally.verify import resilience as verify_resilience
+from internet_proxy_locally.verify import sandbox as verify_sandbox
+from tests import quiet
 
 
-def row(name: str, outcome: str, expectation: str = "deny", cause=None,
-        observed=None, detail: str = "detail") -> dict:
-    return {"name": name, "group": "quick", "expectation": expectation,
-            "outcome": outcome, "detail": detail, "cause": cause,
-            "observed": observed, "elapsed_ms": 1.0, "attempts": [],
-            "headers": {}, "engine_logs": []}
+def row(
+    name: str,
+    outcome: str,
+    expectation: str = "deny",
+    cause=None,
+    observed=None,
+    detail: str = "detail",
+) -> dict:
+    return {
+        "name": name,
+        "group": "quick",
+        "expectation": expectation,
+        "outcome": outcome,
+        "detail": detail,
+        "cause": cause,
+        "observed": observed,
+        "elapsed_ms": 1.0,
+        "attempts": [],
+        "headers": {},
+        "engine_logs": [],
+    }
 
 
-def run(engine: str, rows: "list[dict]") -> dict:
-    return {"schema_version": egress.SCHEMA_VERSION, "engine": engine,
-            "proxy": "http://127.0.0.1:18080", "mode": "full",
-            "backend": "docker", "image": f"{engine}:test", "policy": "test",
-            "host": "Darwin test", "generated_at": "2026-08-28T00:00:00Z",
-            "exit_code": 0, "results": rows,
-            "_path": REPO_ROOT / "results" / f"{engine}.json"}
+def run(engine: str, rows: list[dict]) -> dict:
+    return {
+        "schema_version": egress.SCHEMA_VERSION,
+        "engine": engine,
+        "proxy": "http://127.0.0.1:18080",
+        "mode": "full",
+        "backend": "docker",
+        "image": f"{engine}:test",
+        "policy": "test",
+        "host": "Darwin test",
+        "generated_at": "2026-08-28T00:00:00Z",
+        "exit_code": 0,
+        "results": rows,
+        "_path": REPO_ROOT / "results" / f"{engine}.json",
+    }
 
 
 class CheckCatalogTest(unittest.TestCase):
@@ -48,9 +72,10 @@ class CheckCatalogTest(unittest.TestCase):
         """A purpose is a field of the check now, so it cannot be orphaned
         — only left empty, which is what this catches."""
         for check in egress.TESTS:
-            self.assertTrue(check.purpose.strip(),
-                            f"{check.name} renders an unexplained section "
-                            "in docs/findings.md")
+            self.assertTrue(
+                check.purpose.strip(),
+                f"{check.name} renders an unexplained section in docs/findings.md",
+            )
         names = {check.name for check in egress.TESTS}
         self.assertEqual(len(names), len(egress.TESTS), "duplicate check name")
 
@@ -74,8 +99,8 @@ class BehaviorTest(unittest.TestCase):
 
     def test_recorded_rows_report_the_observation(self) -> None:
         self.assertEqual(
-            report.behavior(row("x", "record", "record", observed="allowed")),
-            "allowed")
+            report.behavior(row("x", "record", "record", observed="allowed")), "allowed"
+        )
 
     def test_skip_and_error_are_their_own_answer(self) -> None:
         self.assertEqual(report.behavior(row("x", "skip", "deny")), "skip")
@@ -85,19 +110,33 @@ class BehaviorTest(unittest.TestCase):
         a behavioral difference — that grade changes the exit code, not the
         finding."""
         runs = {
-            "pipelock": run("pipelock", [row("dns-mixed-answers", "pass",
-                                             "deny", cause="private-ip")]),
-            "smokescreen": run("smokescreen", [row("dns-mixed-answers", "record",
-                                                   "record", observed="allowed")]),
+            "pipelock": run(
+                "pipelock",
+                [row("dns-mixed-answers", "pass", "deny", cause="private-ip")],
+            ),
+            "smokescreen": run(
+                "smokescreen",
+                [row("dns-mixed-answers", "record", "record", observed="allowed")],
+            ),
         }
         self.assertTrue(report.behavior_differs(runs, "dns-mixed-answers"))
 
     def test_same_behavior_different_cause_is_not_a_behavioral_difference(self) -> None:
         runs = {
-            "pipelock": run("pipelock", [row("loopback-ipv4", "pass", "deny",
-                                             cause="hostname-not-allowlisted")]),
-            "squid": run("squid", [row("loopback-ipv4", "pass", "deny",
-                                       cause="private-ip")]),
+            "pipelock": run(
+                "pipelock",
+                [
+                    row(
+                        "loopback-ipv4",
+                        "pass",
+                        "deny",
+                        cause="hostname-not-allowlisted",
+                    )
+                ],
+            ),
+            "squid": run(
+                "squid", [row("loopback-ipv4", "pass", "deny", cause="private-ip")]
+            ),
         }
         self.assertFalse(report.behavior_differs(runs, "loopback-ipv4"))
         # ... but it is still a divergence worth listing.
@@ -106,11 +145,14 @@ class BehaviorTest(unittest.TestCase):
 
 class VerdictTest(unittest.TestCase):
     def test_cause_and_observation_are_both_shown(self) -> None:
-        self.assertEqual(report.verdict(row("x", "pass", "deny", cause="private-ip")),
-                         "PASS [private-ip]")
+        self.assertEqual(
+            report.verdict(row("x", "pass", "deny", cause="private-ip")),
+            "PASS [private-ip]",
+        )
         self.assertEqual(
             report.verdict(row("x", "record", "record", observed="allowed")),
-            "RECORD (allowed)")
+            "RECORD (allowed)",
+        )
         self.assertEqual(report.verdict(row("x", "pass", "allow")), "PASS")
 
 
@@ -122,10 +164,13 @@ class GradedPoolTest(unittest.TestCase):
         name = egress.TESTS[0].name
         other = egress.TESTS[1].name
         runs = {
-            "pipelock": run("pipelock", [row(name, "pass", "allow"),
-                                         row(other, "pass", "deny")]),
-            "smokescreen": run("smokescreen", [row(name, "pass", "allow"),
-                                               row(other, "record", "record")]),
+            "pipelock": run(
+                "pipelock", [row(name, "pass", "allow"), row(other, "pass", "deny")]
+            ),
+            "smokescreen": run(
+                "smokescreen",
+                [row(name, "pass", "allow"), row(other, "record", "record")],
+            ),
         }
         self.assertEqual(report.graded_names(runs), [name])
 
@@ -135,7 +180,9 @@ class ResultFileTest(unittest.TestCase):
     the generated conditions table would be a guess."""
 
     def setUp(self) -> None:
-        import tempfile, shutil
+        import shutil
+        import tempfile
+
         self.tmp = Path(tempfile.mkdtemp(prefix="ipl-report-test-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
@@ -169,19 +216,26 @@ class ResultFileTest(unittest.TestCase):
     def test_reports_a_missing_engine_with_the_command_to_fix_it(self) -> None:
         with self.assertRaises(report.Fail) as ctx:
             report.load_runs(self.tmp, ("pipelock",))
-        self.assertIn("./lab.py measure", str(ctx.exception))
+        self.assertIn("ipl-lab measure", str(ctx.exception))
 
 
 class PolicyDetectionTest(unittest.TestCase):
     """Which policy was mounted is read back off the rows, not declared."""
 
-    def _results(self, fixture_outcome: str, detail: str) -> "list":
+    def _results(self, fixture_outcome: str, detail: str) -> list:
         made = []
         for check in egress.TESTS:
             needs = check.needs_fixtures
             outcome = fixture_outcome if needs else "pass"
-            made.append(egress.Result(check.name, check.group, check.expectation,
-                                      outcome, detail if needs else "ok"))
+            made.append(
+                egress.Result(
+                    check.name,
+                    check.group,
+                    check.expectation,
+                    outcome,
+                    detail if needs else "ok",
+                )
+            )
         return made
 
     def test_test_policy_is_recognized(self) -> None:
@@ -189,7 +243,8 @@ class PolicyDetectionTest(unittest.TestCase):
 
     def test_real_policy_is_recognized(self) -> None:
         self.assertEqual(
-            egress.policy_in_use(self._results("skip", egress.FIXTURE_SKIP)), "real")
+            egress.policy_in_use(self._results("skip", egress.FIXTURE_SKIP)), "real"
+        )
 
     def test_quick_run_admits_it_does_not_know(self) -> None:
         quick = [r for r in self._results("pass", "x") if r.group == "quick"]
@@ -213,16 +268,18 @@ class GeneratedComparisonTest(unittest.TestCase):
     def test_findings_matches_the_committed_results(self) -> None:
         body = report.build(self.runs, self.results_dir, self.FINDINGS)
         current = self.FINDINGS.read_text(encoding="utf-8")
-        self.assertEqual(current, body,
-                         "run `./lab.py report` and commit docs/findings.md")
+        self.assertEqual(
+            current, body, "run `ipl-lab report` and commit docs/findings.md"
+        )
 
     def test_the_rendering_names_every_check_and_engine(self) -> None:
         sections = report.render_sections(self.runs, self.results_dir)
         self.assertEqual(set(sections), set(report.SECTIONS))
         per_check = sections["per-check"]
         for check in egress.TESTS:
-            self.assertIn(f"### {check.name}", per_check,
-                          f"{check.name} has no section")
+            self.assertIn(
+                f"### {check.name}", per_check, f"{check.name} has no section"
+            )
             self.assertIn(check.purpose, per_check)
         for label in report.LABELS.values():
             self.assertIn(label, sections["matrix"])
@@ -235,20 +292,26 @@ class GeneratedComparisonTest(unittest.TestCase):
         sections = report.render_sections(self.runs, self.results_dir)
         rebuilt = report.inject(document, sections, self.FINDINGS)
         for name in report.SECTIONS:
-            begin, end = f"<!-- BEGIN GENERATED {name} -->", f"<!-- END GENERATED {name} -->"
+            begin, end = (
+                f"<!-- BEGIN GENERATED {name} -->",
+                f"<!-- END GENERATED {name} -->",
+            )
             self.assertIn(begin, rebuilt)
             self.assertIn(end, rebuilt)
         # Everything before the first marker and after the last is identical.
         first = document.index("<!-- BEGIN GENERATED")
         self.assertEqual(document[:first], rebuilt[:first])
         tail = "<!-- END GENERATED "
-        self.assertEqual(document[document.rindex(tail):].split("-->", 1)[1],
-                         rebuilt[rebuilt.rindex(tail):].split("-->", 1)[1])
+        self.assertEqual(
+            document[document.rindex(tail) :].split("-->", 1)[1],
+            rebuilt[rebuilt.rindex(tail) :].split("-->", 1)[1],
+        )
 
     def test_a_missing_marker_is_fatal_rather_than_silently_skipped(self) -> None:
         sections = report.render_sections(self.runs, self.results_dir)
         stripped = self.FINDINGS.read_text(encoding="utf-8").replace(
-            "<!-- BEGIN GENERATED matrix -->", "")
+            "<!-- BEGIN GENERATED matrix -->", ""
+        )
         with self.assertRaises(report.Fail) as ctx:
             report.inject(stripped, sections, self.FINDINGS)
         self.assertIn("matrix", str(ctx.exception))
@@ -261,11 +324,11 @@ class ResilienceLoadTest(unittest.TestCase):
     def setUp(self) -> None:
         self.resilience = verify_resilience
 
-    def _tally(self, statuses: "list[int | None]", denied: bool):
+    def _tally(self, statuses: list[int | None], denied: bool):
         load = self.resilience.Load(port=0)
         for status in statuses:
             load._request = lambda host, s=status: (s, f"HTTP/1.1 {s} X")
-            load.stop.set()          # one pass through the loop body only
+            load.stop.set()  # one pass through the loop body only
             load.stop.clear()
             # exercise the accounting directly, without the socket
             with load._lock:
@@ -282,9 +345,11 @@ class ResilienceLoadTest(unittest.TestCase):
 
     def test_a_forwarded_denied_request_is_a_leak(self) -> None:
         load = self._tally([200, 301], denied=True)
-        self.assertEqual(len(load.denied_leaked), 2,
-                         "a 2xx/3xx for a denied host is the failure this "
-                         "script exists to catch")
+        self.assertEqual(
+            len(load.denied_leaked),
+            2,
+            "a 2xx/3xx for a denied host is the failure this script exists to catch",
+        )
 
     def test_refusals_and_outages_are_both_safe_for_a_denied_host(self) -> None:
         # A connection error during a restart is the *expected* shape of a
@@ -323,9 +388,13 @@ class SandboxIntegrationTest(unittest.TestCase):
         script = self.sandbox.SANDBOX_SCRIPT
         self.assertIn("--proxy", script)
         self.assertIn("--noproxy", script)
-        for marker in ("proxy-env", "allowlisted-through-proxy",
-                       "blocked-through-proxy", "direct-egress",
-                       "direct-dns"):
+        for marker in (
+            "proxy-env",
+            "allowlisted-through-proxy",
+            "blocked-through-proxy",
+            "direct-egress",
+            "direct-dns",
+        ):
             self.assertIn(marker, script)
 
 

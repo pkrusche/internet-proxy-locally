@@ -1,0 +1,122 @@
+"""Rendering lab/config/: the test policy and the fixture hosts file.
+
+The same templates and the same renderer as the operational lane, with
+`test_policy=True` and a second allowlist — which is what guarantees the
+`.test` configs are the shipped policy plus fixture names rather than an
+independently written policy that happens to look similar.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from internet_proxy_locally import paths
+from internet_proxy_locally.constants import ENGINES
+from internet_proxy_locally.lab.container import fixture_spec
+from internet_proxy_locally.lab.fixtures import (
+    FixtureConfig,
+    LabConfig,
+    load_lab_config,
+    private_address,
+)
+from internet_proxy_locally.policy.render import (
+    check_rendered_policies,
+    jinja_env,
+    render_engine_policies,
+    render_template,
+    write_validated,
+)
+from internet_proxy_locally.policy.validate import (
+    policy_allowlist,
+    policy_allowlist_text,
+)
+from internet_proxy_locally.spec import ServiceSpec
+
+
+def test_config_path(spec: ServiceSpec) -> Path:
+    """`config/squid.conf` -> `lab/config/squid.test.conf`.
+
+    By convention rather than by a key in data/services/*.toml: the engine
+    definitions describe how to run an engine, and where this lane keeps
+    its rendered fixtures is not their business.
+    """
+    name = Path(spec.config_file).name
+    stem, _, suffix = name.partition(".")
+    return paths.lab_config_dir() / f"{stem}.test.{suffix}"
+
+
+def render_test_policies(config: LabConfig | None = None) -> dict[Path, str]:
+    """Render the `.test` configs and the fixture hosts file.
+
+    Same templates and same Jinja environment as `ipl policy` — only
+    `test_policy` differs, so the two lanes cannot disagree about anything
+    but the allowlist itself.
+    """
+    config = load_lab_config() if config is None else config
+    rendered = render_engine_policies(
+        allow=config.allow,
+        allow_test=config.allow_test,
+        test_policy=True,
+        destination=test_config_path,
+    )
+    rendered.update(_render_fixture_hosts(jinja_env(), config.fixture))
+    return rendered
+
+
+def _render_fixture_hosts(env, fixture: FixtureConfig) -> dict[Path, str]:
+    """Render lab/config/dns-fixture.hosts from `[fixture]`.
+
+    The hosts file is not a policy — nothing in it is enforced — but it is
+    the other half of the test policy, and hand-syncing it against
+    `[policy.test].allow` is exactly what `load_lab_config()` refuses to
+    leave to care (docs/lab.md).
+    """
+    spec = fixture_spec()
+    rows = []
+    for record, addresses in fixture.records:
+        shape = ["private" if private_address(a) else "public" for a in addresses]
+        rows.append(
+            {
+                "name": record,
+                "addresses": list(addresses),
+                "role": "control" if record == fixture.control else "mixed",
+                "shape": f"{shape[0].capitalize()} answer first, {shape[-1]} second",
+            }
+        )
+    text = render_template(
+        env,
+        spec,
+        test_policy=True,  # for the shared banner: this file is the lab lane's
+        fixture=fixture,
+        fixture_records=rows,
+    )
+    return {paths.workspace_root() / spec.config_file: text}
+
+
+def check_rendered_test_policies(rendered: dict[Path, str]) -> list[str]:
+    """`check_rendered_policies()` plus the superset rule.
+
+    The superset rule is the one check that needs both lanes at once, so it
+    lives in the lane that has both: every entry the operational policy
+    allows must still be allowed by the test policy, or a `.test` run would
+    be measuring a *narrower* policy than the one that ships and its
+    verdicts would not transfer.
+    """
+    problems = check_rendered_policies(rendered)
+    for engine in ENGINES:
+        spec = ServiceSpec.load(engine)
+        real_path = spec.config_path()
+        test_path = test_config_path(spec)
+        real = policy_allowlist(engine, real_path)
+        test = policy_allowlist_text(engine, rendered[test_path])
+        for entry in sorted(real - test):
+            problems.append(
+                f"{test_path}: the test policy must be a strict superset "
+                f"of the real one, but drops `{entry}`"
+            )
+    return problems
+
+
+def sync_test_policies(config: LabConfig | None = None) -> list[Path]:
+    """Regenerate lab/config/; return what changed. Validates before writing."""
+    return write_validated(render_test_policies(config), check_rendered_test_policies)

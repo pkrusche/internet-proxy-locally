@@ -1,0 +1,15 @@
+# GENERATED FILE — do not edit.
+#
+{% if test_policy %}
+# Rendered from config.toml + lab/fixtures.toml by `ipl-lab`,
+# via {{ template_name }}.
+# To change the test policy, edit lab/fixtures.toml and run
+# `ipl-lab policy`. A hand edit here is silently overwritten and is
+# caught by the test suite.
+{% else %}
+# Rendered from config.toml by `ipl`, via {{ template_name }}.
+# To change the allowlist, edit config.toml and run `ipl policy`
+# (or just `ipl up`, which regenerates first). A hand edit here is
+# silently overwritten and is caught by the test suite.
+{% endif %}
+#

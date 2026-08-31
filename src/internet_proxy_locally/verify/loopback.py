@@ -1,12 +1,11 @@
-#!/usr/bin/env -S uv run --quiet python
 """Re-confirm that the host endpoint is bound to loopback and nothing else.
 
-`run.py` publishes the endpoint as `--publish 127.0.0.1:18080:<port>`. That
+`ipl` publishes the endpoint as `--publish 127.0.0.1:18080:<port>`. That
 one argument is the entire reason a proxy holding an allowlist for this
 machine is not also an open proxy for the network the machine is on. Both
 backends currently honour the address half — and a release that stopped
 honouring it would widen the endpoint to every interface with no error, no
-warning and no visible change in `run.py`'s output. So it is re-checked
+warning and no visible change in `ipl`'s output. So it is re-checked
 against each installed runtime rather than assumed, and re-checked again
 after a backend upgrade.
 
@@ -26,12 +25,12 @@ Two independent pieces of evidence, because either alone can lie:
 endpoint staying loopback-only is the invariant; a backend that cannot
 express it is a backend this repository cannot use (docs/lab.md).
 
-    scripts/verify_loopback.py                 # every installed backend
-    scripts/verify_loopback.py --backend docker
-    scripts/verify_loopback.py --port 18081    # leave a running proxy alone
-    scripts/verify_loopback.py --running       # check the proxy that is up now
+    ipl-verify loopback                 # every installed backend
+    ipl-verify loopback --backend docker
+    ipl-verify loopback --port 18081    # leave a running proxy alone
+    ipl-verify loopback --running       # check the proxy that is up now
 
-Run through uv (see the shebang). No third-party imports of its own.
+Reached as `uv run ipl-verify loopback`. Stdlib only.
 """
 
 from __future__ import annotations
@@ -40,16 +39,16 @@ import argparse
 import ipaddress
 import os
 import re
-import socket
 import subprocess
 import sys
-from pathlib import Path
 
-# The repository root, so `scripts.harness` and `run` resolve by name.
-# See the comment in scripts/harness.py.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from scripts.harness import Reporter, engine_up, run_py_down, run  # noqa: E402
+from internet_proxy_locally.backend import Backend
+from internet_proxy_locally.constants import BACKENDS, DEFAULT_ENGINE, ENGINES
+from internet_proxy_locally.errors import Fail
+from internet_proxy_locally.lifecycle import running_engine
+from internet_proxy_locally.net import port_listening
+from internet_proxy_locally.spec import ServiceSpec
+from internet_proxy_locally.verify.harness import Reporter, engine_up, teardown
 
 
 def local_addresses() -> list[str]:
@@ -62,7 +61,9 @@ def local_addresses() -> list[str]:
     """
     for cmd in (["ip", "-4", "-o", "addr"], ["ifconfig", "-a"]):
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=10, check=False
+            )
         except (OSError, subprocess.TimeoutExpired):
             continue
         if proc.returncode != 0:
@@ -77,15 +78,7 @@ def local_addresses() -> list[str]:
     return []
 
 
-def reachable(host: str, port: int, timeout: float = 2.0) -> bool:
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except OSError:
-        return False
-
-
-def backend_release(backend: "run.Backend") -> str:
+def backend_release(backend: Backend) -> str:
     """The runtime's own version string — the thing this check is pinned to.
 
     docs/lab.md records which release was verified; a result recorded
@@ -93,8 +86,13 @@ def backend_release(backend: "run.Backend") -> str:
     """
     for args in (["--version"], ["version", "--format", "{{.Server.Version}}"]):
         try:
-            proc = subprocess.run([backend.bin, *args], capture_output=True,
-                                  text=True, timeout=20)
+            proc = subprocess.run(
+                [backend.bin, *args],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=False,
+            )
         except (OSError, subprocess.TimeoutExpired):
             continue
         if proc.returncode == 0 and proc.stdout.strip():
@@ -102,9 +100,10 @@ def backend_release(backend: "run.Backend") -> str:
     return "unknown"
 
 
-def verify(backend_name: str, engine: str, port: int, report: Reporter,
-           running: bool = False) -> None:
-    backend = run.Backend(backend_name)
+def verify(
+    backend_name: str, engine: str, port: int, report: Reporter, running: bool = False
+) -> None:
+    backend = Backend(backend_name)
     release = backend_release(backend)
     report.note(f"{backend_name}: {release}")
 
@@ -115,17 +114,18 @@ def verify(backend_name: str, engine: str, port: int, report: Reporter,
         # not of when the container started, so this is the same result —
         # and it is the mode to use on a machine whose sandbox is currently
         # served by that proxy.
-        engine = run.running_engine(backend) or ""
+        engine = running_engine(backend) or ""
         if not engine:
-            raise run.Fail(
+            raise Fail(
                 f"--running was given but no engine is up on {backend_name}. "
-                "Start one, or drop --running to have this script start one.")
-        spec = run.ServiceSpec.load(engine)
+                "Start one, or drop --running to have this script start one."
+            )
+        spec = ServiceSpec.load(engine)
         published = backend.published_ports(spec.container_name)
         port = published[0][1] if published else port
         report.note(f"{backend_name}: checking the running {engine} on port {port}")
     else:
-        spec = run.ServiceSpec.load(engine)
+        spec = ServiceSpec.load(engine)
         engine_up(backend_name, engine, port, test_policy=False, env=env)
     try:
         bindings = backend.published_ports(spec.container_name)
@@ -134,7 +134,8 @@ def verify(backend_name: str, engine: str, port: int, report: Reporter,
             f"{backend_name}: the runtime reports a published port",
             f"`{backend.bin} inspect {spec.container_name}` reported no port "
             "bindings at all, so the structural half of this check cannot run. "
-            "If the shape changed, teach Backend.published_ports() about it.")
+            "If the shape changed, teach Backend.published_ports() about it.",
+        )
         for host_ip, host_port, container_port in bindings:
             report.check(
                 host_ip == "127.0.0.1",
@@ -143,65 +144,89 @@ def verify(backend_name: str, engine: str, port: int, report: Reporter,
                 f"the runtime bound host port {host_port} to "
                 f"`{host_ip or 'every interface'}`, not 127.0.0.1. This release "
                 "does not honour `--publish ip:host:container`. Do NOT widen the "
-                "binding to work around it — the endpoint must stay loopback-only.")
+                "binding to work around it — the endpoint must stay loopback-only.",
+            )
 
         report.check(
-            reachable("127.0.0.1", port),
+            port_listening("127.0.0.1", port, timeout=2.0),
             f"{backend_name}: the endpoint answers on 127.0.0.1:{port}",
             "nothing answered on loopback, so the negative results below prove "
-            "nothing. Is the engine running?")
+            "nothing. Is the engine running?",
+        )
 
         addresses = local_addresses()
         if not addresses:
-            report.note(f"{backend_name}: this host has no non-loopback IPv4 "
-                        "address, so the behavioral half is vacuous here; the "
-                        "structural check above is the whole result.")
+            report.note(
+                f"{backend_name}: this host has no non-loopback IPv4 "
+                "address, so the behavioral half is vacuous here; the "
+                "structural check above is the whole result."
+            )
         for address in addresses:
             report.check(
-                not reachable(address, port, timeout=1.0),
+                not port_listening(address, port, timeout=1.0),
                 f"{backend_name}: the endpoint refuses {address}:{port}",
                 f"the endpoint answered on {address}, a non-loopback address of "
                 "this host. Anything that can route to this machine can use the "
-                "proxy. Do NOT widen the binding — fix or replace the backend.")
+                "proxy. Do NOT widen the binding — fix or replace the backend.",
+            )
     finally:
         if not running:
-            run_py_down(backend_name, env=env)
+            teardown(backend_name, env=env)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--backend", choices=run.BACKENDS, default=None,
-                        help="one backend (default: every installed one)")
-    parser.add_argument("--engine", choices=run.ENGINES,
-                        default=run.DEFAULT_ENGINE,
-                        help="engine to publish the endpoint with; the binding is "
-                             "run.py's, not the engine's, so this rarely matters")
-    parser.add_argument("--port", type=int, default=18080,
-                        help="host port to publish (default: 18080; pick another to "
-                             "leave a running proxy alone)")
-    parser.add_argument("--running", action="store_true",
-                        help="check the engine that is already up instead of "
-                             "starting and removing one — the mode to use when the "
-                             "proxy under test is the one serving this machine")
+    parser.add_argument(
+        "--backend",
+        choices=BACKENDS,
+        default=None,
+        help="one backend (default: every installed one)",
+    )
+    parser.add_argument(
+        "--engine",
+        choices=ENGINES,
+        default=DEFAULT_ENGINE,
+        help="engine to publish the endpoint with; the binding is "
+        "the CLI's, not the engine's, so this rarely matters",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=18080,
+        help="host port to publish (default: 18080; pick another to "
+        "leave a running proxy alone)",
+    )
+    parser.add_argument(
+        "--running",
+        action="store_true",
+        help="check the engine that is already up instead of "
+        "starting and removing one — the mode to use when the "
+        "proxy under test is the one serving this machine",
+    )
     opts = parser.parse_args(argv)
 
-    names = [opts.backend] if opts.backend else \
-        [name for name in run.BACKENDS if run.Backend(name).available()]
+    names = (
+        [opts.backend]
+        if opts.backend
+        else [name for name in BACKENDS if Backend(name).available()]
+    )
     if not names:
         print("error: no container backend is installed", file=sys.stderr)
         return 1
 
     report = Reporter("loopback-only endpoint")
     for name in names:
-        if not run.Backend(name).available():
+        if not Backend(name).available():
             print(f"error: backend `{name}` is not installed", file=sys.stderr)
             return 1
         try:
             verify(name, opts.engine, opts.port, report, running=opts.running)
-        except run.Fail as exc:
+        except Fail as exc:
             report.check(False, f"{name}: the engine started", str(exc))
-    report.note("Record the outcome, with the release string above, in "
-                "docs/lab.md's parity checklist.")
+    report.note(
+        "Record the outcome, with the release string above, in "
+        "docs/lab.md's parity checklist."
+    )
     return report.finish()
 
 

@@ -1,0 +1,44 @@
+# Lint and format gate. Everything here is also a one-liner locally:
+#
+#     uv run ruff check .          # what this job runs
+#     uv run ruff format --check . # what this job runs
+#     uv run ruff check --fix . && uv run ruff format .   # to fix it
+#
+# The two steps are separate so a red run says which one failed: a lint
+# error is a change to make, a format failure is a command to run.
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      # --frozen resolves nothing: the ruff version is the one in uv.lock, so
+      # this job and a developer's `uv run ruff` are the same binary. Without
+      # it a newer ruff could fail a build that nothing in the repo changed.
+      # --only-group dev skips building the project itself, which lint does
+      # not need — no container runtime, no jinja2, no pyyaml.
+      - name: ruff check
+        run: uv run --frozen --only-group dev ruff check .
+
+      # Runs even when the lint step failed, so one push reports both.
+      - name: ruff format
+        if: '!cancelled()'
+        run: uv run --frozen --only-group dev ruff format --check .

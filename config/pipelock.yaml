@@ -1,8 +1,8 @@
 # GENERATED FILE — do not edit.
 #
-# Rendered from config.toml by ./run.py, via templates/pipelock.yaml.j2.
-# To change the allowlist, edit config.toml and run `./run.py policy`
-# (or just `./run.py up`, which regenerates first). A hand edit here is
+# Rendered from config.toml by `ipl`, via data/templates/pipelock.yaml.j2.
+# To change the allowlist, edit config.toml and run `ipl policy`
+# (or just `ipl up`, which regenerates first). A hand edit here is
 # silently overwritten and is caught by the test suite.
 #
 # Pipelock configuration: strict standard forward proxy, default deny.

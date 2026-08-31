@@ -1,4 +1,4 @@
-"""Tests for run.py using a fake container-backend shim.
+"""Tests for the operational lane (`ipl`) against a fake backend shim.
 
 A stand-in `docker` executable records every CLI invocation and emulates
 just enough state (containers, images) for the lifecycle commands. When it
@@ -21,11 +21,35 @@ from pathlib import Path
 from subprocess import CompletedProcess
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# The package data the CLI ships with, copied into each test's isolated
+# repository and pointed at with IPL_DATA_ROOT.
+PACKAGE_DATA = REPO_ROOT / "src" / "internet_proxy_locally" / "data"
 
-# Run from the repository root (`python -m unittest discover -s tests -t .`),
-# so everything imports by name. See the comment in scripts/harness.py.
-import run  # noqa: E402
-from tests import quiet  # noqa: E402
+# The names each test reaches for, imported from the module that now
+# owns them. `run.X` for all of it was one flat namespace; these
+# import lines are what the split looks like from outside.
+from internet_proxy_locally.backend import Backend
+from internet_proxy_locally.constants import ENGINES
+from internet_proxy_locally.errors import Fail
+from internet_proxy_locally.net import probe_proxy
+from internet_proxy_locally.policy import render as policy_render
+from internet_proxy_locally.policy.config import PolicyConfig, load_policy_config
+from internet_proxy_locally.policy.render import (
+    _squid_wild,
+    _yaml_scalar,
+    check_rendered_policies,
+    render_policies,
+)
+from internet_proxy_locally.policy.validate import (
+    REQUIRED_SQUID_DENY_INFO,
+    _squid_regex_to_glob,
+    check_squid_error_pages,
+    policy_allowlist,
+    policy_allowlist_text,
+    validate_policy_file,
+)
+from internet_proxy_locally.spec import ServiceSpec
+from tests import quiet
 
 FAKE_BACKEND = r"""#!/usr/bin/env bash
 set -u
@@ -110,11 +134,25 @@ class RunPyCliTest(unittest.TestCase):
         if openssl:
             cls.certdir = Path(tempfile.mkdtemp(prefix="ipl-cert-"))
             subprocess.run(
-                [openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-                 "-keyout", str(cls.certdir / "key.pem"),
-                 "-out", str(cls.certdir / "cert.pem"), "-days", "1",
-                 "-subj", "/CN=mock-proxy.test"],
-                check=True, capture_output=True)
+                [
+                    openssl,
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-nodes",
+                    "-keyout",
+                    str(cls.certdir / "key.pem"),
+                    "-out",
+                    str(cls.certdir / "cert.pem"),
+                    "-days",
+                    "1",
+                    "-subj",
+                    "/CN=mock-proxy.test",
+                ],
+                check=True,
+                capture_output=True,
+            )
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -124,24 +162,26 @@ class RunPyCliTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="ipl-runpy-test-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        # Minimal repo copy so pins can be edited without touching the checkout.
-        shutil.copy(REPO_ROOT / "run.py", self.tmp / "run.py")
-        # config.toml and templates/ come too: `setup` and `up` regenerate
-        # config/ from them, so a copy missing either would fail before it
-        # reached the behavior under test.
+        # An isolated repository, made of the two roots paths.py defines:
+        # the code under test is the checkout's, but everything it reads or
+        # writes is here. That is what lets a test edit a pin, or let `up`
+        # regenerate config/, without touching the working tree.
+        #
+        # The data root carries the templates, the service specs and the
+        # image contexts. data/images/ is not optional: a rendered squid.conf is
+        # only valid if every `deny_info` page it names exists in
+        # data/images/squid/errors.
+        shutil.copytree(PACKAGE_DATA, self.tmp / "data")
+        # The workspace root carries config.toml and the rendered configs
+        # that `setup` and `up` regenerate from it.
         shutil.copy(REPO_ROOT / "config.toml", self.tmp / "config.toml")
-        # images/ comes too: a rendered squid.conf is only valid if every
-        # `deny_info` page it names exists in images/squid/errors.
-        for sub in ("services", "config", "templates", "images"):
-            shutil.copytree(REPO_ROOT / sub, self.tmp / sub)
+        shutil.copytree(REPO_ROOT / "config", self.tmp / "config")
         # Start from unpinned service specs regardless of what the checkout
         # currently pins, so the fail-closed tests stay meaningful and the
         # tests that need a pin set one explicitly.
         self.unpin("pipelock", "digest")
         self.unpin("smokescreen", "ref")
         self.unpin("squid", "squid")
-        (self.tmp / "checks").mkdir()
-        shutil.copy(REPO_ROOT / "checks" / "egress.py", self.tmp / "checks" / "egress.py")
 
         bindir = self.tmp / "bin"
         bindir.mkdir()
@@ -158,36 +198,56 @@ class RunPyCliTest(unittest.TestCase):
         self.log.touch()
         self.port = free_port()
         self.env = os.environ.copy()
-        self.env.update({
-            "PATH": f"{bindir}:{self.env['PATH']}",
-            "FAKE_LOG": str(self.log),
-            "FAKE_STATE": str(self.state),
-            "FAKE_PROXY_PORT": str(self.port),
-            "FAKE_PROXY_SPAWN": str(REPO_ROOT / "tests" / "mock_proxy.py"),
-            "FAKE_PYTHON": os.fspath(Path(os.sys.executable)),
-            "IPL_ENDPOINT": f"127.0.0.1:{self.port}",
-        })
+        self.env.update(
+            {
+                "PATH": f"{bindir}:{self.env['PATH']}",
+                "FAKE_LOG": str(self.log),
+                "FAKE_STATE": str(self.state),
+                "FAKE_PROXY_PORT": str(self.port),
+                "FAKE_PROXY_SPAWN": str(REPO_ROOT / "tests" / "mock_proxy.py"),
+                "FAKE_PYTHON": os.fspath(Path(os.sys.executable)),
+                "IPL_ENDPOINT": f"127.0.0.1:{self.port}",
+                "IPL_ROOT": str(self.tmp),
+                "IPL_DATA_ROOT": str(self.tmp / "data"),
+            }
+        )
         if self.certdir:
             self.env["FAKE_PROXY_CERT"] = str(self.certdir / "cert.pem")
             self.env["FAKE_PROXY_KEY"] = str(self.certdir / "key.pem")
 
     def run_cli(self, *args: str) -> CompletedProcess:
         return subprocess.run(
-            [os.sys.executable, str(self.tmp / "run.py"), *args],
-            capture_output=True, text=True, env=self.env, timeout=120)
+            [os.sys.executable, "-m", "internet_proxy_locally.cli.run", *args],
+            capture_output=True,
+            text=True,
+            env=self.env,
+            timeout=120,
+            check=False,
+        )
 
     def unpin(self, engine: str, key: str) -> None:
-        toml = self.tmp / "services" / f"{engine}.toml"
-        text, count = re.subn(rf'^{key} = ".*"$', f'{key} = ""',
-                              toml.read_text(), count=1, flags=re.M)
+        toml = self.tmp / "data" / "services" / f"{engine}.toml"
+        text, count = re.subn(
+            rf'^{key} = ".*"$',
+            f'{key} = ""',
+            toml.read_text(),
+            count=1,
+            flags=re.MULTILINE,
+        )
         if count != 1:
-            raise AssertionError(f"no `{key}` pin found in services/{engine}.toml")
+            raise AssertionError(f"no `{key}` pin found in data/services/{engine}.toml")
         toml.write_text(text)
 
     def pin_pipelock(self, digest: str = "sha256:" + "ab" * 32) -> None:
-        toml = self.tmp / "services" / "pipelock.toml"
-        toml.write_text(re.sub(r'^digest = ""$', f'digest = "{digest}"',
-                               toml.read_text(), flags=re.M))
+        toml = self.tmp / "data" / "services" / "pipelock.toml"
+        toml.write_text(
+            re.sub(
+                r'^digest = ""$',
+                f'digest = "{digest}"',
+                toml.read_text(),
+                flags=re.MULTILINE,
+            )
+        )
 
     def fake_image(self, ref: str) -> None:
         """Mark an image as present in the shim's state (its `build` is a no-op)."""
@@ -242,9 +302,12 @@ class RunPyCliTest(unittest.TestCase):
         hand edit cannot reach a running container."""
         self.pin_pipelock()
         policy = self.tmp / "config" / "pipelock.yaml"
-        policy.write_text(policy.read_text(encoding="utf-8")
-                          .replace("  - github.com\n", "  - github.com\n  - evil.example\n"),
-                          encoding="utf-8")
+        policy.write_text(
+            policy.read_text(encoding="utf-8").replace(
+                "  - github.com\n", "  - github.com\n  - evil.example\n"
+            ),
+            encoding="utf-8",
+        )
         proc = self.run_cli("--backend", "docker", "up")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("regenerated config/pipelock.yaml", proc.stdout)
@@ -260,17 +323,25 @@ class RunPyCliTest(unittest.TestCase):
         self.pin_pipelock()
         config_toml = self.tmp / "config.toml"
         config_toml.write_text(
-            config_toml.read_text(encoding="utf-8")
-            .replace('    "github.com",', '    "github.com",\n    "*.example.test",'),
-            encoding="utf-8")
+            config_toml.read_text(encoding="utf-8").replace(
+                '    "github.com",', '    "github.com",\n    "*.example.test",'
+            ),
+            encoding="utf-8",
+        )
         proc = self.run_cli("--backend", "docker", "up")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn('  - "*.example.test"',
-                      (self.tmp / "config" / "pipelock.yaml").read_text(encoding="utf-8"))
-        self.assertIn(r"dstdom_regex -i \.example\.test$",
-                      (self.tmp / "config" / "squid.conf").read_text(encoding="utf-8"))
-        self.assertIn('    - "*.example.test"',
-                      (self.tmp / "config" / "smokescreen.yaml").read_text(encoding="utf-8"))
+        self.assertIn(
+            '  - "*.example.test"',
+            (self.tmp / "config" / "pipelock.yaml").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            r"dstdom_regex -i \.example\.test$",
+            (self.tmp / "config" / "squid.conf").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            '    - "*.example.test"',
+            (self.tmp / "config" / "smokescreen.yaml").read_text(encoding="utf-8"),
+        )
 
     def test_up_refuses_a_bad_config_toml_and_starts_nothing(self) -> None:
         """A malformed allowlist entry must stop `up` before any container
@@ -279,20 +350,25 @@ class RunPyCliTest(unittest.TestCase):
         config_toml = self.tmp / "config.toml"
         before = (self.tmp / "config" / "squid.conf").read_text(encoding="utf-8")
         config_toml.write_text(
-            config_toml.read_text(encoding="utf-8")
-            .replace('    "github.com",', '    "1.2.3.4",'), encoding="utf-8")
+            config_toml.read_text(encoding="utf-8").replace(
+                '    "github.com",', '    "1.2.3.4",'
+            ),
+            encoding="utf-8",
+        )
         proc = self.run_cli("--backend", "docker", "up")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("1.2.3.4", proc.stderr)
         self.assertIn("address", proc.stderr)
         self.assertNotIn("run --detach", self.backend_log())
-        self.assertEqual((self.tmp / "config" / "squid.conf").read_text(encoding="utf-8"),
-                         before)
+        self.assertEqual(
+            (self.tmp / "config" / "squid.conf").read_text(encoding="utf-8"), before
+        )
 
     def test_policy_check_reports_drift_without_writing(self) -> None:
         policy = self.tmp / "config" / "squid.conf"
-        policy.write_text(policy.read_text(encoding="utf-8") + "\n# stray edit\n",
-                          encoding="utf-8")
+        policy.write_text(
+            policy.read_text(encoding="utf-8") + "\n# stray edit\n", encoding="utf-8"
+        )
         proc = self.run_cli("policy", "--check")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("STALE", proc.stderr)
@@ -354,7 +430,7 @@ class RunPyCliTest(unittest.TestCase):
 
     def test_check_wires_engine_log_capture(self) -> None:
         # `check` should pass --backend-bin/--container through to
-        # checks/egress.py so each result's `engine_logs` is populated
+        # `checks.egress` so each result's `engine_logs` is populated
         # from the running container's own log stream (docs/security.md,
         # "The adversarial suite").
         self.pin_pipelock()
@@ -367,20 +443,31 @@ class RunPyCliTest(unittest.TestCase):
         results = payload["results"]
         self.assertTrue(results)
         for r in results:
-            self.assertTrue(r["engine_logs"], f"{r['name']}: expected non-empty engine_logs")
-            self.assertTrue(all(line.startswith("fake engine log line") for line in r["engine_logs"]))
+            self.assertTrue(
+                r["engine_logs"], f"{r['name']}: expected non-empty engine_logs"
+            )
+            self.assertTrue(
+                all(
+                    line.startswith("fake engine log line") for line in r["engine_logs"]
+                )
+            )
 
     def test_up_mounts_smokescreen_daemon_config(self) -> None:
         # allow_missing_role has no CLI flag; without this mount every request
         # is rejected before the ACL's `default` rule is reached.
         sha = "c" * 40
-        toml = self.tmp / "services" / "smokescreen.toml"
-        toml.write_text(re.sub(r'^ref = ""$', f'ref = "{sha}"',
-                               toml.read_text(), flags=re.M))
+        toml = self.tmp / "data" / "services" / "smokescreen.toml"
+        toml.write_text(
+            re.sub(
+                r'^ref = ""$', f'ref = "{sha}"', toml.read_text(), flags=re.MULTILINE
+            )
+        )
         self.fake_image(f"internet-proxy-locally/smokescreen:{sha[:12]}")
         up = self.run_cli("--backend", "docker", "--engine", "smokescreen", "up")
         self.assertEqual(up.returncode, 0, up.stderr)
-        run_line = next(l for l in self.backend_log().splitlines() if l.startswith("run "))
+        run_line = next(
+            l for l in self.backend_log().splitlines() if l.startswith("run ")
+        )
         self.assertIn(":/etc/smokescreen/acl.yaml:ro", run_line)
         self.assertIn(":/etc/smokescreen/config.yaml:ro", run_line)
         self.assertIn("--config-file /etc/smokescreen/config.yaml", run_line)
@@ -390,13 +477,21 @@ class RunPyCliTest(unittest.TestCase):
         # squid.conf, so a mount that did not land would fail closed rather
         # than run a permissive default.
         version = "6.12-r0"
-        toml = self.tmp / "services" / "squid.toml"
-        toml.write_text(re.sub(r'^squid = ""$', f'squid = "{version}"',
-                               toml.read_text(), flags=re.M))
+        toml = self.tmp / "data" / "services" / "squid.toml"
+        toml.write_text(
+            re.sub(
+                r'^squid = ""$',
+                f'squid = "{version}"',
+                toml.read_text(),
+                flags=re.MULTILINE,
+            )
+        )
         self.fake_image(f"internet-proxy-locally/squid:{version}")
         up = self.run_cli("--backend", "docker", "--engine", "squid", "up")
         self.assertEqual(up.returncode, 0, up.stderr)
-        run_line = next(l for l in self.backend_log().splitlines() if l.startswith("run "))
+        run_line = next(
+            l for l in self.backend_log().splitlines() if l.startswith("run ")
+        )
         self.assertIn("--name internet-proxy-squid", run_line)
         self.assertIn(f"--publish 127.0.0.1:{self.port}:3128", run_line)
         self.assertIn(f"internet-proxy-locally/squid:{version}", run_line)
@@ -404,9 +499,15 @@ class RunPyCliTest(unittest.TestCase):
         self.assertNotIn(":latest", run_line)
 
     def test_up_squid_refuses_unbuilt_image(self) -> None:
-        toml = self.tmp / "services" / "squid.toml"
-        toml.write_text(re.sub(r'^squid = ""$', 'squid = "6.12-r0"',
-                               toml.read_text(), flags=re.M))
+        toml = self.tmp / "data" / "services" / "squid.toml"
+        toml.write_text(
+            re.sub(
+                r'^squid = ""$',
+                'squid = "6.12-r0"',
+                toml.read_text(),
+                flags=re.MULTILINE,
+            )
+        )
         proc = self.run_cli("--backend", "docker", "--engine", "squid", "up")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("not built yet", proc.stderr)
@@ -420,7 +521,6 @@ class RunPyCliTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         self.assertIn("no engine is running", proc.stderr)
 
-
     def test_setup_is_fail_closed_for_every_pin_kind(self) -> None:
         """`setup` never resolves a pin itself, whatever the pin is.
 
@@ -432,25 +532,28 @@ class RunPyCliTest(unittest.TestCase):
         and each says how to pin the thing it is pinned by.
         """
         # setUp() blanks all three; the key is what each is pinned *by*.
-        for engine, key in (("pipelock", "digest"), ("smokescreen", "ref"),
-                            ("squid", "squid")):
+        for engine, key in (
+            ("pipelock", "digest"),
+            ("smokescreen", "ref"),
+            ("squid", "squid"),
+        ):
             with self.subTest(engine=engine):
                 proc = self.run_cli("--engine", engine, "setup")
                 self.assertNotEqual(proc.returncode, 0, proc.stdout)
                 combined = proc.stdout + proc.stderr
                 self.assertIn("not pinned", combined)
-                self.assertIn(f"./run.py pin {engine}", combined)
+                self.assertIn(f"ipl pin {engine}", combined)
                 # And nothing was written back into the pin file.
-                text = (self.tmp / "services" / f"{engine}.toml").read_text()
-                self.assertIn(f'{key} = ""', text,
-                              f"setup recorded a {engine} pin instead of refusing")
+                text = (self.tmp / "data" / "services" / f"{engine}.toml").read_text()
+                self.assertIn(
+                    f'{key} = ""',
+                    text,
+                    f"setup recorded a {engine} pin instead of refusing",
+                )
+
 
 class RunPyUnitTest(unittest.TestCase):
     """In-process unit tests for policy validation and backend parsing."""
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.run_mod = run
 
     def write(self, text: str) -> Path:
         tmp = Path(tempfile.mkdtemp(prefix="ipl-policy-test-"))
@@ -462,6 +565,7 @@ class RunPyUnitTest(unittest.TestCase):
     def _serve_once(self, handler) -> int:
         """Run a one-shot TCP server on a free port; return the port."""
         import threading
+
         srv = socket.socket()
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind(("127.0.0.1", 0))
@@ -493,7 +597,7 @@ class RunPyUnitTest(unittest.TestCase):
         answering-but-permissive proxy is never retryable).
         """
         port = self._serve_once(lambda conn: conn.close())
-        healthy, _, retryable = self.run_mod.probe_proxy("127.0.0.1", port, timeout=2.0)
+        healthy, _, retryable = probe_proxy("127.0.0.1", port, timeout=2.0)
         self.assertFalse(healthy)
         self.assertTrue(retryable)
 
@@ -503,12 +607,13 @@ class RunPyUnitTest(unittest.TestCase):
         Waiting cannot fix that, so it must fail immediately rather than
         burn the health deadline.
         """
+
         def handler(conn: socket.socket) -> None:
             conn.recv(4096)
             conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
 
         port = self._serve_once(handler)
-        healthy, detail, retryable = self.run_mod.probe_proxy("127.0.0.1", port, timeout=2.0)
+        healthy, detail, retryable = probe_proxy("127.0.0.1", port, timeout=2.0)
         self.assertFalse(healthy)
         self.assertFalse(retryable)
         self.assertIn("NOT healthy", detail)
@@ -519,62 +624,87 @@ class RunPyUnitTest(unittest.TestCase):
             conn.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
 
         port = self._serve_once(handler)
-        healthy, _, retryable = self.run_mod.probe_proxy("127.0.0.1", port, timeout=2.0)
+        healthy, _, retryable = probe_proxy("127.0.0.1", port, timeout=2.0)
         self.assertTrue(healthy)
         self.assertFalse(retryable)
 
     def test_shipped_policies_are_valid(self) -> None:
-        for engine, rel in (("pipelock", "config/pipelock.yaml"),
-                            ("smokescreen", "config/smokescreen.yaml"),
-                            ("squid", "config/squid.conf")):
-            problems = self.run_mod.validate_policy_file(engine, REPO_ROOT / rel)
+        for engine, rel in (
+            ("pipelock", "config/pipelock.yaml"),
+            ("smokescreen", "config/smokescreen.yaml"),
+            ("squid", "config/squid.conf"),
+        ):
+            problems = validate_policy_file(engine, REPO_ROOT / rel)
             self.assertEqual(problems, [], f"{rel}: {problems}")
 
     def test_pipelock_policy_rejects_non_strict(self) -> None:
-        path = self.write((REPO_ROOT / "config" / "pipelock.yaml").read_text()
-                          .replace("mode: strict", "mode: monitor")
-                          .replace("enforce: true", "enforce: false"))
-        problems = self.run_mod.validate_policy_file("pipelock", path)
+        path = self.write(
+            (REPO_ROOT / "config" / "pipelock.yaml")
+            .read_text()
+            .replace("mode: strict", "mode: monitor")
+            .replace("enforce: true", "enforce: false")
+        )
+        problems = validate_policy_file("pipelock", path)
         self.assertTrue(any("mode: strict" in p for p in problems))
         self.assertTrue(any("enforce" in p for p in problems))
 
     def test_pipelock_policy_rejects_tls_interception(self) -> None:
-        path = self.write((REPO_ROOT / "config" / "pipelock.yaml").read_text()
-                          .replace("tls_interception:\n  enabled: false",
-                                   "tls_interception:\n  enabled: true"))
-        problems = self.run_mod.validate_policy_file("pipelock", path)
+        path = self.write(
+            (REPO_ROOT / "config" / "pipelock.yaml")
+            .read_text()
+            .replace(
+                "tls_interception:\n  enabled: false",
+                "tls_interception:\n  enabled: true",
+            )
+        )
+        problems = validate_policy_file("pipelock", path)
         self.assertTrue(any("tls_interception" in p for p in problems))
 
     def test_smokescreen_policy_rejects_open_mode(self) -> None:
-        path = self.write((REPO_ROOT / "config" / "smokescreen.yaml").read_text()
-                          .replace("action: enforce", "action: open"))
-        problems = self.run_mod.validate_policy_file("smokescreen", path)
+        path = self.write(
+            (REPO_ROOT / "config" / "smokescreen.yaml")
+            .read_text()
+            .replace("action: enforce", "action: open")
+        )
+        problems = validate_policy_file("smokescreen", path)
         self.assertTrue(any("open" in p for p in problems))
 
     def test_smokescreen_policy_requires_allowlist(self) -> None:
-        text = re.sub(r"^\s+- .*$", "", (REPO_ROOT / "config" / "smokescreen.yaml").read_text(), flags=re.M)
-        problems = self.run_mod.validate_policy_file("smokescreen", self.write(text))
+        text = re.sub(
+            r"^\s+- .*$",
+            "",
+            (REPO_ROOT / "config" / "smokescreen.yaml").read_text(),
+            flags=re.MULTILINE,
+        )
+        problems = validate_policy_file("smokescreen", self.write(text))
         self.assertTrue(any("allowed_domains" in p for p in problems))
 
-    def test_every_entry_point_runs_through_uv(self) -> None:
-        """The docs say `./run.py ...`, so the shebang has to be the thing
-        that makes that true.
+    def test_every_declared_entry_point_resolves(self) -> None:
+        """The docs say `uv run ipl ...`, so every name they say has to exist.
 
-        With `#!/usr/bin/env python3` it would pick up whatever interpreter
-        is on PATH — no jinja2, no pyyaml, possibly no `tomllib` — and the
-        failure would land on whoever was least equipped to read it. uv
-        resolves both the interpreter (.python-version) and the
-        dependencies (pyproject.toml), which is why nothing in this
-        repository is imported lazily any more.
+        These used to be shebang scripts, and this test asserted the
+        shebang was `uv run` rather than `python3` — with the latter they
+        would have picked up whatever interpreter was on PATH, no jinja2,
+        no pyyaml, and the failure would have landed on whoever was least
+        equipped to read it. uv still resolves both the interpreter
+        (.python-version) and the dependencies (pyproject.toml); what it
+        resolves them for is now `[project.scripts]`, so that is what has
+        to be checked. A console script naming a module that does not
+        import fails at `uv sync` time for a user and never here.
         """
-        expected = "#!/usr/bin/env -S uv run --quiet python"
-        entry_points = [REPO_ROOT / "run.py", REPO_ROOT / "lab.py",
-                        REPO_ROOT / "checks" / "egress.py"]
-        entry_points += sorted((REPO_ROOT / "scripts").glob("*.py"))
-        for path in entry_points:
-            first = path.read_text(encoding="utf-8").splitlines()[0]
-            self.assertEqual(first, expected, f"{path.name}: {first}")
-            self.assertTrue(os.access(path, os.X_OK), f"{path.name} is not executable")
+        import importlib
+        import tomllib
+
+        with (REPO_ROOT / "pyproject.toml").open("rb") as fh:
+            scripts = tomllib.load(fh)["project"]["scripts"]
+        self.assertIn("ipl", scripts, "the operational lane must stay `ipl`")
+        for name, target in sorted(scripts.items()):
+            module_name, _, attr = target.partition(":")
+            module = importlib.import_module(module_name)
+            self.assertTrue(
+                callable(getattr(module, attr, None)),
+                f"{name} = {target}: not callable",
+            )
 
     # -- the properties that motivated parsing YAML rather than matching it --
 
@@ -591,15 +721,19 @@ class RunPyUnitTest(unittest.TestCase):
         for label, override in (
             ("tls_interception", "\ntls_interception:\n  enabled: true\n"),
             ("mode", "\nmode: permissive\n"),
-            ("forward_proxy",
-             "\nforward_proxy:\n  enabled: true\n"
-             "  sni_verification: false\n  sni_require_tls: false\n"),
+            (
+                "forward_proxy",
+                (
+                    "\nforward_proxy:\n  enabled: true\n"
+                    "  sni_verification: false\n  sni_require_tls: false\n"
+                ),
+            ),
         ):
-            problems = self.run_mod.validate_policy_file(
-                "pipelock", self.write(base + override))
+            problems = validate_policy_file("pipelock", self.write(base + override))
             self.assertTrue(problems, f"{label}: an override passed validation")
-            self.assertTrue(any("duplicate key" in p for p in problems),
-                            f"{label}: {problems}")
+            self.assertTrue(
+                any("duplicate key" in p for p in problems), f"{label}: {problems}"
+            )
 
     def test_a_quoted_scalar_is_read_as_its_value(self) -> None:
         """`action: "open"` is the same policy as `action: open`.
@@ -607,42 +741,56 @@ class RunPyUnitTest(unittest.TestCase):
         A text search for the bare word missed the quoted form; a parser
         cannot, because by the time it is compared the quotes are gone.
         """
-        path = self.write((REPO_ROOT / "config" / "smokescreen.yaml").read_text()
-                          .replace("action: enforce", 'action: "open"'))
-        problems = self.run_mod.validate_policy_file("smokescreen", path)
+        path = self.write(
+            (REPO_ROOT / "config" / "smokescreen.yaml")
+            .read_text()
+            .replace("action: enforce", 'action: "open"')
+        )
+        problems = validate_policy_file("smokescreen", path)
         self.assertTrue(any("open" in p for p in problems), problems)
 
     def test_an_open_action_on_a_service_is_refused_too(self) -> None:
         """`services:` entries carry the same shape as `default:`, and one
         of them set to `open` is an open proxy for that role."""
-        path = self.write((REPO_ROOT / "config" / "smokescreen.yaml").read_text()
-                          .replace("services: []",
-                                   "services:\n  - name: x\n    action: open\n"
-                                   "    allowed_domains: [a.com]"))
-        problems = self.run_mod.validate_policy_file("smokescreen", path)
+        path = self.write(
+            (REPO_ROOT / "config" / "smokescreen.yaml")
+            .read_text()
+            .replace(
+                "services: []",
+                "services:\n  - name: x\n    action: open\n"
+                "    allowed_domains: [a.com]",
+            )
+        )
+        problems = validate_policy_file("smokescreen", path)
         self.assertTrue(any("open" in p for p in problems), problems)
 
     def test_unparseable_yaml_is_a_problem_not_a_traceback(self) -> None:
         """A policy that cannot be parsed cannot be checked, so it has to
         fail closed through the same list of problems every other failure
         uses — not by raising past the caller that would refuse to start."""
-        path = self.write((REPO_ROOT / "config" / "pipelock.yaml").read_text()
-                          + "\n  : : broken\n")
-        problems = self.run_mod.validate_policy_file("pipelock", path)
+        path = self.write(
+            (REPO_ROOT / "config" / "pipelock.yaml").read_text() + "\n  : : broken\n"
+        )
+        problems = validate_policy_file("pipelock", path)
         self.assertTrue(any("not valid YAML" in p for p in problems), problems)
 
     def test_squid_policy_requires_default_deny_last(self) -> None:
         text = (REPO_ROOT / "config" / "squid.conf").read_text()
-        path = self.write(text.replace("http_access deny all",
-                                       "http_access deny all\nhttp_access allow allowlist_exact"))
-        problems = self.run_mod.validate_policy_file("squid", path)
+        path = self.write(
+            text.replace(
+                "http_access deny all",
+                "http_access deny all\nhttp_access allow allowlist_exact",
+            )
+        )
+        problems = validate_policy_file("squid", path)
         self.assertTrue(any("deny all" in p for p in problems), problems)
 
     def test_squid_policy_rejects_open_proxy(self) -> None:
         text = (REPO_ROOT / "config" / "squid.conf").read_text()
-        path = self.write(text.replace("http_access allow allowlist_exact",
-                                       "http_access allow all"))
-        problems = self.run_mod.validate_policy_file("squid", path)
+        path = self.write(
+            text.replace("http_access allow allowlist_exact", "http_access allow all")
+        )
+        problems = validate_policy_file("squid", path)
         self.assertTrue(any("allow all" in p for p in problems), problems)
 
     def test_squid_policy_rejects_ssrf_floors_after_the_allowlist(self) -> None:
@@ -650,21 +798,25 @@ class RunPyUnitTest(unittest.TestCase):
         # would let an allowlisted hostname reach a private address.
         text = (REPO_ROOT / "config" / "squid.conf").read_text()
         text = text.replace("http_access deny private_ip\n", "")
-        text = text.replace("http_access allow allowlist_wild",
-                            "http_access allow allowlist_wild\nhttp_access deny private_ip")
-        problems = self.run_mod.validate_policy_file("squid", self.write(text))
-        self.assertTrue(any("private_ip" in p and "before" in p for p in problems), problems)
+        text = text.replace(
+            "http_access allow allowlist_wild",
+            "http_access allow allowlist_wild\nhttp_access deny private_ip",
+        )
+        problems = validate_policy_file("squid", self.write(text))
+        self.assertTrue(
+            any("private_ip" in p and "before" in p for p in problems), problems
+        )
 
     def test_squid_policy_rejects_a_missing_deny_range(self) -> None:
         text = (REPO_ROOT / "config" / "squid.conf").read_text()
         path = self.write(text.replace("acl private_ip dst 169.254.0.0/16\n", ""))
-        problems = self.run_mod.validate_policy_file("squid", path)
+        problems = validate_policy_file("squid", path)
         self.assertTrue(any("169.254.0.0/16" in p for p in problems), problems)
 
     def test_squid_policy_rejects_tls_interception(self) -> None:
         text = (REPO_ROOT / "config" / "squid.conf").read_text()
         path = self.write(text + "\nssl_bump bump all\n")
-        problems = self.run_mod.validate_policy_file("squid", path)
+        problems = validate_policy_file("squid", path)
         self.assertTrue(any("ssl_bump" in p for p in problems), problems)
 
     def test_squid_policy_rejects_a_deny_info_for_an_undefined_acl(self) -> None:
@@ -672,40 +824,44 @@ class RunPyUnitTest(unittest.TestCase):
         not, Squid starts happily, and every SSRF denial falls back to the
         stock page and classifies as `unknown`."""
         text = (REPO_ROOT / "config" / "squid.conf").read_text()
-        text = re.sub(r"^acl private_ip ", "acl private_ipv4 ", text, flags=re.M)
-        text = text.replace("http_access deny private_ip\n",
-                            "http_access deny private_ipv4\n")
-        problems = self.run_mod.validate_policy_file("squid", self.write(text))
+        text = re.sub(
+            r"^acl private_ip ", "acl private_ipv4 ", text, flags=re.MULTILINE
+        )
+        text = text.replace(
+            "http_access deny private_ip\n", "http_access deny private_ipv4\n"
+        )
+        problems = validate_policy_file("squid", self.write(text))
         self.assertTrue(any("does not define" in p for p in problems), problems)
 
     def test_squid_policy_requires_a_page_for_every_cause(self) -> None:
-        for acl, page in self.run_mod.REQUIRED_SQUID_DENY_INFO.items():
+        for acl, page in REQUIRED_SQUID_DENY_INFO.items():
             text = (REPO_ROOT / "config" / "squid.conf").read_text()
             text = text.replace(f"deny_info {page} {acl}\n", "")
-            problems = self.run_mod.validate_policy_file("squid", self.write(text))
-            self.assertTrue(any(page in p and "missing" in p for p in problems),
-                            f"{acl}: {problems}")
+            problems = validate_policy_file("squid", self.write(text))
+            self.assertTrue(
+                any(page in p and "missing" in p for p in problems),
+                f"{acl}: {problems}",
+            )
 
     def test_squid_policy_rejects_two_pages_for_one_acl(self) -> None:
         # Only one can ever be shown, so the file no longer says which.
         text = (REPO_ROOT / "config" / "squid.conf").read_text()
         text += "\ndeny_info ERR_IPL_NOT_ALLOWLISTED private_ip\n"
-        problems = self.run_mod.validate_policy_file("squid", self.write(text))
+        problems = validate_policy_file("squid", self.write(text))
         self.assertTrue(any("two denial pages" in p for p in problems), problems)
 
     def test_squid_denial_pages_exist_in_the_image(self) -> None:
         squid_conf = REPO_ROOT / "config" / "squid.conf"
         text = squid_conf.read_text()
-        self.assertEqual(self.run_mod.check_squid_error_pages(text, squid_conf), [])
+        self.assertEqual(check_squid_error_pages(text, squid_conf), [])
         broken = text.replace("deny_info ERR_IPL_METADATA", "deny_info ERR_IPL_TYPO")
-        problems = self.run_mod.check_squid_error_pages(broken, squid_conf)
+        problems = check_squid_error_pages(broken, squid_conf)
         self.assertTrue(any("ERR_IPL_TYPO" in p for p in problems), problems)
 
     def test_squid_allowlist_normalizes_to_the_shared_forms(self) -> None:
         # `*.d` is an anchored dstdom_regex in Squid; it has to read back as
         # `*.d` or the cross-engine sync check compares nothing.
-        entries = self.run_mod.policy_allowlist(
-            "squid", REPO_ROOT / "config" / "squid.conf")
+        entries = policy_allowlist("squid", REPO_ROOT / "config" / "squid.conf")
         self.assertIn("*.github.com", entries)
         self.assertIn("*.githubusercontent.com", entries)
         self.assertIn("github.com", entries)
@@ -714,8 +870,8 @@ class RunPyUnitTest(unittest.TestCase):
     def test_squid_allowlist_keeps_unrecognized_patterns_visible(self) -> None:
         # A hand-written regex must not be silently read as a wildcard
         # entry; it should surface as drift instead.
-        self.assertEqual(self.run_mod._squid_regex_to_glob(r"\.github\.com$"), "*.github.com")
-        self.assertEqual(self.run_mod._squid_regex_to_glob(r"github"), "github")
+        self.assertEqual(_squid_regex_to_glob(r"\.github\.com$"), "*.github.com")
+        self.assertEqual(_squid_regex_to_glob(r"github"), "github")
 
     def test_shipped_allowlists_are_identical_across_engines(self) -> None:
         """The three files express one allowlist.
@@ -725,14 +881,17 @@ class RunPyUnitTest(unittest.TestCase):
         it is here to catch, now that no human keeps them in sync.
         """
         allowlists = {}
-        for engine in self.run_mod.ENGINES:
-            spec = self.run_mod.ServiceSpec.load(engine)
-            allowlists[engine] = self.run_mod.policy_allowlist(engine,
-                                                               spec.config_path())
-        self.assertEqual(len(set(map(frozenset, allowlists.values()))), 1,
-                         f"the engines disagree: {allowlists}")
-        self.assertEqual(set(next(iter(allowlists.values()))),
-                         set(self.run_mod.load_policy_config().allow))
+        for engine in ENGINES:
+            spec = ServiceSpec.load(engine)
+            allowlists[engine] = policy_allowlist(engine, spec.config_path())
+        self.assertEqual(
+            len(set(map(frozenset, allowlists.values()))),
+            1,
+            f"the engines disagree: {allowlists}",
+        )
+        self.assertEqual(
+            set(next(iter(allowlists.values()))), set(load_policy_config().allow)
+        )
 
     # --- config.toml -> config/* generation --------------------------------
 
@@ -757,46 +916,48 @@ class RunPyUnitTest(unittest.TestCase):
         regenerating, fails here rather than silently shipping a policy
         nobody reviewed.
         """
-        for path, body in sorted(self.run_mod.render_policies().items()):
+        for path, body in sorted(render_policies().items()):
             rel = path.relative_to(REPO_ROOT)
             self.assertTrue(path.is_file(), f"{rel} is missing")
             self.assertEqual(
-                path.read_text(encoding="utf-8"), body,
-                f"{rel} is stale — run `./run.py policy` and commit the result")
+                path.read_text(encoding="utf-8"),
+                body,
+                f"{rel} is stale — run `ipl policy` and commit the result",
+            )
 
     def test_generated_policies_validate(self) -> None:
         """Auto-regeneration means the generator's output is what runs, so it
         goes through the same checks the hand-written files went through."""
-        rendered = self.run_mod.render_policies()
-        self.assertEqual(self.run_mod.check_rendered_policies(rendered), [])
+        rendered = render_policies()
+        self.assertEqual(check_rendered_policies(rendered), [])
 
     def test_generated_allowlists_round_trip(self) -> None:
         """Every engine's rendered file reads back as exactly the config.toml
         list — so `squid_wild` and `_squid_regex_to_glob` stay inverses."""
-        config = self.run_mod.load_policy_config()
-        rendered = self.run_mod.render_policies(config)
-        for engine in self.run_mod.ENGINES:
-            spec = self.run_mod.ServiceSpec.load(engine)
-            entries = self.run_mod.policy_allowlist_text(
-                engine, rendered[REPO_ROOT / spec.config_file])
+        config = load_policy_config()
+        rendered = render_policies(config)
+        for engine in ENGINES:
+            spec = ServiceSpec.load(engine)
+            entries = policy_allowlist_text(
+                engine, rendered[REPO_ROOT / spec.config_file]
+            )
             self.assertEqual(entries, set(config.allow), spec.config_file)
 
     def test_squid_wildcard_filter_is_the_inverse_of_the_reader(self) -> None:
         for entry in ("*.github.com", "*.rebind.fixture.test", "*.io"):
-            pattern = self.run_mod._squid_wild(entry)
-            self.assertEqual(self.run_mod._squid_regex_to_glob(pattern), entry)
+            pattern = _squid_wild(entry)
+            self.assertEqual(_squid_regex_to_glob(pattern), entry)
         # The apex must not match: `\.d$` is a suffix, not a prefix.
-        self.assertEqual(self.run_mod._squid_wild("*.github.com"), r"\.github\.com$")
+        self.assertEqual(_squid_wild("*.github.com"), r"\.github\.com$")
 
     def test_yaml_scalar_quotes_wildcards(self) -> None:
         # A bare leading `*` is a YAML alias, not a string.
-        self.assertEqual(self.run_mod._yaml_scalar("*.github.com"), '"*.github.com"')
-        self.assertEqual(self.run_mod._yaml_scalar("github.com"), "github.com")
+        self.assertEqual(_yaml_scalar("*.github.com"), '"*.github.com"')
+        self.assertEqual(_yaml_scalar("github.com"), "github.com")
 
     def test_config_toml_rejects_bad_entries(self) -> None:
         """Every rejection here is a policy that would otherwise be wrong in a
         way no engine would complain about."""
-        Fail = self.run_mod.Fail
         cases = {
             # Address-form entries are what `http_access deny ip_literal`
             # exists to refuse; this policy allowlists by name only.
@@ -808,7 +969,7 @@ class RunPyUnitTest(unittest.TestCase):
             # and read back as drift by every other engine.
             r"\.github\.com$": "allowlist form",
             "*github.com": "allowlist form",
-            "localhost": "allowlist form",     # single label; `dns_defnames off`
+            "localhost": "allowlist form",  # single label; `dns_defnames off`
             "github.com:443": "allowlist form",
             "https://github.com": "allowlist form",
             "*.github.com/path": "allowlist form",
@@ -816,46 +977,48 @@ class RunPyUnitTest(unittest.TestCase):
         for entry, expected in cases.items():
             path = self.policy_config([entry])
             with self.assertRaises(Fail, msg=f"{entry} was accepted") as ctx:
-                self.run_mod.load_policy_config(path)
+                load_policy_config(path)
             self.assertIn(expected, str(ctx.exception), entry)
 
     def test_config_toml_rejects_an_empty_allowlist(self) -> None:
         path = self.policy_config([])
-        with self.assertRaises(self.run_mod.Fail) as ctx:
-            self.run_mod.load_policy_config(path)
+        with self.assertRaises(Fail) as ctx:
+            load_policy_config(path)
         self.assertIn("must not be empty", str(ctx.exception))
 
     def test_config_toml_rejects_duplicates_and_typos(self) -> None:
-        Fail = self.run_mod.Fail
         dupe = self.policy_config(["github.com", "github.com"])
         with self.assertRaises(Fail) as ctx:
-            self.run_mod.load_policy_config(dupe)
+            load_policy_config(dupe)
         self.assertIn("twice", str(ctx.exception))
 
         # `allows = [...]` would otherwise render an empty allowlist.
         typo = self.policy_config(["github.com"])
         typo.write_text(typo.read_text().replace("[policy]\nallow", "[policy]\nallows"))
         with self.assertRaises(Fail) as ctx:
-            self.run_mod.load_policy_config(typo)
+            load_policy_config(typo)
         self.assertIn("unknown key", str(ctx.exception))
 
     def test_generation_survives_a_new_domain(self) -> None:
         """An added domain must reach all three engines in the right form."""
-        config = self.run_mod.PolicyConfig(allow=("github.com", "*.example.test"))
-        rendered = self.run_mod.render_policies(config)
-        self.assertEqual(self.run_mod.check_rendered_policies(rendered), [])
+        config = PolicyConfig(allow=("github.com", "*.example.test"))
+        rendered = render_policies(config)
+        self.assertEqual(check_rendered_policies(rendered), [])
         squid = rendered[REPO_ROOT / "config" / "squid.conf"]
         self.assertIn(r"acl allowlist_wild dstdom_regex -i \.example\.test$", squid)
         self.assertIn("acl allowlist_exact dstdomain github.com", squid)
-        self.assertIn('  - "*.example.test"',
-                      rendered[REPO_ROOT / "config" / "pipelock.yaml"])
-        self.assertIn('    - "*.example.test"',
-                      rendered[REPO_ROOT / "config" / "smokescreen.yaml"])
+        self.assertIn(
+            '  - "*.example.test"', rendered[REPO_ROOT / "config" / "pipelock.yaml"]
+        )
+        self.assertIn(
+            '    - "*.example.test"',
+            rendered[REPO_ROOT / "config" / "smokescreen.yaml"],
+        )
 
     def test_sync_refuses_to_write_a_policy_that_fails_validation(self) -> None:
         """Auto-regeneration must never replace a working config with a
         broken one: a bad render has to fail before it touches the disk."""
-        original = self.run_mod.render_policies
+        original = policy_render.render_policies
         squid_conf = REPO_ROOT / "config" / "squid.conf"
         before = squid_conf.read_text(encoding="utf-8")
 
@@ -863,35 +1026,51 @@ class RunPyUnitTest(unittest.TestCase):
             rendered = original(config)
             # Drop the SSRF floor: `validate_policy_text` must catch it.
             rendered[squid_conf] = rendered[squid_conf].replace(
-                "http_access deny private_ip\n", "")
+                "http_access deny private_ip\n", ""
+            )
             return rendered
 
-        self.run_mod.render_policies = broken
-        self.addCleanup(setattr, self.run_mod, "render_policies", original)
-        with quiet() as printed:
-            with self.assertRaises(self.run_mod.Fail):
-                self.run_mod.sync_policies()
-        self.assertEqual(squid_conf.read_text(encoding="utf-8"), before,
-                         "a failed render must leave the shipped config untouched")
+        # Patched on the module rather than passed in, because what is
+        # under test is `sync_policies` calling its own renderer — the path
+        # `up` takes, where nothing gets to substitute a good render.
+        policy_render.render_policies = broken
+        self.addCleanup(setattr, policy_render, "render_policies", original)
+        with quiet() as printed, self.assertRaises(Fail):
+            policy_render.sync_policies()
+        self.assertEqual(
+            squid_conf.read_text(encoding="utf-8"),
+            before,
+            "a failed render must leave the shipped config untouched",
+        )
         # Failing closed silently would be worse than not failing: the
         # problem has to reach stderr, where an operator will see it.
         self.assertIn("CONFIG ERROR", printed.err)
         self.assertIn("http_access deny private_ip", printed.err)
 
     def test_container_ip_parses_docker_and_apple_shapes(self) -> None:
-        Backend = self.run_mod.Backend
 
         def fake(payload, returncode=0):
             backend = Backend("docker")
             backend._run = lambda *a, **k: CompletedProcess(  # type: ignore[method-assign]
-                a, returncode, stdout=payload, stderr="")
+                a, returncode, stdout=payload, stderr=""
+            )
             return backend
 
         docker_flat = json.dumps([{"NetworkSettings": {"IPAddress": "172.17.0.4"}}])
-        docker_named = json.dumps([{"NetworkSettings": {
-            "IPAddress": "", "Networks": {"bridge": {"IPAddress": "172.18.0.7"}}}}])
+        docker_named = json.dumps(
+            [
+                {
+                    "NetworkSettings": {
+                        "IPAddress": "",
+                        "Networks": {"bridge": {"IPAddress": "172.18.0.7"}},
+                    }
+                }
+            ]
+        )
         # Apple `container` reports a CIDR, which has to be trimmed.
-        apple = json.dumps([{"status": {"networks": [{"ipv4Address": "192.168.64.38/24"}]}}])
+        apple = json.dumps(
+            [{"status": {"networks": [{"ipv4Address": "192.168.64.38/24"}]}}]
+        )
         self.assertEqual(fake(docker_flat).container_ip("x"), "172.17.0.4")
         self.assertEqual(fake(docker_named).container_ip("x"), "172.18.0.7")
         self.assertEqual(fake(apple).container_ip("x"), "192.168.64.38")
@@ -899,25 +1078,58 @@ class RunPyUnitTest(unittest.TestCase):
 
     def test_published_ports_parses_docker_and_apple_shapes(self) -> None:
         """The loopback binding is one `--publish` argument, and reading it
-        back is how scripts/verify_loopback.py asserts it instead of
+        back is how ipl-verify loopback asserts it instead of
         trusting it (docs/lab.md, "Backend parity")."""
-        Backend = self.run_mod.Backend
 
         def fake(payload, returncode=0):
             backend = Backend("docker")
             backend._run = lambda *a, **k: CompletedProcess(  # type: ignore[method-assign]
-                a, returncode, stdout=payload, stderr="")
+                a, returncode, stdout=payload, stderr=""
+            )
             return backend
 
-        docker = json.dumps([{"HostConfig": {"PortBindings": {
-            "8888/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]}}}])
-        apple = json.dumps([{"configuration": {"publishedPorts": [
-            {"containerPort": 8888, "hostAddress": "127.0.0.1",
-             "hostPort": 18080, "proto": "tcp"}]}}])
+        docker = json.dumps(
+            [
+                {
+                    "HostConfig": {
+                        "PortBindings": {
+                            "8888/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]
+                        }
+                    }
+                }
+            ]
+        )
+        apple = json.dumps(
+            [
+                {
+                    "configuration": {
+                        "publishedPorts": [
+                            {
+                                "containerPort": 8888,
+                                "hostAddress": "127.0.0.1",
+                                "hostPort": 18080,
+                                "proto": "tcp",
+                            }
+                        ]
+                    }
+                }
+            ]
+        )
         # The shape this exists to catch: bound to every interface.
-        wide = json.dumps([{"HostConfig": {"PortBindings": {
-            "8888/tcp": [{"HostIp": "", "HostPort": "18080"}]}}}])
-        self.assertEqual(fake(docker).published_ports("x"), [("127.0.0.1", 18080, 8888)])
+        wide = json.dumps(
+            [
+                {
+                    "HostConfig": {
+                        "PortBindings": {
+                            "8888/tcp": [{"HostIp": "", "HostPort": "18080"}]
+                        }
+                    }
+                }
+            ]
+        )
+        self.assertEqual(
+            fake(docker).published_ports("x"), [("127.0.0.1", 18080, 8888)]
+        )
         self.assertEqual(fake(apple).published_ports("x"), [("127.0.0.1", 18080, 8888)])
         self.assertEqual(fake(wide).published_ports("x"), [("", 18080, 8888)])
         self.assertEqual(fake("", returncode=1).published_ports("x"), [])
@@ -927,35 +1139,35 @@ class RunPyUnitTest(unittest.TestCase):
         """`[build]` is passed through as `KEY.upper()`, not mapped by hand.
 
         The mapping used to be three named fields and three literal
-        uppercase strings, so a new base pin meant editing run.py as well
+        uppercase strings, so a new base pin meant editing the CLI as well
         as the TOML and the Dockerfile. These are the ARGs the Dockerfiles
         actually declare.
         """
-        load = self.run_mod.ServiceSpec.load
-        self.assertEqual(load("smokescreen").build_args,
-                         {"GO_IMAGE": "golang:1.24.6-alpine3.22",
-                          "RUNTIME_IMAGE": "alpine:3.22.1"})
+        load = ServiceSpec.load
+        self.assertEqual(
+            load("smokescreen").build_args,
+            {"GO_IMAGE": "golang:1.24.6-alpine3.22", "RUNTIME_IMAGE": "alpine:3.22.1"},
+        )
         squid = load("squid").build_args
         self.assertEqual(squid["BASE_IMAGE"], "alpine:3.22.1")
         # [source.packages] arrives as `<NAME>_VERSION` in the same table.
-        self.assertEqual(squid["SQUID_VERSION"],
-                         load("squid").packages["squid"])
+        self.assertEqual(squid["SQUID_VERSION"], load("squid").packages["squid"])
 
     def test_pin_kind_per_service(self) -> None:
-        kinds = {engine: self.run_mod.ServiceSpec.load(engine).pin_kind
-                 for engine in self.run_mod.ENGINES}
-        self.assertEqual(kinds, {"pipelock": "digest", "smokescreen": "source",
-                                 "squid": "package"})
+        kinds = {engine: ServiceSpec.load(engine).pin_kind for engine in ENGINES}
+        self.assertEqual(
+            kinds, {"pipelock": "digest", "smokescreen": "source", "squid": "package"}
+        )
 
     # -- [fixture] in config.toml -------------------------------------------
 
     def test_container_state_parses_docker_and_apple_shapes(self) -> None:
-        Backend = self.run_mod.Backend
 
         def fake(payload, returncode=0):
             backend = Backend("docker")
             backend._run = lambda *a, **k: CompletedProcess(  # type: ignore[method-assign]
-                a, returncode, stdout=payload, stderr="")
+                a, returncode, stdout=payload, stderr=""
+            )
             return backend
 
         docker_shape = json.dumps([{"State": {"Status": "running"}}])
@@ -967,32 +1179,37 @@ class RunPyUnitTest(unittest.TestCase):
         self.assertEqual(fake("", returncode=1).container_state("x"), "absent")
 
     def test_service_specs_load_and_refuse_unsafe_flags(self) -> None:
-        for engine in self.run_mod.ENGINES:
-            spec = self.run_mod.ServiceSpec.load(engine)
+        for engine in ENGINES:
+            spec = ServiceSpec.load(engine)
             self.assertNotIn("--unsafe-allow-private-ranges", spec.args)
             self.assertNotEqual(spec.image_tag, "latest")
 
     def test_every_engine_has_a_shipped_config(self) -> None:
-        for engine in self.run_mod.ENGINES:
-            spec = self.run_mod.ServiceSpec.load(engine)
+        for engine in ENGINES:
+            spec = ServiceSpec.load(engine)
             self.assertTrue(spec.config_path().is_file())
             # The `.test` variant belongs to the other lane and must not be
             # reachable from a service definition any more.
             self.assertFalse(hasattr(spec, "test_config_file"))
 
     def test_squid_image_ref_is_the_pinned_package_version(self) -> None:
-        spec = self.run_mod.ServiceSpec.load("squid")
+        spec = ServiceSpec.load("squid")
         self.assertEqual(spec.packages.get("squid"), spec.primary_package_version)
-        self.assertEqual(spec.run_image_ref(),
-                         f"{spec.image_repository}:{spec.primary_package_version}")
-        self.assertTrue(spec.primary_package_version,
-                        "services/squid.toml must pin a version")
+        self.assertEqual(
+            spec.run_image_ref(),
+            f"{spec.image_repository}:{spec.primary_package_version}",
+        )
+        self.assertTrue(
+            spec.primary_package_version, "data/services/squid.toml must pin a version"
+        )
 
     def test_every_pinned_package_has_a_version(self) -> None:
-        for engine in self.run_mod.ENGINES:
-            spec = self.run_mod.ServiceSpec.load(engine)
+        for engine in ENGINES:
+            spec = ServiceSpec.load(engine)
             for name, version in spec.packages.items():
-                self.assertTrue(version, f"services/{engine}.toml: {name} is unpinned")
+                self.assertTrue(
+                    version, f"data/services/{engine}.toml: {name} is unpinned"
+                )
 
 
 if __name__ == "__main__":

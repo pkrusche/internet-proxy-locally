@@ -34,7 +34,7 @@ class Captured:
 def quiet():
     """Capture stdout and stderr from an entry point called in-process.
 
-    checks/egress.py, scripts/harness.py and `run.fail_on` are CLIs:
+    `checks.egress`, `verify.harness` and `run.fail_on` are CLIs:
     printing a result table, or every configuration problem before failing
     closed, is their contract rather than a side effect to suppress in the
     code under test. But a test that calls one writes that output into the
