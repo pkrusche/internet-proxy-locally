@@ -41,11 +41,11 @@ import socket
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The repository root, so `scripts.harness` and `run` resolve by name.
+# See the comment in scripts/harness.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from harness import Reporter, engine_up, load_run_module, run_cli, run_py_down  # noqa: E402
-
-run_mod = load_run_module()
+from scripts.harness import Reporter, engine_up, run_cli, run_py_down, run  # noqa: E402
 
 # The checks that can only produce a verdict when the fixture container is
 # answering the engine's DNS queries. If `--dns` were ignored, the engine
@@ -64,9 +64,9 @@ def reachable(host: str, port: int, timeout: float = 2.0) -> bool:
 
 
 def verify(backend_name: str, engine: str, port: int, report: Reporter) -> None:
-    backend = run_mod.Backend(backend_name)
-    spec = run_mod.ServiceSpec.load(engine)
-    fixture = run_mod.ServiceSpec.load(run_mod.DNS_FIXTURE)
+    backend = run.Backend(backend_name)
+    spec = run.ServiceSpec.load(engine)
+    fixture = run.ServiceSpec.load(run.DNS_FIXTURE)
     env = dict(os.environ, IPL_ENDPOINT=f"127.0.0.1:{port}")
 
     proc = engine_up(backend_name, engine, port, test_policy=True, env=env)
@@ -162,17 +162,17 @@ def verify(backend_name: str, engine: str, port: int, report: Reporter) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--backend", choices=run_mod.BACKENDS, required=True)
-    parser.add_argument("--engine", choices=run_mod.ENGINES,
-                        default=run_mod.DEFAULT_ENGINE,
+    parser.add_argument("--backend", choices=run.BACKENDS, required=True)
+    parser.add_argument("--engine", choices=run.ENGINES,
+                        default=run.DEFAULT_ENGINE,
                         help="engine to verify the backend with "
-                             f"(default: {run_mod.DEFAULT_ENGINE})")
+                             f"(default: {run.DEFAULT_ENGINE})")
     parser.add_argument("--port", type=int, default=18080,
                         help="host port to publish (default: 18080; pick another to "
                              "leave a running proxy alone)")
     opts = parser.parse_args(argv)
 
-    if not run_mod.Backend(opts.backend).available():
+    if not run.Backend(opts.backend).available():
         print(f"error: backend `{opts.backend}` is not installed", file=sys.stderr)
         return 1
 
@@ -180,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
                       f"({opts.engine})")
     try:
         verify(opts.backend, opts.engine, opts.port, report)
-    except (run_mod.Fail, RuntimeError) as exc:
+    except (run.Fail, RuntimeError) as exc:
         report.check(False, "the lifecycle ran to completion", str(exc))
     report.note("Record the outcome in docs/lab.md's parity checklist.")
     return report.finish()

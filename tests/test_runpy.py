@@ -8,7 +8,6 @@ endpoint, so the post-start health check and `check` run for real.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import re
@@ -22,6 +21,11 @@ from pathlib import Path
 from subprocess import CompletedProcess
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Run from the repository root (`python -m unittest discover -s tests -t .`),
+# so everything imports by name. See the comment in scripts/harness.py.
+import run  # noqa: E402
+from tests import quiet  # noqa: E402
 
 FAKE_BACKEND = r"""#!/usr/bin/env bash
 set -u
@@ -93,15 +97,6 @@ def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
-
-
-def load_module(name: str, path: Path):
-    import sys
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module  # dataclasses resolve annotations via sys.modules
-    spec.loader.exec_module(module)
-    return module
 
 
 class RunPyCliTest(unittest.TestCase):
@@ -426,12 +421,36 @@ class RunPyCliTest(unittest.TestCase):
         self.assertIn("no engine is running", proc.stderr)
 
 
+    def test_setup_is_fail_closed_for_every_pin_kind(self) -> None:
+        """`setup` never resolves a pin itself, whatever the pin is.
+
+        It used to, for Pipelock alone: with no digest recorded it pulled
+        the mutable tag, read a digest back out and wrote it into the
+        TOML. So a fresh checkout ran whatever `3.3.0` pointed at that
+        day, recorded after the fact rather than reviewed before it, while
+        the other two refused and pointed at `pin`. Now all three refuse,
+        and each says how to pin the thing it is pinned by.
+        """
+        # setUp() blanks all three; the key is what each is pinned *by*.
+        for engine, key in (("pipelock", "digest"), ("smokescreen", "ref"),
+                            ("squid", "squid")):
+            with self.subTest(engine=engine):
+                proc = self.run_cli("--engine", engine, "setup")
+                self.assertNotEqual(proc.returncode, 0, proc.stdout)
+                combined = proc.stdout + proc.stderr
+                self.assertIn("not pinned", combined)
+                self.assertIn(f"./run.py pin {engine}", combined)
+                # And nothing was written back into the pin file.
+                text = (self.tmp / "services" / f"{engine}.toml").read_text()
+                self.assertIn(f'{key} = ""', text,
+                              f"setup recorded a {engine} pin instead of refusing")
+
 class RunPyUnitTest(unittest.TestCase):
     """In-process unit tests for policy validation and backend parsing."""
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.run_mod = load_module("run_unit", REPO_ROOT / "run.py")
+        cls.run_mod = run
 
     def write(self, text: str) -> Path:
         tmp = Path(tempfile.mkdtemp(prefix="ipl-policy-test-"))
@@ -470,7 +489,8 @@ class RunPyUnitTest(unittest.TestCase):
 
         Such a probe is accepted and then closed with no reply. Treating
         that as a verdict failed `up` on a healthy proxy; it must be
-        retried instead (docs/findings.md, "Corrections to earlier runs").
+        retried instead (see `probe_proxy`'s own docstring for why an
+        answering-but-permissive proxy is never retryable).
         """
         port = self._serve_once(lambda conn: conn.close())
         healthy, _, retryable = self.run_mod.probe_proxy("127.0.0.1", port, timeout=2.0)
@@ -848,10 +868,15 @@ class RunPyUnitTest(unittest.TestCase):
 
         self.run_mod.render_policies = broken
         self.addCleanup(setattr, self.run_mod, "render_policies", original)
-        with self.assertRaises(self.run_mod.Fail):
-            self.run_mod.sync_policies()
+        with quiet() as printed:
+            with self.assertRaises(self.run_mod.Fail):
+                self.run_mod.sync_policies()
         self.assertEqual(squid_conf.read_text(encoding="utf-8"), before,
                          "a failed render must leave the shipped config untouched")
+        # Failing closed silently would be worse than not failing: the
+        # problem has to reach stderr, where an operator will see it.
+        self.assertIn("CONFIG ERROR", printed.err)
+        self.assertIn("http_access deny private_ip", printed.err)
 
     def test_container_ip_parses_docker_and_apple_shapes(self) -> None:
         Backend = self.run_mod.Backend
@@ -897,6 +922,24 @@ class RunPyUnitTest(unittest.TestCase):
         self.assertEqual(fake(wide).published_ports("x"), [("", 18080, 8888)])
         self.assertEqual(fake("", returncode=1).published_ports("x"), [])
         self.assertEqual(fake(json.dumps([{}])).published_ports("x"), [])
+
+    def test_build_args_come_from_the_build_table(self) -> None:
+        """`[build]` is passed through as `KEY.upper()`, not mapped by hand.
+
+        The mapping used to be three named fields and three literal
+        uppercase strings, so a new base pin meant editing run.py as well
+        as the TOML and the Dockerfile. These are the ARGs the Dockerfiles
+        actually declare.
+        """
+        load = self.run_mod.ServiceSpec.load
+        self.assertEqual(load("smokescreen").build_args,
+                         {"GO_IMAGE": "golang:1.24.6-alpine3.22",
+                          "RUNTIME_IMAGE": "alpine:3.22.1"})
+        squid = load("squid").build_args
+        self.assertEqual(squid["BASE_IMAGE"], "alpine:3.22.1")
+        # [source.packages] arrives as `<NAME>_VERSION` in the same table.
+        self.assertEqual(squid["SQUID_VERSION"],
+                         load("squid").packages["squid"])
 
     def test_pin_kind_per_service(self) -> None:
         kinds = {engine: self.run_mod.ServiceSpec.load(engine).pin_kind

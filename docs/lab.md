@@ -152,6 +152,25 @@ error and no visible change in `run.py`'s output. If a release fails it,
 **do not substitute a broader binding** — a backend that cannot express a
 loopback-only publication is one this repository cannot use.
 
+## Running the unit suite
+
+```bash
+uv run python -m unittest discover -s tests -t .      # all 215
+uv run python -m unittest tests.test_runpy            # one module
+uv run python -m unittest discover -s tests -t . -k rebind   # by name
+```
+
+Both `-s tests` (where to look) and `-t .` (the import root) are needed:
+the tests import `run`, `checks.egress` and `scripts.report` by name, which
+only resolves with the repository root on `sys.path`. Discovery also
+requires `tests/__init__.py` — without it unittest refuses with "Start
+directory is not importable", and the modules get imported twice under two
+names, which silently runs every inherited CLI test a second time.
+
+The end-to-end scripts above are **not** part of this suite: they need a
+real container runtime, and the unit suite runs against a fake backend and
+a mock proxy with no network egress at all.
+
 ## Backend parity
 
 Both backends are verified end to end for `setup`, image pull/build, `up`,

@@ -474,40 +474,6 @@ initially misread here as a failure to serve at all.
 
 Still uncollected: resource usage in steady state, and upgrade friction.
 
-## Corrections to earlier runs
-
-Things measured wrong and later fixed. Kept because each was believed for a
-while, and the reasons are reusable.
-
-* **`allowed-http`'s 200-vs-301 split was not CDN variation.** It was
-  attributed to the upstream tier on captured headers. Both observations were
-  correct and the conclusion drawn from them was wrong — Pipelock reaches the
-  origin *because it follows the edge's redirect* (§6). The lesson is that
-  "which tier answered" and "why that tier answered" are different questions,
-  and response headers only answer the first.
-* **The IPv6 fixture had never run.** `dns-private-ipv6`'s loopback target was
-  `--1.sslip.io`, which resolves to `::1` but is a reserved IDNA form — a
-  label may not start with two hyphens. Both engines rejected the *name*,
-  never the address, and the row still scored `pass` because a denial was all
-  it asked for. One third of the IPv6 SSRF evidence had been vacuous since the
-  fixture was written. Now `0--1.sslip.io`. The classifier surfaced it:
-  `unknown` on a passing row was the thing worth pulling on.
-* **`/etc/hosts` cannot express a mixed answer**, and neither does
-  `--host-record=name,v4,v4`. An earlier revision reported a Squid result from
-  a bind-mounted hosts file; it did not show what it was said to show, because
-  duplicate names there collapse to one address ([lab.md](lab.md)).
-* **`rbndr.us` was never gradable.** It answered each query with one of its two
-  addresses at random, so the checker's lookup and the engine's were
-  independent draws and neither outcome attributed to anything. It then stopped
-  resolving entirely, making the row six identical `dns-failure`s. Replaced by
-  the local fixture (§3).
-* **Docker publishes the host port before the engine listens.** The post-start
-  probe could connect seconds early and `up` failed with `non-HTTP response:
-  ''` on a healthy proxy. Apple `container` does not accept early, which is why
-  the first run never hit it. `probe_proxy()` now separates a not-ready-yet
-  probe from a real verdict; a proxy that *answers* and allows the probe still
-  fails immediately.
-
 ## Decision
 
 **Pipelock is the default** (`DEFAULT_ENGINE` in `run.py`). It passes every

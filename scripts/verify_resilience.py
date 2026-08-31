@@ -43,11 +43,11 @@ import threading
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The repository root, so `scripts.harness` and `run` resolve by name.
+# See the comment in scripts/harness.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from harness import Reporter, engine_up, load_run_module, run_cli, run_py_down  # noqa: E402
-
-run_mod = load_run_module()
+from scripts.harness import Reporter, engine_up, run_cli, run_py_down, run  # noqa: E402
 
 # A host that must never be reachable, whichever policy is mounted. The
 # load generator asks for it continuously; a single success is a finding.
@@ -151,18 +151,18 @@ def measure_startup(backend_name: str, engine: str, port: int,
     start = time.monotonic()
     engine_up(backend_name, engine, port, test_policy=False, env=env)
     elapsed = time.monotonic() - start
-    _, detail, _ = run_mod.probe_proxy("127.0.0.1", port)
+    _, detail, _ = run.probe_proxy("127.0.0.1", port)
     return elapsed, detail
 
 
-def image_size(backend: "run_mod.Backend", ref: str) -> str:
+def image_size(backend: "run.Backend", ref: str) -> str:
     size = backend.image_size(ref)
     return f"{size / 1e6:.0f} MB" if size else "unknown"
 
 
 def verify(engine: str, port: int, report: Reporter, backend_name: str) -> None:
-    backend = run_mod.Backend(backend_name)
-    spec = run_mod.ServiceSpec.load(engine)
+    backend = run.Backend(backend_name)
+    spec = run.ServiceSpec.load(engine)
     env = dict(os.environ, IPL_ENDPOINT=f"127.0.0.1:{port}")
 
     try:
@@ -234,22 +234,22 @@ def verify(engine: str, port: int, report: Reporter, backend_name: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--engine", choices=run_mod.ENGINES, default=None)
+    parser.add_argument("--engine", choices=run.ENGINES, default=None)
     parser.add_argument("--all", action="store_true",
                         help="run against every engine in turn")
-    parser.add_argument("--backend", choices=run_mod.BACKENDS, default=None)
+    parser.add_argument("--backend", choices=run.BACKENDS, default=None)
     parser.add_argument("--port", type=int, default=18080,
                         help="host port to publish (default: 18080; pick another to "
                              "leave a running proxy alone)")
     opts = parser.parse_args(argv)
 
-    backend_name = opts.backend or run_mod.detect_backend(None).name
-    engines = run_mod.ENGINES if opts.all else (opts.engine or run_mod.DEFAULT_ENGINE,)
+    backend_name = opts.backend or run.detect_backend(None).name
+    engines = run.ENGINES if opts.all else (opts.engine or run.DEFAULT_ENGINE,)
     report = Reporter("fail-closed on crash, and restart under load")
     for engine in engines:
         try:
             verify(engine, opts.port, report, backend_name)
-        except (run_mod.Fail, RuntimeError) as exc:
+        except (run.Fail, RuntimeError) as exc:
             report.check(False, f"{engine}: the run completed", str(exc))
     report.note("Record the outcome in docs/security.md's fail-closed properties.")
     return report.finish()

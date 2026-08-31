@@ -73,28 +73,19 @@ The contract other tools may rely on: an HTTP proxy on
 answering a denied request with a 4xx and a stated reason. Which engine is
 behind it is not part of the contract.
 
-## Findings, in ten lines
+## Which engine, and why
 
-All three engines pass all 15 checks graded identically everywhere. The
-interesting part is the four that are not:
+**Pipelock is the default: it is the only engine that enforces inside the
+CONNECT tunnel.** Squid is the alternative when the policy itself has to be
+auditable — its SSRF floors are ordinary `dst` ACLs in a file you can read,
+which `./run.py setup` then checks rather than trusts.
 
-* **`connect-sni-mismatch` / `connect-raw-tunnel`** — Pipelock refuses
-  both; Smokescreen and Squid authorize the CONNECT target and then relay
-  whatever the tunnel carries, including a ClientHello for a different host.
-* **`dns-mixed-answers`** — given a hostname resolving to both a public and
-  a private address, Pipelock and Squid refuse the name; **Smokescreen
-  connects to the public one**, which docs/policy.md says it should not.
-* **`allowed-http`** — Pipelock answers 200 where the others answer 301,
-  because it follows the destination's redirect. Every hop is re-authorized
-  against the allowlist (measured, with a control).
-
-**Pipelock is the default because it is the only engine that enforces
-inside CONNECT tunnels.** Squid is the alternative when the policy itself
-has to be auditable — its SSRF floors are ordinary `dst` ACLs in a file you
-can read, which `./run.py setup` then checks rather than trusts.
-
-The full writeup, with every row measured rather than asserted, is
-[docs/findings.md](docs/findings.md).
+Every engine, every check and every number behind that is in
+[docs/findings.md](docs/findings.md), where the tables are generated from
+the result files by `./lab.py report` rather than written by hand. This
+section deliberately does not restate them: a summary kept in step by
+memory is how a README ends up describing a measurement nobody has taken
+in a year.
 
 ## Documentation
 

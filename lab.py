@@ -36,8 +36,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(REPO_ROOT))
 
+# `./lab.py` runs from the repository root, so run.py is importable by
+# name — no path shim. One name means one module, which is what keeps
+# `Fail` a single class across both lanes.
 import run  # noqa: E402  (the prod lane; imported for reuse, never modified)
 from run import Backend, Fail, ServiceSpec  # noqa: E402
 
@@ -99,6 +101,16 @@ class FixtureConfig:
 
     def addresses(self, name: str) -> tuple[str, ...]:
         return dict(self.records).get(name, ())
+
+    @property
+    def public_answer(self) -> str:
+        """The public address the fixture answers with first.
+
+        The control record is public and nothing else, by the rule
+        `_fixture_config()` enforces — so it *is* the public half, and the
+        rebinding responder can be handed it rather than restating it.
+        """
+        return self.addresses(self.control)[0]
 
 
 # The reserved TLD the fixture's names live under (RFC 6761). Anything in
@@ -335,25 +347,10 @@ def render_test_policies(config: LabConfig | None = None) -> dict[Path, str]:
     but the allowlist itself.
     """
     config = load_lab_config() if config is None else config
-    env = run.jinja_env()
-    exact, wild = run.PolicyConfig.exact, run.PolicyConfig.wild
-    rendered: dict[Path, str] = {}
-    for engine in run.ENGINES:
-        spec = ServiceSpec.load(engine)
-        name = run._template_name(spec)
-        if not (run.TEMPLATE_DIR / name).is_file():
-            raise Fail(f"missing template: {run.TEMPLATE_DIR / name}")
-        rendered[test_config_path(spec)] = env.get_template(name).render(
-            template_name=f"templates/{name}",
-            test_policy=True,
-            allow=list(config.allow),
-            allow_test=list(config.allow_test),
-            allow_exact=exact(config.allow),
-            allow_wild=wild(config.allow),
-            allow_test_exact=exact(config.allow_test),
-            allow_test_wild=wild(config.allow_test),
-        )
-    rendered.update(_render_fixture_hosts(env, config.fixture))
+    rendered = run.render_engine_policies(
+        allow=config.allow, allow_test=config.allow_test,
+        test_policy=True, destination=test_config_path)
+    rendered.update(_render_fixture_hosts(run.jinja_env(), config.fixture))
     return rendered
 
 
@@ -366,9 +363,6 @@ def _render_fixture_hosts(env, fixture: FixtureConfig) -> dict[Path, str]:
     leave to care (docs/lab.md).
     """
     spec = fixture_spec()
-    name = run._template_name(spec)
-    if not (run.TEMPLATE_DIR / name).is_file():
-        raise Fail(f"missing template: {run.TEMPLATE_DIR / name}")
     rows = []
     for record, addresses in fixture.records:
         shape = ["private" if _private_address(a) else "public" for a in addresses]
@@ -378,8 +372,8 @@ def _render_fixture_hosts(env, fixture: FixtureConfig) -> dict[Path, str]:
             "role": "control" if record == fixture.control else "mixed",
             "shape": f"{shape[0].capitalize()} answer first, {shape[-1]} second",
         })
-    text = env.get_template(name).render(
-        template_name=f"templates/{name}",
+    text = run.render_template(
+        env, spec,
         test_policy=True,   # for the shared banner: this file is lab.py's
         fixture=fixture,
         fixture_records=rows,
@@ -411,18 +405,8 @@ def check_rendered_test_policies(rendered: dict[Path, str]) -> list[str]:
 
 def sync_test_policies(config: LabConfig | None = None) -> list[Path]:
     """Regenerate lab/config/; return what changed. Validates before writing."""
-    rendered = render_test_policies(config)
-    problems = check_rendered_test_policies(rendered)
-    if problems:
-        for problem in problems:
-            print(f"CONFIG ERROR: {problem}", file=sys.stderr)
-        raise Fail("refusing to write a test policy that fails validation (fail closed)")
-    changed: list[Path] = []
-    for path, text in sorted(rendered.items()):
-        if not path.is_file() or path.read_text(encoding="utf-8") != text:
-            path.write_text(text, encoding="utf-8")
-            changed.append(path)
-    return changed
+    return run.write_validated(render_test_policies(config),
+                               check_rendered_test_policies)
 
 
 # ---------------------------------------------------------------------------
@@ -430,8 +414,25 @@ def sync_test_policies(config: LabConfig | None = None) -> list[Path]:
 # ---------------------------------------------------------------------------
 
 
-def fixture_spec() -> ServiceSpec:
-    return ServiceSpec.load(DNS_FIXTURE, root=LAB_DIR)
+def fixture_spec(config: LabConfig | None = None) -> ServiceSpec:
+    """The DNS fixture service, with what it serves folded into `[build]`.
+
+    lab/fixtures.toml is the source of truth for the rebinding zone, the
+    PTR claim and the public address. The container needs them too, and
+    `ServiceSpec.build` is already passed through to the Dockerfile as
+    uppercase ARGs — so they arrive there by construction instead of being
+    restated as literals in lab/dnsfixture/rebind.py, where nothing outside
+    the image could check them.
+    """
+    spec = ServiceSpec.load(DNS_FIXTURE, root=LAB_DIR)
+    fixture = (config or load_lab_config()).fixture
+    spec.build.update({
+        "rebind_zone": fixture.rebind_zone,
+        "ptr_address": fixture.ptr_address,
+        "ptr_claims": fixture.ptr_claims,
+        "public_answer": fixture.public_answer,
+    })
+    return spec
 
 
 def start_dns_fixture(backend: Backend) -> str:
@@ -477,36 +478,30 @@ def start_dns_fixture(backend: Backend) -> str:
 # ---------------------------------------------------------------------------
 
 
+# What `./lab.py policy` regenerates from, and the line it prints when it
+# has nothing to do. Both lanes render from config.toml; this one adds
+# lab/fixtures.toml on top, and says so.
+_POLICY_SOURCE = "lab/fixtures.toml"
+_POLICY_LABEL = "lab configs: up to date with config.toml + lab/fixtures.toml"
+
+
 def cmd_policy(opts: argparse.Namespace) -> int:
-    rendered = render_test_policies()
-    problems = check_rendered_test_policies(rendered)
-    if problems:
-        for problem in problems:
-            print(f"CONFIG ERROR: {problem}", file=sys.stderr)
-        raise Fail("configuration validation failed")
+    """`./run.py policy` for the lab lane. Same body, different source.
 
-    if not opts.check:
-        for path in sync_test_policies():
-            print(f"regenerated {path.relative_to(REPO_ROOT)} from lab/fixtures.toml")
-        print("lab configs: up to date with config.toml + lab/fixtures.toml")
-        return 0
-
-    stale = [(path, body) for path, body in sorted(rendered.items())
-             if not path.is_file() or path.read_text(encoding="utf-8") != body]
-    for path, body in stale:
-        rel = path.relative_to(REPO_ROOT)
-        current = (path.read_text(encoding="utf-8").splitlines(keepends=True)
-                   if path.is_file() else [])
-        sys.stdout.writelines(difflib.unified_diff(
-            current, body.splitlines(keepends=True),
-            fromfile=f"{rel} (on disk)", tofile=f"{rel} (from lab/fixtures.toml)"))
-    if stale:
-        names = ", ".join(str(path.relative_to(REPO_ROOT)) for path, _ in stale)
-        print(f"\nSTALE: {names}", file=sys.stderr)
-        print("Run `./lab.py policy` to regenerate, then commit.", file=sys.stderr)
-        return 1
-    print("lab configs: up to date with config.toml + lab/fixtures.toml")
-    return 0
+    Delegated rather than copied: the two had already drifted — one
+    computed the stale set before regenerating and one after — and a
+    `policy --check` that disagrees between lanes is a CI check that
+    passes on the wrong thing.
+    """
+    return run.run_policy_command(
+        rendered=render_test_policies(),
+        check=check_rendered_test_policies,
+        sync=sync_test_policies,
+        source=_POLICY_SOURCE,
+        label=_POLICY_LABEL,
+        cli="./lab.py",
+        check_only=opts.check,
+    )
 
 
 def cmd_setup(opts: argparse.Namespace) -> int:
@@ -517,11 +512,11 @@ def cmd_setup(opts: argparse.Namespace) -> int:
     """
     backend = run.detect_backend(opts.backend)
     print(f"selected backend: {backend.name}")
-    for path in sync_test_policies():
-        print(f"regenerated {path.relative_to(REPO_ROOT)} from lab/fixtures.toml")
+    run.report_synced(sync_test_policies(), _POLICY_SOURCE)
     for engine in run.ENGINES:
         run.prepare_engine(backend, engine, rebuild=opts.rebuild)
-    run._setup_package_image(backend, fixture_spec(), rebuild=opts.rebuild)
+    run._SETUP_BY_PIN_KIND[fixture_spec().pin_kind](
+        backend, fixture_spec(), rebuild=opts.rebuild)
     print("lab setup complete")
     return 0
 
@@ -532,17 +527,13 @@ def cmd_up(opts: argparse.Namespace) -> int:
     backend = run.detect_backend(opts.backend)
     host, port = run.endpoint()
 
-    for path in sync_test_policies():
-        print(f"regenerated {path.relative_to(REPO_ROOT)} from lab/fixtures.toml")
+    run.report_synced(sync_test_policies(), _POLICY_SOURCE)
 
     config_path = test_config_path(spec)
     if not config_path.is_file():
         raise Fail(f"missing test policy: {config_path} — run `./lab.py policy`")
-    problems = run.validate_policy_file(engine, config_path)
-    if problems:
-        for problem in problems:
-            print(f"CONFIG ERROR: {problem}", file=sys.stderr)
-        raise Fail("refusing to start with an invalid policy (fail closed)")
+    run.fail_on(run.validate_policy_file(engine, config_path),
+                "refusing to start with an invalid policy (fail closed)")
 
     print("NOTE: starting with the TEST policy — an allowlist that includes "
           "*.nip.io, *.sslip.io and the local fixture zones, and a dnsmasq "
@@ -589,35 +580,21 @@ def cmd_check(opts: argparse.Namespace) -> int:
 
 
 def cmd_pin(opts: argparse.Namespace) -> int:
-    """Pin the DNS fixture's apk versions. Engine pins are `./run.py pin`."""
-    spec = fixture_spec()
-    backend = run.detect_backend(opts.backend)
-    names = sorted(spec.packages)
-    base = spec.base_image
-    if not base:
-        raise Fail(f"{spec.toml_path}: [build] base_image is required to pin")
-    print(f"asking {base} which versions of {', '.join(names)} it would install")
-    output = backend.run_once(base, [
-        "sh", "-c",
-        f"apk update >/dev/null 2>&1 && apk list {' '.join(names)} 2>/dev/null",
-    ])
-    for name in names:
-        versions = re.findall(rf"^{re.escape(name)}-(\d[\w.]*-r\d+)\s", output, re.M)
-        if not versions:
-            raise Fail(f"could not read a {name} version from {base}.\n"
-                       f"Check it by hand (`apk list {name}` in that image) and put "
-                       f"it in {spec.toml_path}")
-        resolved = sorted(set(versions))[-1]
-        run._write_pin(spec.toml_path, name, resolved)
-        print(f"pinned dnsfixture {name}={resolved} (from {base})")
+    """Pin the DNS fixture's apk versions. Engine pins are `./run.py pin`.
+
+    The fixture is a `package` service like Squid, so this is `./run.py
+    pin squid` with a different TOML — shared rather than copied, or the
+    two would answer "which version would this base image install?"
+    differently.
+    """
+    run.pin_packages(fixture_spec(), lambda: run.detect_backend(opts.backend))
     print("review the change and commit it; then run `./lab.py setup`")
     return 0
 
 
 def _report():
     """Import scripts/report.py lazily — only the report commands need it."""
-    sys.path.insert(0, str(REPO_ROOT / "scripts"))
-    import report
+    from scripts import report
     return report
 
 

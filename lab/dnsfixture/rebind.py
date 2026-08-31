@@ -35,19 +35,41 @@ import subprocess
 import sys
 import threading
 
-REBIND_ZONE = "rebind.fixture.test"
-PUBLIC_ANSWER = "9.9.9.9"          # matches lab/config/dns-fixture.hosts
+# Every fact about what this fixture serves comes from lab/fixtures.toml,
+# baked in as Dockerfile ARGs at build time (lab/dnsfixture/Dockerfile,
+# lab.py `fixture_spec()`). It used to be a third copy of those values,
+# with a "keep in sync" comment and nothing enforcing it — and this copy
+# is the one nothing could check, because it only exists inside the image.
+#
+# There is no fallback on purpose: a fixture serving something other than
+# what the checker probes for produces denials that look like enforcement
+# and are really NXDOMAIN, so an unbuilt ARG has to stop the container
+# rather than quietly change what is measured.
+
+
+def _required(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise SystemExit(
+            f"{name} is empty — the image was built without it. "
+            "Rebuild with `./lab.py setup --rebuild`."
+        )
+    return value
+
+
+REBIND_ZONE = _required("REBIND_ZONE")
+# The public half of every first answer, and of the mixed-answer records.
+PUBLIC_ANSWER = _required("PUBLIC_ANSWER")
 
 # Reverse-DNS claim for the `ptr-allowlist` check: this address asserts a
 # PTR of an allowlisted hostname. An engine that resolves a bare-IP
 # destination backwards and matches the answer against its hostname
 # allowlist will let it through — which is exactly what Squid used to do
-# (docs/findings.md). Keep in sync with PTR_FIXTURE_* in
-# checks/egress.py. The address is public, so the SSRF floors do not fire
+# (docs/findings.md). The address is public, so the SSRF floors do not fire
 # and the allowlist is genuinely the rule under test; it is deliberately
 # none of the addresses any other check connects to.
-PTR_ADDRESS = "1.0.0.1"
-PTR_CLAIMS = "pypi.org"
+PTR_ADDRESS = _required("PTR_ADDRESS")
+PTR_CLAIMS = _required("PTR_CLAIMS")
 TRAP_PORT = 443
 RESPONDER_PORT = 5353
 
@@ -79,11 +101,15 @@ def own_address() -> str:
     and the private half of every rebound answer.
 
     Uses a connected UDP socket purely to pick the outbound interface; no
-    packet is sent, so this works with no network at all.
+    packet is sent, so this works with no network at all. The address is
+    TEST-NET-1 (RFC 5737), which is never routed anywhere — it only has to
+    be off-link for the kernel to choose the default route. Deliberately
+    not the fixture's own public answer: nothing here is talking to it,
+    and a shared literal would read as though something were.
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        sock.connect(("9.9.9.9", 53))
+        sock.connect(("192.0.2.1", 53))
         return sock.getsockname()[0]
     finally:
         sock.close()

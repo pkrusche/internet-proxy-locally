@@ -8,27 +8,19 @@ the committed docs/findings.md is what the committed results render to.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-
-def load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-egress = load_module("egress_scripts", REPO_ROOT / "checks" / "egress.py")
-report = load_module("report_scripts", REPO_ROOT / "scripts" / "report.py")
-harness = load_module("harness_scripts", REPO_ROOT / "scripts" / "harness.py")
+# Run from the repository root, so everything imports by name. See the
+# comment in scripts/harness.py.
+from checks import egress  # noqa: E402
+from scripts import harness, report  # noqa: E402
+from scripts import verify_resilience, verify_sandbox  # noqa: E402
+from tests import quiet  # noqa: E402
 
 
 def row(name: str, outcome: str, expectation: str = "deny", cause=None,
@@ -53,15 +45,17 @@ class CheckCatalogTest(unittest.TestCase):
     prints that line and nothing else explains the row."""
 
     def test_every_check_has_a_purpose(self) -> None:
-        names = {name for name, _, _, _, _ in egress.TESTS}
-        self.assertEqual(names - set(egress.CHECK_PURPOSE), set(),
-                         "a check with no CHECK_PURPOSE entry renders an "
-                         "unexplained section in docs/findings.md")
-        self.assertEqual(set(egress.CHECK_PURPOSE) - names, set(),
-                         "CHECK_PURPOSE describes a check that no longer exists")
+        """A purpose is a field of the check now, so it cannot be orphaned
+        — only left empty, which is what this catches."""
+        for check in egress.TESTS:
+            self.assertTrue(check.purpose.strip(),
+                            f"{check.name} renders an unexplained section "
+                            "in docs/findings.md")
+        names = {check.name for check in egress.TESTS}
+        self.assertEqual(len(names), len(egress.TESTS), "duplicate check name")
 
     def test_expectation_overrides_name_real_checks(self) -> None:
-        names = {name for name, _, _, _, _ in egress.TESTS}
+        names = {check.name for check in egress.TESTS}
         for engine, overrides in egress.ENGINE_EXPECTATIONS.items():
             for name in overrides:
                 self.assertIn(name, names, f"{engine} overrides unknown check {name}")
@@ -125,8 +119,8 @@ class GradedPoolTest(unittest.TestCase):
         """Pass counts are only comparable over checks graded the same way
         everywhere; otherwise a lower count can mean either weaker behavior
         or a different expectation."""
-        name = egress.TESTS[0][0]
-        other = egress.TESTS[1][0]
+        name = egress.TESTS[0].name
+        other = egress.TESTS[1].name
         runs = {
             "pipelock": run("pipelock", [row(name, "pass", "allow"),
                                          row(other, "pass", "deny")]),
@@ -183,10 +177,11 @@ class PolicyDetectionTest(unittest.TestCase):
 
     def _results(self, fixture_outcome: str, detail: str) -> "list":
         made = []
-        for name, group, expectation, _, needs in egress.TESTS:
+        for check in egress.TESTS:
+            needs = check.needs_fixtures
             outcome = fixture_outcome if needs else "pass"
-            made.append(egress.Result(name, group, expectation, outcome,
-                                      detail if needs else "ok"))
+            made.append(egress.Result(check.name, check.group, check.expectation,
+                                      outcome, detail if needs else "ok"))
         return made
 
     def test_test_policy_is_recognized(self) -> None:
@@ -225,9 +220,10 @@ class GeneratedComparisonTest(unittest.TestCase):
         sections = report.render_sections(self.runs, self.results_dir)
         self.assertEqual(set(sections), set(report.SECTIONS))
         per_check = sections["per-check"]
-        for name, _, _, _, _ in egress.TESTS:
-            self.assertIn(f"### {name}", per_check, f"{name} has no section")
-            self.assertIn(egress.check_purpose(name), per_check)
+        for check in egress.TESTS:
+            self.assertIn(f"### {check.name}", per_check,
+                          f"{check.name} has no section")
+            self.assertIn(check.purpose, per_check)
         for label in report.LABELS.values():
             self.assertIn(label, sections["matrix"])
 
@@ -263,8 +259,7 @@ class ResilienceLoadTest(unittest.TestCase):
     `verify_resilience.py`: it decides what counts as a leak."""
 
     def setUp(self) -> None:
-        self.resilience = load_module(
-            "resilience_scripts", REPO_ROOT / "scripts" / "verify_resilience.py")
+        self.resilience = verify_resilience
 
     def _tally(self, statuses: "list[int | None]", denied: bool):
         load = self.resilience.Load(port=0)
@@ -315,8 +310,7 @@ class SandboxIntegrationTest(unittest.TestCase):
     that was the whole reason the item sat open as "unverified"."""
 
     def setUp(self) -> None:
-        self.sandbox = load_module(
-            "sandbox_scripts", REPO_ROOT / "scripts" / "verify_sandbox.py")
+        self.sandbox = verify_sandbox
 
     def test_a_missing_package_is_inconclusive_not_a_pass(self) -> None:
         routed, notes = self.sandbox.routing_evidence("/nonexistent/project-sandbox")
@@ -337,13 +331,18 @@ class SandboxIntegrationTest(unittest.TestCase):
 
 class ReporterTest(unittest.TestCase):
     def test_exit_code_follows_the_failures(self) -> None:
-        ok = harness.Reporter("t")
-        ok.check(True, "fine")
-        self.assertEqual(ok.finish(), 0)
-        bad = harness.Reporter("t")
-        bad.check(True, "fine")
-        bad.check(False, "broken", "why it matters")
-        self.assertEqual(bad.finish(), 1)
+        with quiet() as printed:
+            ok = harness.Reporter("t")
+            ok.check(True, "fine")
+            self.assertEqual(ok.finish(), 0)
+            bad = harness.Reporter("t")
+            bad.check(True, "fine")
+            bad.check(False, "broken", "why it matters")
+            self.assertEqual(bad.finish(), 1)
+        # A failed check has to say what it was and why it matters — that
+        # is the whole reason these scripts print rather than just exit.
+        self.assertIn("FAIL broken", printed.out)
+        self.assertIn("why it matters", printed.out)
 
 
 if __name__ == "__main__":

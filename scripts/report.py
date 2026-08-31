@@ -21,7 +21,6 @@ Run through uv (see the shebang). No third-party imports of its own.
 from __future__ import annotations
 
 import difflib
-import importlib.util
 import json
 import subprocess
 import sys
@@ -47,16 +46,12 @@ ENGINES = ("pipelock", "smokescreen", "squid")
 LABELS = {"pipelock": "Pipelock", "smokescreen": "Smokescreen", "squid": "Squid"}
 
 
-def load_egress():
-    spec = importlib.util.spec_from_file_location(
-        "egress_report", REPO_ROOT / "checks" / "egress.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+# The repository root, so `checks.egress` resolves by name. See the
+# comment in scripts/harness.py.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-
-egress = load_egress()
+from checks import egress  # noqa: E402  the check catalogue this renders
 
 
 class Fail(Exception):
@@ -151,7 +146,7 @@ def graded_names(runs: dict[str, dict]) -> list[str]:
     number means the same thing everywhere.
     """
     names = []
-    for name, _, _, _, _ in egress.TESTS:
+    for name in (c.name for c in egress.TESTS):
         rows = [rows_of(run).get(name) for run in runs.values()]
         if all(row is not None and row["expectation"] in ("allow", "deny")
                for row in rows):
@@ -259,7 +254,7 @@ def _summary(runs: dict[str, dict]) -> str:
     add = out.append
     graded = graded_names(runs)
     total = len(rows_of(runs[engines[0]]))
-    ungraded = [name for name, _, _, _, _ in egress.TESTS if name not in graded]
+    ungraded = [c.name for c in egress.TESTS if c.name not in graded]
     add(f"{len(graded)} of the {total} checks are graded `pass`/`fail` on every "
         "engine. In that common pool:")
     add("")
@@ -279,7 +274,7 @@ def _summary(runs: dict[str, dict]) -> str:
             "the behavior was the same. What each engine actually did is below.")
         add("")
 
-    diverging = divergences(runs, [name for name, _, _, _, _ in egress.TESTS])
+    diverging = divergences(runs, [c.name for c in egress.TESTS])
     # Two very different kinds of disagreement, kept apart because the
     # counts read as alarming when they are pooled: one engine behaving
     # differently, and three engines behaving identically while naming
@@ -322,7 +317,7 @@ def _matrix(runs: dict[str, dict]) -> str:
     add("")
     add("| Check | Group | Expectation | " + " | ".join(LABELS[e] for e in engines) + " |")
     add("| --- | --- | --- |" + " --- |" * len(engines))
-    for name, group, _, _, _ in egress.TESTS:
+    for name, group in ((c.name, c.group) for c in egress.TESTS):
         cells = []
         expectations = set()
         for engine in engines:
@@ -342,7 +337,7 @@ def _per_check(runs: dict[str, dict]) -> str:
     engines = list(runs)
     out: list[str] = []
     add = out.append
-    for name, group, _, _, _ in egress.TESTS:
+    for name, group in ((c.name, c.group) for c in egress.TESTS):
         add(f"### {name}")
         add("")
         purpose = egress.check_purpose(name)

@@ -45,11 +45,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The repository root, so `scripts.harness` and `run` resolve by name.
+# See the comment in scripts/harness.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from harness import Reporter, engine_up, load_run_module, run_py_down  # noqa: E402
-
-run_mod = load_run_module()
+from scripts.harness import Reporter, engine_up, run_py_down, run  # noqa: E402
 
 
 def local_addresses() -> list[str]:
@@ -85,7 +85,7 @@ def reachable(host: str, port: int, timeout: float = 2.0) -> bool:
         return False
 
 
-def backend_release(backend: "run_mod.Backend") -> str:
+def backend_release(backend: "run.Backend") -> str:
     """The runtime's own version string — the thing this check is pinned to.
 
     docs/lab.md records which release was verified; a result recorded
@@ -104,7 +104,7 @@ def backend_release(backend: "run_mod.Backend") -> str:
 
 def verify(backend_name: str, engine: str, port: int, report: Reporter,
            running: bool = False) -> None:
-    backend = run_mod.Backend(backend_name)
+    backend = run.Backend(backend_name)
     release = backend_release(backend)
     report.note(f"{backend_name}: {release}")
 
@@ -115,17 +115,17 @@ def verify(backend_name: str, engine: str, port: int, report: Reporter,
         # not of when the container started, so this is the same result —
         # and it is the mode to use on a machine whose sandbox is currently
         # served by that proxy.
-        engine = run_mod.running_engine(backend) or ""
+        engine = run.running_engine(backend) or ""
         if not engine:
-            raise run_mod.Fail(
+            raise run.Fail(
                 f"--running was given but no engine is up on {backend_name}. "
                 "Start one, or drop --running to have this script start one.")
-        spec = run_mod.ServiceSpec.load(engine)
+        spec = run.ServiceSpec.load(engine)
         published = backend.published_ports(spec.container_name)
         port = published[0][1] if published else port
         report.note(f"{backend_name}: checking the running {engine} on port {port}")
     else:
-        spec = run_mod.ServiceSpec.load(engine)
+        spec = run.ServiceSpec.load(engine)
         engine_up(backend_name, engine, port, test_policy=False, env=env)
     try:
         bindings = backend.published_ports(spec.container_name)
@@ -170,10 +170,10 @@ def verify(backend_name: str, engine: str, port: int, report: Reporter,
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--backend", choices=run_mod.BACKENDS, default=None,
+    parser.add_argument("--backend", choices=run.BACKENDS, default=None,
                         help="one backend (default: every installed one)")
-    parser.add_argument("--engine", choices=run_mod.ENGINES,
-                        default=run_mod.DEFAULT_ENGINE,
+    parser.add_argument("--engine", choices=run.ENGINES,
+                        default=run.DEFAULT_ENGINE,
                         help="engine to publish the endpoint with; the binding is "
                              "run.py's, not the engine's, so this rarely matters")
     parser.add_argument("--port", type=int, default=18080,
@@ -186,19 +186,19 @@ def main(argv: list[str] | None = None) -> int:
     opts = parser.parse_args(argv)
 
     names = [opts.backend] if opts.backend else \
-        [name for name in run_mod.BACKENDS if run_mod.Backend(name).available()]
+        [name for name in run.BACKENDS if run.Backend(name).available()]
     if not names:
         print("error: no container backend is installed", file=sys.stderr)
         return 1
 
     report = Reporter("loopback-only endpoint")
     for name in names:
-        if not run_mod.Backend(name).available():
+        if not run.Backend(name).available():
             print(f"error: backend `{name}` is not installed", file=sys.stderr)
             return 1
         try:
             verify(name, opts.engine, opts.port, report, running=opts.running)
-        except run_mod.Fail as exc:
+        except run.Fail as exc:
             report.check(False, f"{name}: the engine started", str(exc))
     report.note("Record the outcome, with the release string above, in "
                 "docs/lab.md's parity checklist.")

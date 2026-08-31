@@ -78,9 +78,11 @@ class ServiceSpec:
     source_repo: str = ""
     source_ref: str = ""
     packages: dict[str, str] = field(default_factory=dict)
-    go_image: str = ""
-    runtime_image: str = ""
-    base_image: str = ""
+    # Whatever `[build]` in the TOML says, passed through to the Dockerfile
+    # as `--build-arg KEY.upper()=value`. Kept generic on purpose: naming
+    # each key here as a field, then mapping it back to its uppercase ARG
+    # by hand, made a new base pin a two-file change for no gain.
+    build: dict[str, str] = field(default_factory=dict)
     container_name: str = ""
     internal_port: int = 0
     config_file: str = ""
@@ -123,9 +125,7 @@ class ServiceSpec:
             source_repo=source.get("repo", ""),
             source_ref=source.get("ref", ""),
             packages=dict(source.get("packages", {})),
-            go_image=build.get("go_image", ""),
-            runtime_image=build.get("runtime_image", ""),
-            base_image=build.get("base_image", ""),
+            build={str(key): str(value) for key, value in build.items()},
             container_name=container.get("name", ""),
             internal_port=int(container.get("internal_port", 0)),
             config_file=container.get("config_file", ""),
@@ -142,6 +142,24 @@ class ServiceSpec:
         if "--unsafe-allow-private-ranges" in spec.args or "--danger-allow-access-to-private-ranges" in spec.args:
             raise Fail(f"{path}: private-range blocking must never be disabled")
         return spec
+
+    @property
+    def base_image(self) -> str:
+        """The image `pin` interrogates for package versions.
+
+        The only `[build]` key anything but the Dockerfile needs to know
+        by name, because `pin` has to run `apk list` inside exactly the
+        image the build will use.
+        """
+        return self.build.get("base_image", "")
+
+    @property
+    def build_args(self) -> dict[str, str]:
+        """`[build]` plus the pinned package versions, as Dockerfile ARGs."""
+        args = {key.upper(): value for key, value in self.build.items()}
+        args.update({f"{name.upper()}_VERSION": version
+                     for name, version in self.packages.items()})
+        return args
 
     @property
     def primary_package_version(self) -> str:
@@ -243,21 +261,31 @@ class Backend:
     def available(self) -> bool:
         return shutil.which(self.bin) is not None
 
+    def _inspect_entry(self, *args: str) -> dict:
+        """The one object an `inspect` returns, or `{}` when there is none.
+
+        Every reader below wants the same thing out of `inspect`: run it,
+        tolerate a non-zero exit (the thing does not exist), parse JSON,
+        and unwrap the single-element list both runtimes wrap it in. Doing
+        that once means the guards cannot differ between readers — they
+        did, and the copy in `container_state` was the one missing them.
+        """
+        proc = self._run(*args, check=False)
+        if proc.returncode != 0:
+            return {}
+        try:
+            info = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return {}
+        entry = (info[0] if isinstance(info, list) and info else info) or {}
+        return entry if isinstance(entry, dict) else {}
+
     # -- containers ---------------------------------------------------------
 
     def container_state(self, name: str) -> str:
         """Return 'running', 'stopped', or 'absent'."""
-        proc = self._run("inspect", name, check=False)
-        if proc.returncode != 0:
-            return "absent"
-        try:
-            info = json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            return "absent"
-        if not info:
-            return "absent"
-        entry = info[0] if isinstance(info, list) else info
-        if not isinstance(entry, dict):
+        entry = self._inspect_entry("inspect", name)
+        if not entry:
             return "absent"
         # docker:          {"State": {"Status": "running"}}
         # Apple container: {"status": {"state": "running", ...}}
@@ -281,16 +309,7 @@ class Backend:
         `NetworkSettings`; Apple `container` under `status.networks[]` as a
         CIDR that has to be trimmed.
         """
-        proc = self._run("inspect", name, check=False)
-        if proc.returncode != 0:
-            return ""
-        try:
-            info = json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            return ""
-        entry = (info[0] if isinstance(info, list) and info else info) or {}
-        if not isinstance(entry, dict):
-            return ""
+        entry = self._inspect_entry("inspect", name)
         settings = entry.get("NetworkSettings")
         if isinstance(settings, dict):
             address = settings.get("IPAddress")
@@ -322,16 +341,7 @@ class Backend:
         Apple container: configuration.publishedPorts [{hostAddress, hostPort,
                          containerPort}]
         """
-        proc = self._run("inspect", name, check=False)
-        if proc.returncode != 0:
-            return []
-        try:
-            info = json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            return []
-        entry = (info[0] if isinstance(info, list) and info else info) or {}
-        if not isinstance(entry, dict):
-            return []
+        entry = self._inspect_entry("inspect", name)
         bindings: list[tuple[str, int, int]] = []
         published = (entry.get("configuration") or {}).get("publishedPorts")
         if isinstance(published, list):
@@ -426,16 +436,7 @@ class Backend:
 
     def image_digest(self, ref: str) -> str:
         """Best-effort immutable digest lookup for a local image."""
-        proc = self._image("inspect", ref, check=False)
-        if proc.returncode != 0:
-            return ""
-        try:
-            info = json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            return ""
-        entry = (info[0] if isinstance(info, list) and info else info) or {}
-        if not isinstance(entry, dict):
-            return ""
+        entry = self._inspect_entry("image", "inspect", ref)
         digests = entry.get("RepoDigests")
         if isinstance(digests, list) and digests:
             return str(digests[0]).rpartition("@")[2]
@@ -461,16 +462,7 @@ class Backend:
         Apple `container` reports the manifest's layer sizes instead, so
         the two are summed to something comparable rather than equal.
         """
-        proc = self._image("inspect", ref, check=False)
-        if proc.returncode != 0:
-            return 0
-        try:
-            info = json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            return 0
-        entry = (info[0] if isinstance(info, list) and info else info) or {}
-        if not isinstance(entry, dict):
-            return 0
+        entry = self._inspect_entry("image", "inspect", ref)
         for key in ("Size", "size", "VirtualSize"):
             value = entry.get(key)
             if isinstance(value, (int, float)) and value > 0:
@@ -668,6 +660,56 @@ def jinja_env():
     return env
 
 
+def render_template(env, spec: ServiceSpec, **variables) -> str:
+    """Render one service's template by name.
+
+    The existence check is here rather than at the call sites because a
+    missing template has to fail loudly: rendering nothing would produce
+    an empty policy, and an empty policy is an open one.
+    """
+    name = _template_name(spec)
+    if not (TEMPLATE_DIR / name).is_file():
+        raise Fail(f"missing template: {TEMPLATE_DIR / name}")
+    return env.get_template(name).render(
+        template_name=f"templates/{name}", **variables)
+
+
+def config_destination(spec: ServiceSpec) -> Path:
+    """Where `./run.py policy` writes this engine's config."""
+    if not spec.config_file:
+        raise Fail(f"services/{spec.engine}.toml: config_file is required")
+    return REPO_ROOT / spec.config_file
+
+
+def render_engine_policies(*, allow: "tuple[str, ...] | list[str]",
+                           allow_test: "tuple[str, ...] | list[str]",
+                           test_policy: bool,
+                           destination: "callable") -> dict[Path, str]:
+    """Render every engine's config from one allowlist pair.
+
+    Both lanes come through here, differing only in `test_policy`, the
+    second allowlist and where the result is written — so they cannot
+    disagree about anything else. That is the whole point: the `.test`
+    configs have to be the shipped policy plus fixture names, and the
+    cheapest way to guarantee it is for one function to render both.
+    """
+    env = jinja_env()
+    rendered: dict[Path, str] = {}
+    for engine in ENGINES:
+        spec = ServiceSpec.load(engine)
+        rendered[destination(spec)] = render_template(
+            env, spec,
+            test_policy=test_policy,
+            allow=list(allow),
+            allow_test=list(allow_test),
+            allow_exact=PolicyConfig.exact(allow),
+            allow_wild=PolicyConfig.wild(allow),
+            allow_test_exact=PolicyConfig.exact(allow_test),
+            allow_test_wild=PolicyConfig.wild(allow_test),
+        )
+    return rendered
+
+
 def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
     """Render every engine config from config.toml. Path -> file contents.
 
@@ -676,26 +718,9 @@ def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
     place a fixture domain can enter a config file.
     """
     config = load_policy_config() if config is None else config
-    env = jinja_env()
-    rendered: dict[Path, str] = {}
-    for engine in ENGINES:
-        spec = ServiceSpec.load(engine)
-        name = _template_name(spec)
-        if not (TEMPLATE_DIR / name).is_file():
-            raise Fail(f"missing template: {TEMPLATE_DIR / name}")
-        if not spec.config_file:
-            raise Fail(f"services/{engine}.toml: config_file is required")
-        rendered[REPO_ROOT / spec.config_file] = env.get_template(name).render(
-            template_name=f"templates/{name}",
-            test_policy=False,
-            allow=list(config.allow),
-            allow_test=[],
-            allow_exact=config.exact(config.allow),
-            allow_wild=config.wild(config.allow),
-            allow_test_exact=[],
-            allow_test_wild=[],
-        )
-    return rendered
+    return render_engine_policies(allow=config.allow, allow_test=[],
+                                  test_policy=False,
+                                  destination=config_destination)
 
 
 
@@ -721,6 +746,21 @@ def check_rendered_policies(rendered: dict[Path, str]) -> list[str]:
     return problems
 
 
+def fail_on(problems: list[str], message: str) -> None:
+    """Report every configuration problem, then fail closed.
+
+    Every caller that validates something does exactly this, and the one
+    that did it slightly differently is the drift worth removing: the
+    problems all have to be printed — the first is rarely the useful one —
+    and then nothing may proceed. ./lab.py calls this too, so both lanes
+    report a bad config in the same shape.
+    """
+    for problem in problems:
+        print(f"CONFIG ERROR: {problem}", file=sys.stderr)
+    if problems:
+        raise Fail(message)
+
+
 def _engine_for_config(path: Path) -> str | None:
     """Which engine a rendered config belongs to, by filename.
 
@@ -737,12 +777,21 @@ def sync_policies(config: PolicyConfig | None = None) -> list[Path]:
     Files whose contents already match are left alone, so a no-op `up`
     does not churn mtimes or the working tree.
     """
-    rendered = render_policies(config)
-    problems = check_rendered_policies(rendered)
-    if problems:
-        for problem in problems:
-            print(f"CONFIG ERROR: {problem}", file=sys.stderr)
-        raise Fail("refusing to write a policy that fails validation (fail closed)")
+    return write_validated(render_policies(config), check_rendered_policies)
+
+
+def write_validated(rendered: dict[Path, str],
+                    check: "callable") -> list[Path]:
+    """Validate rendered text, then write only what changed.
+
+    Both lanes render templates and both must refuse to overwrite a
+    reviewed, working policy with a broken one — so validation happens
+    before anything reaches the disk, and files that already match are
+    left alone so a no-op `up` does not churn mtimes or the working tree.
+    ./lab.py passes its own `check`, which adds the superset rule.
+    """
+    fail_on(check(rendered),
+            "refusing to write a policy that fails validation (fail closed)")
     changed: list[Path] = []
     for path, text in sorted(rendered.items()):
         if not path.is_file() or path.read_text(encoding="utf-8") != text:
@@ -751,10 +800,14 @@ def sync_policies(config: PolicyConfig | None = None) -> list[Path]:
     return changed
 
 
+def report_synced(changed: list[Path], source: str) -> None:
+    for path in changed:
+        print(f"regenerated {path.relative_to(REPO_ROOT)} from {source}")
+
+
 def sync_policies_reporting() -> None:
     """`sync_policies()` for the lifecycle commands: quiet when up to date."""
-    for path in sync_policies():
-        print(f"regenerated {path.relative_to(REPO_ROOT)} from config.toml")
+    report_synced(sync_policies(), "config.toml")
 
 
 # ---------------------------------------------------------------------------
@@ -1121,9 +1174,20 @@ def all_specs() -> list[ServiceSpec]:
     return [ServiceSpec.load(engine) for engine in ENGINES]
 
 
-def _dedup(names: list[str]) -> list[str]:
-    """Order-preserving dedup — ./lab.py passes the fixture explicitly."""
-    return list(dict.fromkeys(names))
+def owned_containers(include_fixture: bool = True) -> list[str]:
+    """Every container name this repository is allowed to remove.
+
+    One definition, because both lanes sweep this list and a container
+    added to one copy and not the other would survive a `down`. The DNS
+    fixture is in it even from the operational lane: a stale resolver must
+    never be left running alongside a real policy. `include_fixture=False`
+    is for `./lab.py up`, which starts the fixture *before* the engine —
+    it has to, the engine needs its address for `--dns`.
+    """
+    names = [spec.container_name for spec in all_specs()]
+    if include_fixture:
+        names.append(FIXTURE_CONTAINER)
+    return names
 
 
 def running_engine(backend: Backend) -> str | None:
@@ -1133,6 +1197,45 @@ def running_engine(backend: Backend) -> str | None:
     return None
 
 
+def run_policy_command(*, rendered: dict[Path, str], check: "callable",
+                       sync: "callable", source: str, label: str,
+                       cli: str, check_only: bool) -> int:
+    """`policy` for either lane: render, validate, then write or diff.
+
+    Both lanes need exactly this — regenerate from the reviewed source, or
+    (under `--check`, which is what CI runs) show what the committed files
+    would have to become and exit non-zero. They were two copies that had
+    already drifted: one computed `stale` before writing and one after,
+    which is only invisible because writing is what makes it empty.
+
+    `source` names what the configs are generated from, `label` is the
+    up-to-date line, and `cli` is the command to suggest re-running.
+    """
+    fail_on(check(rendered), "configuration validation failed")
+
+    if not check_only:
+        report_synced(sync(), source)
+        print(label)
+        return 0
+
+    stale = [(path, body) for path, body in sorted(rendered.items())
+             if not path.is_file() or path.read_text(encoding="utf-8") != body]
+    for path, body in stale:
+        rel = path.relative_to(REPO_ROOT)
+        current = (path.read_text(encoding="utf-8").splitlines(keepends=True)
+                   if path.is_file() else [])
+        sys.stdout.writelines(difflib.unified_diff(
+            current, body.splitlines(keepends=True),
+            fromfile=f"{rel} (on disk)", tofile=f"{rel} (from {source})"))
+    if stale:
+        names = ", ".join(str(path.relative_to(REPO_ROOT)) for path, _ in stale)
+        print(f"\nSTALE: {names}", file=sys.stderr)
+        print(f"Run `{cli} policy` to regenerate, then commit.", file=sys.stderr)
+        return 1
+    print(label)
+    return 0
+
+
 def cmd_policy(opts: argparse.Namespace) -> int:
     """Render config.toml into the engine configs, or report the drift.
 
@@ -1140,35 +1243,15 @@ def cmd_policy(opts: argparse.Namespace) -> int:
     edit can be reviewed — and CI can assert the committed files match —
     without a container runtime.
     """
-    rendered = render_policies()
-    problems = check_rendered_policies(rendered)
-    if problems:
-        for problem in problems:
-            print(f"CONFIG ERROR: {problem}", file=sys.stderr)
-        raise Fail("configuration validation failed")
-
-    stale = [(path, body) for path, body in sorted(rendered.items())
-             if not path.is_file() or path.read_text(encoding="utf-8") != body]
-    if not opts.check:
-        for path in sync_policies():
-            print(f"regenerated {path.relative_to(REPO_ROOT)} from config.toml")
-        print("configs: up to date with config.toml")
-        return 0
-
-    for path, body in stale:
-        rel = path.relative_to(REPO_ROOT)
-        current = (path.read_text(encoding="utf-8").splitlines(keepends=True)
-                   if path.is_file() else [])
-        sys.stdout.writelines(difflib.unified_diff(
-            current, body.splitlines(keepends=True),
-            fromfile=f"{rel} (on disk)", tofile=f"{rel} (from config.toml)"))
-    if stale:
-        names = ", ".join(str(path.relative_to(REPO_ROOT)) for path, _ in stale)
-        print(f"\nSTALE: {names}", file=sys.stderr)
-        print("Run `./run.py policy` to regenerate, then commit.", file=sys.stderr)
-        return 1
-    print("configs: up to date with config.toml")
-    return 0
+    return run_policy_command(
+        rendered=render_policies(),
+        check=check_rendered_policies,
+        sync=sync_policies,
+        source="config.toml",
+        label="configs: up to date with config.toml",
+        cli="./run.py",
+        check_only=opts.check,
+    )
 
 
 def cmd_setup(opts: argparse.Namespace) -> int:
@@ -1196,10 +1279,7 @@ def cmd_setup(opts: argparse.Namespace) -> int:
             problems.append(str(exc))
             continue
         problems += validate_policy_file(engine, path)
-    if problems:
-        for problem in problems:
-            print(f"CONFIG ERROR: {problem}", file=sys.stderr)
-        raise Fail("configuration validation failed")
+    fail_on(problems, "configuration validation failed")
     print("configs: valid")
 
     engines = ENGINES if opts.all else (opts.engine or DEFAULT_ENGINE,)
@@ -1210,57 +1290,49 @@ def cmd_setup(opts: argparse.Namespace) -> int:
 
 
 def prepare_engine(backend: Backend, engine: str, rebuild: bool = False) -> None:
-    """Pull or build one engine's pinned image. Also used by ./lab.py."""
+    """Pull or build one service's pinned image. Also used by ./lab.py.
+
+    Dispatch is on `pin_kind` alone — what the service is pinned *by* —
+    rather than on its name, so adding a fourth engine is a config-only
+    change. `spec` is enough; nothing here needs to know which engine it
+    is looking at.
+    """
     spec = ServiceSpec.load(engine)
-    if engine == "pipelock":
-        _setup_pipelock(backend, spec)
-    elif spec.pin_kind == "package":
-        _setup_package_image(backend, spec, rebuild=rebuild)
-    else:
-        _setup_smokescreen(backend, spec, rebuild=rebuild)
+    _SETUP_BY_PIN_KIND[spec.pin_kind](backend, spec, rebuild=rebuild)
 
 
-def _setup_pipelock(backend: Backend, spec: ServiceSpec) -> None:
-    if spec.image_digest:
-        ref = f"{spec.image_repository}@{spec.image_digest}"
-        print(f"pipelock: pulling pinned image {ref}")
-        backend.pull(ref)
-        return
-    ref = f"{spec.image_repository}:{spec.image_tag}"
-    print(f"pipelock: no digest pinned yet; pulling {ref} to record one")
+def _setup_pulled_image(backend: Backend, spec: ServiceSpec,
+                        rebuild: bool = False) -> None:
+    """Pull an image pinned by OCI digest (Pipelock).
+
+    `setup` never resolves a pin itself. It used to, for this one service:
+    with no digest recorded it pulled the mutable tag, read a digest back
+    and wrote it into the TOML — so a fresh checkout ran whatever the tag
+    pointed at that day, recorded after the fact rather than reviewed
+    before it. The other two services have always refused and pointed at
+    `pin`, and `run_image_ref()` now gives all three the same message.
+    """
+    ref = spec.run_image_ref()   # raises, with the `pin` hint, when unpinned
+    print(f"{spec.engine}: pulling pinned image {ref}")
     backend.pull(ref)
-    digest = backend.image_digest(ref)
-    if not digest:
-        raise Fail(
-            "could not determine the image digest automatically.\n"
-            f"Find it (e.g. `docker image inspect {ref}` → RepoDigests) and put it in services/pipelock.toml"
-        )
-    _write_pin(spec.toml_path, "digest", digest)
-    print(f"pipelock: recorded digest {digest} in services/pipelock.toml — review and commit it")
 
 
-def _setup_smokescreen(backend: Backend, spec: ServiceSpec, rebuild: bool = False) -> None:
-    if not spec.source_ref:
-        raise Fail(
-            "smokescreen source ref is not pinned.\n"
-            "Run `./run.py pin smokescreen` (needs network), review and commit, then re-run setup."
-        )
-    tag = spec.run_image_ref()
+def _setup_source_image(backend: Backend, spec: ServiceSpec,
+                        rebuild: bool = False) -> None:
+    """Build an image from a pinned source commit (Smokescreen)."""
+    tag = spec.run_image_ref()   # raises when the source ref is unpinned
     if backend.image_present(tag) and not rebuild:
-        print(f"smokescreen: image {tag} already built")
+        print(f"{spec.engine}: image {tag} already built")
         return
-    print(f"smokescreen: building {tag} from {spec.source_repo}@{spec.source_ref}")
-    build_args = {"SMOKESCREEN_REPO": spec.source_repo, "SMOKESCREEN_REF": spec.source_ref}
-    if spec.go_image:
-        build_args["GO_IMAGE"] = spec.go_image
-    if spec.runtime_image:
-        build_args["RUNTIME_IMAGE"] = spec.runtime_image
-    context = REPO_ROOT / "images" / "smokescreen"
-    backend.build(tag=tag, dockerfile=context / "Dockerfile", context=context, build_args=build_args)
-    print(f"smokescreen: built {tag}")
+    print(f"{spec.engine}: building {tag} from {spec.source_repo}@{spec.source_ref}")
+    build_args = dict(spec.build_args)
+    build_args[f"{spec.engine.upper()}_REPO"] = spec.source_repo
+    build_args[f"{spec.engine.upper()}_REF"] = spec.source_ref
+    _build(backend, spec, tag, build_args)
 
 
-def _setup_package_image(backend: Backend, spec: ServiceSpec, rebuild: bool = False) -> None:
+def _setup_package_image(backend: Backend, spec: ServiceSpec,
+                         rebuild: bool = False) -> None:
     """Build an image around a pinned distribution package — Squid, and the
     dnsmasq DNS fixture. The Dockerfile takes `<PACKAGE>_VERSION`."""
     tag = spec.run_image_ref()   # raises when any package is unpinned
@@ -1269,13 +1341,29 @@ def _setup_package_image(backend: Backend, spec: ServiceSpec, rebuild: bool = Fa
         return
     pinned = ", ".join(f"{name}={version}" for name, version in sorted(spec.packages.items()))
     print(f"{spec.engine}: building {tag} from {spec.base_image} ({pinned})")
-    build_args = {f"{name.upper()}_VERSION": version
-                  for name, version in spec.packages.items()}
-    if spec.base_image:
-        build_args["BASE_IMAGE"] = spec.base_image
+    _build(backend, spec, tag, spec.build_args)
+
+
+def _build(backend: Backend, spec: ServiceSpec, tag: str,
+           build_args: dict[str, str]) -> None:
+    """Build `spec`'s image from its own context directory.
+
+    `image_context` for every service, including Smokescreen — which used
+    to name `images/smokescreen` literally, so the property and the path
+    it was supposed to describe could disagree.
+    """
     context = spec.image_context
-    backend.build(tag=tag, dockerfile=context / "Dockerfile", context=context, build_args=build_args)
+    backend.build(tag=tag, dockerfile=context / "Dockerfile",
+                  context=context, build_args=build_args)
     print(f"{spec.engine}: built {tag}")
+
+
+# Dispatch table for `prepare_engine`, keyed by `ServiceSpec.pin_kind`.
+_SETUP_BY_PIN_KIND = {
+    "digest": _setup_pulled_image,
+    "source": _setup_source_image,
+    "package": _setup_package_image,
+}
 
 
 def _write_pin(toml_path: Path, key: str, value: str) -> None:
@@ -1286,62 +1374,89 @@ def _write_pin(toml_path: Path, key: str, value: str) -> None:
     toml_path.write_text(new_text)
 
 
+def pin_packages(spec: ServiceSpec, get_backend: "callable", ref: str = "") -> None:
+    """Record the apk versions `spec`'s base image would install.
+
+    Shared with ./lab.py, which pins the DNS fixture exactly this way —
+    the fixture is a `package` service like Squid, and the two copies of
+    this loop were the only reason that was not obvious. `get_backend` is
+    called only when a runtime is actually needed, so `--ref` still pins
+    without one.
+    """
+    names = sorted(spec.packages)
+    if ref:
+        if len(names) != 1:
+            raise Fail(f"--ref pins a single package, but {spec.engine} pins "
+                       f"{len(names)} ({', '.join(names)}); edit "
+                       f"{spec.toml_path} directly")
+        _write_pin(spec.toml_path, names[0], ref)
+        print(f"pinned {spec.engine} {names[0]}={ref}")
+        return
+
+    base = spec.base_image
+    if not base:
+        raise Fail(f"{spec.toml_path}: [build] base_image is required "
+                   f"to pin {spec.engine}")
+    print(f"asking {base} which versions of {', '.join(names)} it would install")
+    output = get_backend().run_once(base, [
+        "sh", "-c",
+        f"apk update >/dev/null 2>&1 && apk list {' '.join(names)} 2>/dev/null",
+    ])
+    for name in names:
+        versions = re.findall(rf"^{re.escape(name)}-(\d[\w.]*-r\d+)\s", output, re.M)
+        if not versions:
+            raise Fail(
+                f"could not read a {name} version from {base}.\n"
+                f"Check it by hand (`apk list {name}` in that image) and put it in "
+                f"{spec.toml_path}"
+            )
+        resolved = sorted(set(versions))[-1]
+        _write_pin(spec.toml_path, name, resolved)
+        print(f"pinned {spec.engine} {name}={resolved} (from {base})")
+
+
+def pin_digest(spec: ServiceSpec, get_backend: "callable", ref: str = "") -> None:
+    """Resolve `repository:tag` to its immutable manifest digest."""
+    image = f"{spec.image_repository}:{ref or spec.image_tag}"
+    print(f"pulling {image} to resolve its digest")
+    backend = get_backend()
+    backend.pull(image)
+    digest = backend.image_digest(image)
+    if not digest:
+        raise Fail(f"could not resolve a digest for {image}; inspect the image manually")
+    _write_pin(spec.toml_path, "digest", digest)
+    print(f"pinned {spec.engine} {spec.image_tag} @ {digest}")
+
+
+def pin_source(spec: ServiceSpec, get_backend: "callable", ref: str = "") -> None:
+    """Resolve a git ref in the upstream repository to a full commit SHA."""
+    git = shutil.which("git")
+    if not git:
+        raise Fail(f"git is required to pin {spec.engine}")
+    target = ref or "HEAD"
+    proc = subprocess.run([git, "ls-remote", spec.source_repo, target],
+                          capture_output=True, text=True)
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise Fail(f"git ls-remote {spec.source_repo} {target} failed:\n{proc.stderr.strip()}")
+    sha = proc.stdout.split()[0]
+    _write_pin(spec.toml_path, "ref", sha)
+    print(f"pinned {spec.engine} {target} @ {sha}")
+
+
+# Dispatch table for `pin`, keyed by `ServiceSpec.pin_kind` — the same key
+# `prepare_engine` uses, because "how it is pinned" and "how it is set up"
+# are the same question asked twice.
+_PIN_BY_KIND = {
+    "digest": pin_digest,
+    "source": pin_source,
+    "package": pin_packages,
+}
+
+
 def cmd_pin(opts: argparse.Namespace) -> int:
-    engine = opts.target
-    spec = ServiceSpec.load(engine)
-    if engine == "pipelock":
-        backend = detect_backend(opts.backend)
-        ref = f"{spec.image_repository}:{spec.image_tag}"
-        print(f"pulling {ref} to resolve its digest")
-        backend.pull(ref)
-        digest = backend.image_digest(ref)
-        if not digest:
-            raise Fail(f"could not resolve a digest for {ref}; inspect the image manually")
-        _write_pin(spec.toml_path, "digest", digest)
-        print(f"pinned pipelock {spec.image_tag} @ {digest}")
-    elif spec.pin_kind == "package":
-        names = sorted(spec.packages)
-        if opts.ref:
-            if len(names) != 1:
-                raise Fail(f"--ref pins a single package, but {engine} pins "
-                           f"{len(names)} ({', '.join(names)}); edit "
-                           f"services/{engine}.toml directly")
-            _write_pin(spec.toml_path, names[0], opts.ref)
-            print(f"pinned {engine} {names[0]}={opts.ref}")
-        else:
-            backend = detect_backend(opts.backend)
-            base = spec.base_image
-            if not base:
-                raise Fail(f"services/{engine}.toml: [build] base_image is required "
-                           f"to pin {engine}")
-            print(f"asking {base} which versions of {', '.join(names)} it would install")
-            output = backend.run_once(base, [
-                "sh", "-c",
-                f"apk update >/dev/null 2>&1 && apk list {' '.join(names)} 2>/dev/null",
-            ])
-            for name in names:
-                versions = re.findall(rf"^{re.escape(name)}-(\d[\w.]*-r\d+)\s", output, re.M)
-                if not versions:
-                    raise Fail(
-                        f"could not read a {name} version from {base}.\n"
-                        f"Check it by hand (`apk list {name}` in that image) and put it in "
-                        f"services/{engine}.toml"
-                    )
-                resolved = sorted(set(versions))[-1]
-                _write_pin(spec.toml_path, name, resolved)
-                print(f"pinned {engine} {name}={resolved} (from {base})")
-    else:
-        git = shutil.which("git")
-        if not git:
-            raise Fail("git is required to pin smokescreen")
-        target = opts.ref or "HEAD"
-        proc = subprocess.run([git, "ls-remote", spec.source_repo, target],
-                              capture_output=True, text=True)
-        if proc.returncode != 0 or not proc.stdout.strip():
-            raise Fail(f"git ls-remote {spec.source_repo} {target} failed:\n{proc.stderr.strip()}")
-        sha = proc.stdout.split()[0]
-        _write_pin(spec.toml_path, "ref", sha)
-        print(f"pinned smokescreen {target} @ {sha}")
+    spec = ServiceSpec.load(opts.target)
+    _PIN_BY_KIND[spec.pin_kind](
+        spec, lambda: detect_backend(opts.backend), opts.ref or "")
     print("review the change and commit it; then run `./run.py setup`")
     return 0
 
@@ -1360,11 +1475,8 @@ def cmd_up(opts: argparse.Namespace) -> int:
     sync_policies_reporting()
 
     config_path = spec.config_path()
-    problems = validate_policy_file(engine, config_path)
-    if problems:
-        for problem in problems:
-            print(f"CONFIG ERROR: {problem}", file=sys.stderr)
-        raise Fail("refusing to start with an invalid policy (fail closed)")
+    fail_on(validate_policy_file(engine, config_path),
+            "refusing to start with an invalid policy (fail closed)")
 
     start_engine(backend, spec, config_path)
     print(f"clients: export HTTP_PROXY=http://{host}:{port} HTTPS_PROXY=http://{host}:{port}")
@@ -1396,10 +1508,7 @@ def start_engine(backend: Backend, spec: ServiceSpec, config_path: Path,
     # every engine publishes the same endpoint, so they cannot coexist.
     # The DNS fixture goes too, even from the operational lane: a stale one
     # must never be left running alongside a real policy.
-    names = [spec.container_name for spec in all_specs()]
-    if not keep_fixture:
-        names.append(FIXTURE_CONTAINER)
-    for name in _dedup(names):
+    for name in owned_containers(include_fixture=not keep_fixture):
         if backend.remove_container(name):
             print(f"removed existing container {name}")
 
@@ -1445,8 +1554,7 @@ def start_engine(backend: Backend, spec: ServiceSpec, config_path: Path,
 def cmd_down(opts: argparse.Namespace) -> int:
     backend = detect_backend(opts.backend)
     removed = False
-    for name in _dedup([spec.container_name for spec in all_specs()]
-                       + [FIXTURE_CONTAINER]):
+    for name in owned_containers():
         if backend.remove_container(name):
             print(f"removed {name}")
             removed = True

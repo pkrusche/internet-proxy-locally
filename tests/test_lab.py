@@ -7,7 +7,6 @@ against the same emulated runtime or the reuse is untested.
 
 from __future__ import annotations
 
-import ast
 import ipaddress
 import json
 import re
@@ -17,7 +16,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from test_runpy import REPO_ROOT, RunPyCliTest, load_module
+# Run from the repository root, so everything imports by name. See the
+# comment in scripts/harness.py.
+import lab
+from checks import egress
+from tests.test_runpy import REPO_ROOT, RunPyCliTest
 
 
 class LabCliTest(RunPyCliTest):
@@ -160,11 +163,49 @@ class LabUnitTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.lab = load_module("lab_unit", REPO_ROOT / "lab.py")
+        cls.lab = lab
         # lab.py imports run.py itself; reaching through it rather than
         # loading a second copy keeps `Fail` a single class, so
         # `assertRaises` matches what lab.py actually raises.
         cls.run_mod = cls.lab.run
+
+    # -- one source of truth for what the fixture serves ---------------------
+
+    def test_the_fixture_facts_have_exactly_one_source(self) -> None:
+        """lab/fixtures.toml, checks/egress.py and lab/dnsfixture/rebind.py
+        used to state the same names three times, each with a "keep in
+        sync" comment and nothing enforcing it.
+
+        Now the checker reads the TOML and the container is built from it,
+        so this asserts the wiring rather than the values: the checker
+        agrees with the file, and every fact the responder needs actually
+        reaches the image as a build arg.
+        """
+        fixture = self.lab.load_lab_config().fixture
+        self.assertEqual(egress.MIXED_FIXTURE_CONTROL, fixture.control)
+        self.assertEqual(set(egress.MIXED_FIXTURE_TARGETS), set(fixture.targets))
+        self.assertEqual(egress.REBIND_ZONE, fixture.rebind_zone)
+        self.assertEqual(egress.PTR_FIXTURE_ADDRESS, fixture.ptr_address)
+        self.assertEqual(egress.PTR_FIXTURE_CLAIMS, fixture.ptr_claims)
+
+        args = self.lab.fixture_spec().build_args
+        self.assertEqual(args["REBIND_ZONE"], fixture.rebind_zone)
+        self.assertEqual(args["PTR_ADDRESS"], fixture.ptr_address)
+        self.assertEqual(args["PTR_CLAIMS"], fixture.ptr_claims)
+        self.assertEqual(args["PUBLIC_ANSWER"], fixture.public_answer)
+
+        # rebind.py must hold none of them as a literal, and the Dockerfile
+        # must declare every ARG that carries one.
+        rebind = (REPO_ROOT / "lab" / "dnsfixture" / "rebind.py").read_text()
+        dockerfile = (REPO_ROOT / "lab" / "dnsfixture" / "Dockerfile").read_text()
+        for arg, value in (("REBIND_ZONE", fixture.rebind_zone),
+                           ("PTR_ADDRESS", fixture.ptr_address),
+                           ("PTR_CLAIMS", fixture.ptr_claims),
+                           ("PUBLIC_ANSWER", fixture.public_answer)):
+            self.assertFalse(f'"{value}"' in rebind,
+                             f"rebind.py restates {arg} ({value}) as a literal")
+            self.assertIn(f"ARG {arg}", dockerfile)
+            self.assertIn(f'_required("{arg}")', rebind)
 
     # -- lab/fixtures.toml ---------------------------------------------------
 
@@ -361,7 +402,6 @@ class LabUnitTest(unittest.TestCase):
     def test_checker_constants_match_the_fixture_table(self) -> None:
         """checks/egress.py names the fixture records in its own constants;
         lab/fixtures.toml is what the fixture actually serves."""
-        egress = load_module("egress_constants", REPO_ROOT / "checks" / "egress.py")
         fixture = self.lab.load_lab_config().fixture
         self.assertEqual(egress.MIXED_FIXTURE_CONTROL, fixture.control)
         self.assertEqual(set(egress.MIXED_FIXTURE_TARGETS), set(fixture.targets))
@@ -369,34 +409,10 @@ class LabUnitTest(unittest.TestCase):
         self.assertEqual(egress.PTR_FIXTURE_ADDRESS, fixture.ptr_address)
         self.assertEqual(egress.PTR_FIXTURE_CLAIMS, fixture.ptr_claims)
 
-    def test_rebind_responder_constants_match_the_fixture_table(self) -> None:
-        """lab/dnsfixture/rebind.py serves the rebinding zone and the PTR
-        claim from its own literals; they must be the same ones.
-
-        Parsed rather than imported: importing it would start dnsmasq.
-        """
-        source = (REPO_ROOT / "lab" / "dnsfixture" / "rebind.py").read_text()
-        literals = {}
-        for node in ast.parse(source).body:
-            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        literals[target.id] = node.value.value
-        fixture = self.lab.load_lab_config().fixture
-        self.assertEqual(literals["REBIND_ZONE"], fixture.rebind_zone)
-        self.assertEqual(literals["PTR_ADDRESS"], fixture.ptr_address)
-        self.assertEqual(literals["PTR_CLAIMS"], fixture.ptr_claims)
-        # The first answer of a rebind is the same public address the
-        # control resolves to, so a name that never rebinds behaves exactly
-        # like the control.
-        self.assertEqual(literals["PUBLIC_ANSWER"],
-                         fixture.addresses(fixture.control)[0])
-
     def test_dns_fixture_records_cover_the_checker_names(self) -> None:
         """The hosts file and checks/egress.py must agree, and the mixed
         names must each carry one public and one private address in both
         orderings — that is the whole content of the check."""
-        egress = load_module("egress_fixture", REPO_ROOT / "checks" / "egress.py")
         spec = self.lab.fixture_spec()
         records: dict[str, list[str]] = {}
         for line in (REPO_ROOT / spec.config_file).read_text().splitlines():

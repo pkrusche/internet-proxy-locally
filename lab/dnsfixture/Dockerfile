@@ -37,6 +37,19 @@ RUN for pin in "dnsmasq=${DNSMASQ_VERSION}" "python3=${PYTHON3_VERSION}"; do \
 
 RUN apk add --no-cache "dnsmasq=${DNSMASQ_VERSION}" "python3=${PYTHON3_VERSION}"
 
+# What this fixture serves, from lab/fixtures.toml via lab.py
+# `fixture_spec()`. Baked in as env so rebind.py has one source for them
+# rather than a third copy of the literals; it refuses to start if any is
+# empty, so a stale image cannot quietly serve the wrong names.
+ARG REBIND_ZONE
+ARG PUBLIC_ANSWER
+ARG PTR_ADDRESS
+ARG PTR_CLAIMS
+ENV REBIND_ZONE=${REBIND_ZONE} \
+    PUBLIC_ANSWER=${PUBLIC_ANSWER} \
+    PTR_ADDRESS=${PTR_ADDRESS} \
+    PTR_CLAIMS=${PTR_CLAIMS}
+
 COPY rebind.py /usr/local/bin/rebind.py
 
 LABEL org.opencontainers.image.licenses="GPL-2.0-or-later"

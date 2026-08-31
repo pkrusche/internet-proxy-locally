@@ -51,7 +51,9 @@ import ssl
 import subprocess
 import sys
 import time
+import tomllib
 from dataclasses import dataclass, field, asdict
+from pathlib import Path
 
 DEFAULT_PROXY = "http://127.0.0.1:18080"
 TIMEOUT = 8.0
@@ -67,15 +69,41 @@ ALLOWED_HTTPS_HOST = "pypi.org"         # must be on the allowlist
 ALLOWED_ALT_HOST = "files.pythonhosted.org"  # allowlisted, used as mismatching SNI
 BLOCKED_HOST = "example.com"            # must NOT be on the allowlist
 
+# ---------------------------------------------------------------------------
+# The DNS fixtures, read from the file that defines them
+# ---------------------------------------------------------------------------
+#
+# lab/fixtures.toml is the source of truth: ./lab.py renders the hosts file
+# and the test allowlist from it, and the fixture container serves what
+# that produces. These names used to be restated here as literals with a
+# "keep in sync" comment and nothing enforcing it — so a fixture rename
+# left the checker probing a name that no longer resolved, and the check
+# reported a denial that was really an NXDOMAIN.
+#
+# `tomllib` is stdlib, so reading it costs nothing this file is not allowed
+# to spend. lab/ is optional: without it there are no fixtures, and every
+# check that needs one already skips.
+
+FIXTURES_FILE = Path(__file__).resolve().parent.parent / "lab" / "fixtures.toml"
+
+
+def _load_fixture_facts(path: Path = FIXTURES_FILE) -> dict:
+    if not path.is_file():
+        return {}
+    with path.open("rb") as fh:
+        return tomllib.load(fh).get("fixture", {}) or {}
+
+
+_FIXTURE = _load_fixture_facts()
+
 # Mixed-answer fixture, served from lab/config/dns-fixture.hosts which
-# `run.py ./lab.py up` mounts at /etc/hosts inside the engine
-# container. The control resolves to one public address; the other two
-# resolve to the same public address *and* a private one, in both
-# orderings, so an engine that validates only the first answer fails one of
-# them. Keep these names in sync with that file and with the test policies.
-MIXED_FIXTURE_CONTROL = "public-only.fixture.test"
-MIXED_FIXTURE_TARGETS = ("mixed-public-first.fixture.test",
-                         "mixed-private-first.fixture.test")
+# `./lab.py up` mounts into the engine container. The control resolves to
+# one public address; the others resolve to the same public address *and* a
+# private one, in both orderings, so an engine that validates only the
+# first answer fails one of them.
+MIXED_FIXTURE_CONTROL = _FIXTURE.get("control", "")
+MIXED_FIXTURE_TARGETS = tuple(name for name in _FIXTURE.get("records", {})
+                              if name != MIXED_FIXTURE_CONTROL)
 
 # Rebinding fixture, served by the same container (lab/dnsfixture).
 # The first A query for one of these names is answered with a public
@@ -83,7 +111,7 @@ MIXED_FIXTURE_TARGETS = ("mixed-public-first.fixture.test",
 # where it listens as a trap. Each name is fresh, so no name can be served
 # from a cache an earlier one warmed, and each is probed twice so that the
 # second answer is actually handed out.
-REBIND_ZONE = "rebind.fixture.test"
+REBIND_ZONE = _FIXTURE.get("rebind_zone", "")
 REBIND_NAMES = 3          # probed twice each, either side of REBIND_TTL_GAP
 # The fixture answers with TTL 0, but a resolver cache keyed on a
 # whole-second clock — Squid's ipcache is one — will still serve two
@@ -93,12 +121,11 @@ REBIND_NAMES = 3          # probed twice each, either side of REBIND_TTL_GAP
 REBIND_TTL_GAP = 1.5
 
 # Reverse-DNS fixture: the local resolver answers PTR for this address with
-# an allowlisted hostname. Keep in sync with PTR_ADDRESS / PTR_CLAIMS in
-# lab/dnsfixture/rebind.py. The address is public — so the SSRF floors
-# stay out of it and the hostname allowlist really is the rule under test —
-# and no other check connects to it.
-PTR_FIXTURE_ADDRESS = "1.0.0.1"
-PTR_FIXTURE_CLAIMS = "pypi.org"
+# an allowlisted hostname. The address is public — so the SSRF floors stay
+# out of it and the hostname allowlist really is the rule under test — and
+# no other check connects to it.
+PTR_FIXTURE_ADDRESS = _FIXTURE.get("ptr_address", "")
+PTR_FIXTURE_CLAIMS = _FIXTURE.get("ptr_claims", "")
 
 # The fixture's log stream, set by run_suite when `run.py check` passes
 # --fixture-container. Kept as a module-level hook so the rebinding test
@@ -410,11 +437,19 @@ class ProxyClient:
             f"CONNECT {target} HTTP/1.1\r\n"
             f"Host: {target}\r\n\r\n"
         )
+        sock = None
         try:
             sock = self._sock()
             sock.sendall(request.encode())
             data = self._recv_headers(sock)
         except OSError as exc:
+            # The connection succeeded and then the send or the read failed
+            # — a reset or a timeout. Without this the descriptor is
+            # orphaned, and every probe that times out leaks one; a
+            # `--full` run against an engine that blackholes denials can
+            # get through a lot of them.
+            if sock is not None:
+                sock.close()
             return None, None, f"connection error: {exc}"
         status = self._status_of(data)
         first = data.split(b"\r\n", 1)[0].decode("latin-1", "replace")
@@ -575,12 +610,22 @@ def test_loopback(client: ProxyClient) -> tuple[str, str]:
     return _classify_deny_connect(client, "127.0.0.1:80")
 
 
-def test_rfc1918(client: ProxyClient) -> tuple[str, str]:
-    outcomes = [_classify_deny_connect(client, t) for t in ("10.0.0.1:80", "192.168.1.1:80", "172.16.0.1:80")]
-    bad = [d for o, d in outcomes if o == "fail"]
+def _deny_all(client: ProxyClient, *targets: str) -> tuple[str, str]:
+    """Every one of `targets` must be refused; report the ones that were not.
+
+    A whole address family is one check, not one per address, so a partial
+    floor — 10/8 denied but 172.16/12 allowed — reads as a failure rather
+    than as two results that have to be compared by eye.
+    """
+    outcomes = [_classify_deny_connect(client, target) for target in targets]
+    bad = [detail for outcome, detail in outcomes if outcome == "fail"]
     if bad:
         return "fail", "; ".join(bad)
-    return "pass", "; ".join(d for _, d in outcomes)
+    return "pass", "; ".join(detail for _, detail in outcomes)
+
+
+def test_rfc1918(client: ProxyClient) -> tuple[str, str]:
+    return _deny_all(client, "10.0.0.1:80", "192.168.1.1:80", "172.16.0.1:80")
 
 
 def test_link_local(client: ProxyClient) -> tuple[str, str]:
@@ -606,11 +651,7 @@ def test_ipv6_loopback(client: ProxyClient) -> tuple[str, str]:
 
 
 def test_ipv6_private(client: ProxyClient) -> tuple[str, str]:
-    outcomes = [_classify_deny_connect(client, t) for t in ("[fd00::1]:80", "[fe80::1]:80")]
-    bad = [d for o, d in outcomes if o == "fail"]
-    if bad:
-        return "fail", "; ".join(bad)
-    return "pass", "; ".join(d for _, d in outcomes)
+    return _deny_all(client, "[fd00::1]:80", "[fe80::1]:80")
 
 
 # -- DNS fixtures (need the test policy active) -----------------------------
@@ -725,12 +766,11 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
     Probing twice, with a pause between the passes, is the point. A single
     probe per name never causes the private answer to be handed out at all,
     so the trap could not fire even against a vulnerable engine and the row
-    would pass while testing nothing — the failure mode that made
-    `dns-private-ipv6` vacuous for two measurement rounds
-    (docs/findings.md, "Corrections to earlier runs"). Two probes in the
-    same second are no
-    better against a resolver cache with second granularity, which is why
-    the passes are separated rather than interleaved.
+    would pass while testing nothing — the same failure mode that once made
+    `dns-private-ipv6` vacuous: it asked only for a denial, and got one for
+    the wrong reason. Two probes in the same second are no better against a
+    resolver cache with second granularity, which is why the passes are
+    separated rather than interleaved.
 
     **Only the trap decides the grade.** A second probe that establishes
     with the trap silent is not a failure: it means the engine connected to
@@ -942,79 +982,94 @@ def test_concurrency(client: ProxyClient) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 # (name, group, default expectation, callable, needs_fixtures)
+@dataclass(frozen=True)
+class Check:
+    """One adversarial check: what it asks, and what counts as passing.
+
+    One row per check, rather than a `TESTS` tuple and a `CHECK_PURPOSE`
+    dict keyed by the same names. The purpose belongs here because it is a
+    property of the check — whoever changes what a check does is the
+    person who has to restate what it asks — and because two tables keyed
+    alike will eventually disagree. They needed a test to catch orphans
+    between them; a single row cannot have any.
+
+    scripts/report.py prints `purpose` above the measured outcomes, so
+    docs/findings.md is generated whole instead of pairing generated rows
+    with a hand-written key that drifts.
+    """
+    name: str
+    group: str              # "quick" or "full"
+    expectation: str        # "allow", "deny" or "record"
+    fn: "callable"
+    needs_fixtures: bool
+    purpose: str            # the question this check asks, in one sentence
+
+
 TESTS = [
-    ("allowed-http",         "quick", "allow",  test_allowed_http,         False),
-    ("allowed-https",        "quick", "allow",  test_allowed_https,        False),
-    ("blocked-host-connect", "quick", "deny",   test_blocked_host_connect, False),
-    ("blocked-host-http",    "quick", "deny",   test_blocked_host_http,    False),
-    ("direct-ip-connect",    "quick", "deny",   test_direct_ip_connect,    False),
-    ("loopback-ipv4",        "quick", "deny",   test_loopback,             False),
-    ("rfc1918-ipv4",         "quick", "deny",   test_rfc1918,              False),
-    ("link-local-ipv4",      "quick", "deny",   test_link_local,           False),
-    ("metadata-endpoint",    "quick", "deny",   test_metadata,             False),
-    ("loopback-ipv6",        "quick", "deny",   test_ipv6_loopback,        False),
-    ("private-ipv6",         "quick", "deny",   test_ipv6_private,         False),
-    ("dns-private-ipv4",     "full",  "deny",   test_dns_private_v4,       True),
-    ("dns-private-ipv6",     "full",  "deny",   test_dns_private_v6,       True),
-    ("dns-rebinding",        "full",  "deny",   test_dns_rebind,           True),
-    ("dns-mixed-answers",    "full",  "deny",   test_dns_mixed,            True),
-    ("ptr-allowlist",        "full",  "deny",   test_ptr_allowlist,        True),
-    ("connect-sni-mismatch", "full",  "record", test_sni_mismatch,         False),
-    ("connect-raw-tunnel",   "full",  "record", test_raw_tunnel,           False),
-    ("concurrency-sanity",   "full",  "record", test_concurrency,          False),
+    Check("allowed-http", "quick", "allow", test_allowed_http, False,
+          "A plain-HTTP GET to an allowlisted host reaches it."),
+    Check("allowed-https", "quick", "allow", test_allowed_https, False,
+          "A CONNECT tunnel to an allowlisted host completes a real TLS "
+          "handshake, so ordinary HTTPS works through the proxy."),
+    Check("blocked-host-connect", "quick", "deny", test_blocked_host_connect, False,
+          "CONNECT to a host that is not on the allowlist is refused "
+          "— the default-deny rule, on the tunnel path."),
+    Check("blocked-host-http", "quick", "deny", test_blocked_host_http, False,
+          "A plain-HTTP GET to a host that is not on the allowlist is "
+          "refused — the same rule on the request path."),
+    Check("direct-ip-connect", "quick", "deny", test_direct_ip_connect, False,
+          "A destination written as a bare address is refused. Under a "
+          "hostname allowlist it can only ever be denied; which rule "
+          "denies it is what the cause column shows."),
+    Check("loopback-ipv4", "quick", "deny", test_loopback, False,
+          "CONNECT to 127.0.0.1 is refused."),
+    Check("rfc1918-ipv4", "quick", "deny", test_rfc1918, False,
+          "CONNECT to RFC1918 space (10/8, 172.16/12, 192.168/16) is refused."),
+    Check("link-local-ipv4", "quick", "deny", test_link_local, False,
+          "CONNECT to 169.254.0.0/16 is refused."),
+    Check("metadata-endpoint", "quick", "deny", test_metadata, False,
+          "The cloud metadata address is refused over both CONNECT and "
+          "plain HTTP."),
+    Check("loopback-ipv6", "quick", "deny", test_ipv6_loopback, False,
+          "CONNECT to [::1] is refused."),
+    Check("private-ipv6", "quick", "deny", test_ipv6_private, False,
+          "CONNECT to ULA and link-local IPv6 (fd00::1, fe80::1) is refused."),
+    Check("dns-private-ipv4", "full", "deny", test_dns_private_v4, True,
+          "An *allowlisted* name that resolves to a private IPv4 address "
+          "is refused, so the denial can only have come from validating "
+          "the resolved address (nip.io)."),
+    Check("dns-private-ipv6", "full", "deny", test_dns_private_v6, True,
+          "The same, for IPv6 (sslip.io)."),
+    Check("dns-rebinding", "full", "deny", test_dns_rebind, True,
+          "A name whose answer changes between the first lookup and the "
+          "next does not get the engine to a private address. Graded on "
+          "whether the fixture's trap was reached, not on counts."),
+    Check("dns-mixed-answers", "full", "deny", test_dns_mixed, True,
+          "A name resolving to a public *and* a private address is "
+          "refused, in both answer orderings — every address in the "
+          "answer set is validated, not just the first or the routable "
+          "one."),
+    Check("ptr-allowlist", "full", "deny", test_ptr_allowlist, True,
+          "An address whose PTR record claims an allowlisted hostname is "
+          "still refused, so a reverse lookup cannot satisfy the allowlist."),
+    Check("connect-sni-mismatch", "full", "record", test_sni_mismatch, False,
+          "What the engine does when a tunnel to one allowlisted host "
+          "carries a ClientHello for another: enforcement inside the "
+          "tunnel, or none."),
+    Check("connect-raw-tunnel", "full", "record", test_raw_tunnel, False,
+          "What the engine does when a tunnel to an allowlisted host on "
+          "443 carries plaintext rather than TLS."),
+    Check("concurrency-sanity", "full", "record", test_concurrency, False,
+          "Ten simultaneous CONNECTs to an allowed host all succeed — "
+          "the proxy is not serializing or dropping under trivial load."),
 ]
 
-# What each check asks, in one sentence — the question, not the verdict.
-#
-# It lives here rather than in the report generator because the question is
-# a property of the check: whoever changes what a check does is the person
-# who has to restate what it asks. scripts/report.py prints these above the
-# measured outcomes so that docs/findings.md can be generated whole,
-# instead of pairing generated rows with a hand-written key that drifts.
-# A test asserts every check has one and that nothing here is orphaned.
-CHECK_PURPOSE = {
-    "allowed-http": "A plain-HTTP GET to an allowlisted host reaches it.",
-    "allowed-https": "A CONNECT tunnel to an allowlisted host completes a real TLS "
-                     "handshake, so ordinary HTTPS works through the proxy.",
-    "blocked-host-connect": "CONNECT to a host that is not on the allowlist is refused "
-                            "— the default-deny rule, on the tunnel path.",
-    "blocked-host-http": "A plain-HTTP GET to a host that is not on the allowlist is "
-                         "refused — the same rule on the request path.",
-    "direct-ip-connect": "A destination written as a bare address is refused. Under a "
-                         "hostname allowlist it can only ever be denied; which rule "
-                         "denies it is what the cause column shows.",
-    "loopback-ipv4": "CONNECT to 127.0.0.1 is refused.",
-    "rfc1918-ipv4": "CONNECT to RFC1918 space (10/8, 172.16/12, 192.168/16) is refused.",
-    "link-local-ipv4": "CONNECT to 169.254.0.0/16 is refused.",
-    "metadata-endpoint": "The cloud metadata address is refused over both CONNECT and "
-                         "plain HTTP.",
-    "loopback-ipv6": "CONNECT to [::1] is refused.",
-    "private-ipv6": "CONNECT to ULA and link-local IPv6 (fd00::1, fe80::1) is refused.",
-    "dns-private-ipv4": "An *allowlisted* name that resolves to a private IPv4 address "
-                        "is refused, so the denial can only have come from validating "
-                        "the resolved address (nip.io).",
-    "dns-private-ipv6": "The same, for IPv6 (sslip.io).",
-    "dns-rebinding": "A name whose answer changes between the first lookup and the "
-                     "next does not get the engine to a private address. Graded on "
-                     "whether the fixture's trap was reached, not on counts.",
-    "dns-mixed-answers": "A name resolving to a public *and* a private address is "
-                         "refused, in both answer orderings — every address in the "
-                         "answer set is validated, not just the first or the routable "
-                         "one.",
-    "ptr-allowlist": "An address whose PTR record claims an allowlisted hostname is "
-                     "still refused, so a reverse lookup cannot satisfy the allowlist.",
-    "connect-sni-mismatch": "What the engine does when a tunnel to one allowlisted host "
-                            "carries a ClientHello for another: enforcement inside the "
-                            "tunnel, or none.",
-    "connect-raw-tunnel": "What the engine does when a tunnel to an allowlisted host on "
-                          "443 carries plaintext rather than TLS.",
-    "concurrency-sanity": "Ten simultaneous CONNECTs to an allowed host all succeed — "
-                          "the proxy is not serializing or dropping under trivial load.",
-}
+CHECKS_BY_NAME = {check.name: check for check in TESTS}
 
 
 def check_purpose(name: str) -> str:
-    return CHECK_PURPOSE.get(name, "")
+    check = CHECKS_BY_NAME.get(name)
+    return check.purpose if check else ""
 
 
 def _finalize(name: str, expectation: str, raw: tuple[str, str]) -> tuple[str, str]:
@@ -1072,10 +1127,12 @@ def run_suite(proxy: str, engine: str, full: bool,
     overrides = ENGINE_EXPECTATIONS.get(engine, {})
     have_fixtures = None
     results: list[Result] = []
-    for name, group, default_expect, fn, needs_fixtures in TESTS:
+    for check in TESTS:
+        name, group, fn = check.name, check.group, check.fn
+        needs_fixtures = check.needs_fixtures
         if group == "full" and not full:
             continue
-        expectation = overrides.get(name, default_expect)
+        expectation = overrides.get(name, check.expectation)
         if needs_fixtures:
             if have_fixtures is None:
                 have_fixtures = fixtures_active(client)
@@ -1121,7 +1178,7 @@ def policy_in_use(results: list[Result]) -> str:
     no such rows and reports `unknown` rather than guessing.
     """
     fixture_rows = [r for r in results
-                    if r.name in {name for name, _, _, _, needs in TESTS if needs}]
+                    if r.name in {c.name for c in TESTS if c.needs_fixtures}]
     if not fixture_rows:
         return "unknown"
     if all(r.outcome == "skip" and r.detail == FIXTURE_SKIP for r in fixture_rows):

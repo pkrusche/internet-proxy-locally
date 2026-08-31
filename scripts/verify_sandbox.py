@@ -49,11 +49,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The repository root, so `scripts.harness` and `run` resolve by name.
+# See the comment in scripts/harness.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from harness import Reporter, load_run_module  # noqa: E402
-
-run_mod = load_run_module()
+from scripts.harness import Reporter, run  # noqa: E402
 
 PROXY_ENV = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
 
@@ -132,7 +132,7 @@ def routing_evidence(tool: str) -> "tuple[bool, list[str]]":
     the proxy environment variables either appear in the tool that would
     have to set them, or they do not.
     """
-    host, port = run_mod.endpoint()
+    host, port = run.endpoint()
     endpoint = f"{host}:{port}"
     notes: list[str] = []
     root = _package_root(tool)
@@ -161,13 +161,13 @@ def routing_evidence(tool: str) -> "tuple[bool, list[str]]":
 
 def endpoint_contract(report: Reporter) -> bool:
     """The half this repository owns: the endpoint a sandbox would use."""
-    host, port = run_mod.endpoint()
-    listening = run_mod.port_listening(host, port)
+    host, port = run.endpoint()
+    listening = run.port_listening(host, port)
     if not report.check(listening, f"the endpoint {host}:{port} is serving",
                         "no proxy is running, so the contract a sandbox depends on "
                         "cannot be checked. `./run.py up` first."):
         return False
-    healthy, detail, _ = run_mod.probe_proxy(host, port)
+    healthy, detail, _ = run.probe_proxy(host, port)
     return report.check(
         healthy, f"the endpoint refuses a non-allowlisted host ({detail})",
         "the endpoint answered but did not deny an unknown destination. A sandbox "
