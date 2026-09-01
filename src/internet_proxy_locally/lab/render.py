@@ -23,6 +23,7 @@ from internet_proxy_locally.policy.render import (
     check_rendered_policies,
     jinja_env,
     render_engine_policies,
+    render_named,
     render_template,
     write_validated,
 )
@@ -59,7 +60,9 @@ def render_test_policies(config: LabConfig | None = None) -> dict[Path, str]:
         test_policy=True,
         destination=test_config_path,
     )
-    rendered.update(_render_fixture_hosts(jinja_env(), config.fixture))
+    env = jinja_env()
+    rendered.update(_render_fixture_hosts(env, config.fixture))
+    rendered.update(_render_fixture_env(env, config.fixture))
     return rendered
 
 
@@ -91,6 +94,26 @@ def _render_fixture_hosts(env, fixture: FixtureConfig) -> dict[Path, str]:
         fixture_records=rows,
     )
     return {paths.workspace_root() / spec.config_file: text}
+
+
+def _render_fixture_env(env, fixture: FixtureConfig) -> dict[Path, str]:
+    """Render lab/config/fixture.env, the responder's half of `[fixture]`.
+
+    The hosts file above covers the static records; this covers the four
+    facts only `rebind.py` needs — the rebinding zone, the public answer
+    and the PTR claim. They used to reach the container as build args, so
+    an already-built image went on serving the previous values after an
+    edit to fixtures.toml. Mounted, they are read at container start and
+    `[fixture]` stays the one source.
+    """
+    spec = fixture_spec()
+    text = render_named(
+        env,
+        "fixture.env.j2",
+        test_policy=True,  # for the shared banner: this file is the lab lane's
+        fixture=fixture,
+    )
+    return {paths.workspace_root() / spec.extra_config_file: text}
 
 
 def check_rendered_test_policies(rendered: dict[Path, str]) -> list[str]:

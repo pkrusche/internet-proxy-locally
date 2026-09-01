@@ -27,7 +27,6 @@ normalized, and never has to speak to a real client.
 
 from __future__ import annotations
 
-import os
 import signal
 import socket
 import struct
@@ -36,23 +35,52 @@ import sys
 import threading
 
 # Every fact about what this fixture serves comes from lab/fixtures.toml,
-# baked in as Dockerfile ARGs at build time (data/images/dnsfixture/Dockerfile,
-# lab.py `fixture_spec()`). It used to be a third copy of those values,
-# with a "keep in sync" comment and nothing enforcing it — and this copy
-# is the one nothing could check, because it only exists inside the image.
+# rendered into lab/config/fixture.env and bind-mounted read-only at the
+# path below (lab/render.py `_render_fixture_env()`). It used to be a third
+# copy of those values, with a "keep in sync" comment and nothing enforcing
+# it — and this copy is the one nothing could check, because it only
+# existed inside the image.
+#
+# Mounted rather than baked in as build args: an image is built once and
+# `[fixture]` is edited more often than that, so values compiled into it go
+# stale silently. Read at start, they cannot.
 #
 # There is no fallback on purpose: a fixture serving something other than
 # what the checker probes for produces denials that look like enforcement
-# and are really NXDOMAIN, so an unbuilt ARG has to stop the container
+# and are really NXDOMAIN, so a missing value has to stop the container
 # rather than quietly change what is measured.
+FIXTURE_ENV = "/fixture/fixture.env"
+
+
+def _fixture_env() -> dict[str, str]:
+    """`KEY=value` lines from the mounted file; `#` and blanks ignored."""
+    try:
+        with open(FIXTURE_ENV) as handle:
+            text = handle.read()
+    except OSError as exc:
+        raise SystemExit(
+            f"cannot read {FIXTURE_ENV} ({exc}) — it is bind-mounted by "
+            "`ipl-lab up`, which renders it from lab/fixtures.toml."
+        ) from exc
+    values = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        values[key.strip()] = value.strip()
+    return values
+
+
+ENV = _fixture_env()
 
 
 def _required(name: str) -> str:
-    value = os.environ.get(name, "").strip()
+    value = ENV.get(name, "").strip()
     if not value:
         raise SystemExit(
-            f"{name} is empty — the image was built without it. "
-            "Rebuild with `./lab.py setup --rebuild`."
+            f"{name} is missing from {FIXTURE_ENV}. "
+            "Regenerate it with `ipl-lab policy`."
         )
     return value
 

@@ -33,4 +33,11 @@ name = "internet-proxy-dnsfixture"
 internal_port = 53
 config_file = "lab/config/dns-fixture.hosts"
 config_mount = "/fixture/hosts"
+# What the responder serves — the rebinding zone, the public answer and the
+# PTR claim — rendered from `[fixture]` in fixtures.toml alongside the hosts
+# file. Mounted rather than baked in as build args, so an edit to
+# fixtures.toml takes effect on the next `up` instead of on the next
+# rebuild.
+extra_config_file = "lab/config/fixture.env"
+extra_config_mount = "/fixture/fixture.env"
 args = []

@@ -226,7 +226,7 @@ class LabUnitTest(unittest.TestCase):
         rather than reading the TOML at import time, so this is what
         catches a hand-transcription slip: it asserts the checker's
         constants against the file, and that every fact the responder needs
-        actually reaches the image as a build arg.
+        reaches the container through the mounted lab/config/fixture.env.
         """
         fixture = load_lab_config().fixture
         self.assertEqual(dns_mixed.MIXED_FIXTURE_CONTROL, fixture.control)
@@ -235,18 +235,25 @@ class LabUnitTest(unittest.TestCase):
         self.assertEqual(ptr_allowlist.PTR_FIXTURE_ADDRESS, fixture.ptr_address)
         self.assertEqual(ptr_allowlist.PTR_FIXTURE_CLAIMS, fixture.ptr_claims)
 
-        args = fixture_spec().build_args
-        self.assertEqual(args["REBIND_ZONE"], fixture.rebind_zone)
-        self.assertEqual(args["PTR_ADDRESS"], fixture.ptr_address)
-        self.assertEqual(args["PTR_CLAIMS"], fixture.ptr_claims)
-        self.assertEqual(args["PUBLIC_ANSWER"], fixture.public_answer)
+        # The rendered env file is the one path from `[fixture]` to the
+        # responder, and the spec has to actually mount it.
+        spec = fixture_spec()
+        env_path = REPO_ROOT / spec.extra_config_file
+        rendered = render_test_policies()
+        self.assertIn(env_path, rendered)
+        self.assertEqual(
+            env_path.read_text(encoding="utf-8"),
+            rendered[env_path],
+            "run `ipl-lab policy` and commit lab/config/fixture.env",
+        )
+        self.assertEqual(spec.extra_config_mount, "/fixture/fixture.env")
 
-        # rebind.py must hold none of them as a literal, and the Dockerfile
-        # must declare every ARG that carries one.
+        # rebind.py must hold none of them as a literal, and every fact must
+        # arrive by name through the file it reads.
         fixture_image = PACKAGE_DATA / "images" / "dnsfixture"
         rebind = (fixture_image / "rebind.py").read_text()
-        dockerfile = (fixture_image / "Dockerfile").read_text()
-        for arg, value in (
+        self.assertIn(f'FIXTURE_ENV = "{spec.extra_config_mount}"', rebind)
+        for key, value in (
             ("REBIND_ZONE", fixture.rebind_zone),
             ("PTR_ADDRESS", fixture.ptr_address),
             ("PTR_CLAIMS", fixture.ptr_claims),
@@ -254,10 +261,10 @@ class LabUnitTest(unittest.TestCase):
         ):
             self.assertFalse(
                 f'"{value}"' in rebind,
-                f"rebind.py restates {arg} ({value}) as a literal",
+                f"rebind.py restates {key} ({value}) as a literal",
             )
-            self.assertIn(f"ARG {arg}", dockerfile)
-            self.assertIn(f'_required("{arg}")', rebind)
+            self.assertIn(f'_required("{key}")', rebind)
+            self.assertRegex(rendered[env_path], rf"(?m)^{key}={re.escape(value)}$")
 
     # -- lab/fixtures.toml ---------------------------------------------------
 

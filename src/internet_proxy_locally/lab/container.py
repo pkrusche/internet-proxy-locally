@@ -16,31 +16,21 @@ from internet_proxy_locally import net, paths
 from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.constants import DNS_FIXTURE, HEALTH_WAIT_SECONDS
 from internet_proxy_locally.errors import Fail
-from internet_proxy_locally.lab.fixtures import LabConfig, load_lab_config
 from internet_proxy_locally.spec import ServiceSpec
 
 
-def fixture_spec(config: LabConfig | None = None) -> ServiceSpec:
-    """The DNS fixture service, with what it serves folded into `[build]`.
+def fixture_spec() -> ServiceSpec:
+    """The DNS fixture service.
 
-    data/lab/fixtures.toml is the source of truth for the rebinding zone, the
-    PTR claim and the public address. The container needs them too, and
-    `ServiceSpec.build` is already passed through to the Dockerfile as
-    uppercase ARGs — so they arrive there by construction instead of being
-    restated as literals in data/images/dnsfixture/rebind.py, where nothing outside
-    the image could check them.
+    data/lab/fixtures.toml is the source of truth for the rebinding zone,
+    the PTR claim and the public address, and the container gets them the
+    same way it gets the records: rendered into lab/config/ and bind-mounted
+    (`extra_config_file` here, `lab.render._render_fixture_env()`). They
+    used to be folded into `[build]` and baked in as Dockerfile ARGs, which
+    made them a property of the image rather than of the run — so an image
+    built before an edit to fixtures.toml went on serving the old values.
     """
-    spec = ServiceSpec.load(DNS_FIXTURE, root=paths.lab_dir())
-    fixture = (config or load_lab_config()).fixture
-    spec.build.update(
-        {
-            "rebind_zone": fixture.rebind_zone,
-            "ptr_address": fixture.ptr_address,
-            "ptr_claims": fixture.ptr_claims,
-            "public_answer": fixture.public_answer,
-        }
-    )
-    return spec
+    return ServiceSpec.load(DNS_FIXTURE, root=paths.lab_dir())
 
 
 def start_dns_fixture(backend: Backend) -> str:

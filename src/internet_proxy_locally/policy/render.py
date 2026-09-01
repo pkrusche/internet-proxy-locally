@@ -74,19 +74,23 @@ def jinja_env():
     return env
 
 
-def render_template(env, spec: ServiceSpec, **variables) -> str:
-    """Render one service's template by name.
+def render_named(env, name: str, **variables) -> str:
+    """Render one template from data/templates/ by file name.
 
     The existence check is here rather than at the call sites because a
     missing template has to fail loudly: rendering nothing would produce
     an empty policy, and an empty policy is an open one.
     """
-    name = _template_name(spec)
     if not (paths.template_dir() / name).is_file():
         raise Fail(f"missing template: {paths.template_dir() / name}")
     return env.get_template(name).render(
         template_name=f"data/templates/{name}", **variables
     )
+
+
+def render_template(env, spec: ServiceSpec, **variables) -> str:
+    """Render the template a service's `config_file` names."""
+    return render_named(env, _template_name(spec), **variables)
 
 
 def config_destination(spec: ServiceSpec) -> Path:
