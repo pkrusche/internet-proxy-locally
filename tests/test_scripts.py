@@ -327,7 +327,7 @@ class ResilienceLoadTest(unittest.TestCase):
     def _tally(self, statuses: list[int | None], denied: bool):
         load = self.resilience.Load(port=0)
         for status in statuses:
-            load._request = lambda host, s=status: (s, f"HTTP/1.1 {s} X")
+            load._request = lambda host, s=status: (s, f"HTTP/1.1 {s} X")  # ty: ignore[invalid-assignment]
             load.stop.set()  # one pass through the loop body only
             load.stop.clear()
             # exercise the accounting directly, without the socket

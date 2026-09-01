@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from internet_proxy_locally import paths
@@ -132,7 +133,9 @@ def _write_pin(toml_path: Path, key: str, value: str) -> None:
     toml_path.write_text(new_text)
 
 
-def pin_packages(spec: ServiceSpec, get_backend: callable, ref: str = "") -> None:
+def pin_packages(
+    spec: ServiceSpec, get_backend: Callable[[], Backend], ref: str = ""
+) -> None:
     """Record the apk versions `spec`'s base image would install.
 
     Shared with ipl-lab, which pins the DNS fixture exactly this way —
@@ -182,7 +185,9 @@ def pin_packages(spec: ServiceSpec, get_backend: callable, ref: str = "") -> Non
         print(f"pinned {spec.engine} {name}={resolved} (from {base})")
 
 
-def pin_digest(spec: ServiceSpec, get_backend: callable, ref: str = "") -> None:
+def pin_digest(
+    spec: ServiceSpec, get_backend: Callable[[], Backend], ref: str = ""
+) -> None:
     """Resolve `repository:tag` to its immutable manifest digest."""
     image = f"{spec.image_repository}:{ref or spec.image_tag}"
     print(f"pulling {image} to resolve its digest")
@@ -197,7 +202,9 @@ def pin_digest(spec: ServiceSpec, get_backend: callable, ref: str = "") -> None:
     print(f"pinned {spec.engine} {spec.image_tag} @ {digest}")
 
 
-def pin_source(spec: ServiceSpec, get_backend: callable, ref: str = "") -> None:
+def pin_source(
+    spec: ServiceSpec, get_backend: Callable[[], Backend], ref: str = ""
+) -> None:
     """Resolve a git ref in the upstream repository to a full commit SHA."""
     git = shutil.which("git")
     if not git:

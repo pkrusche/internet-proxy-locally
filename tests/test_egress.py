@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from collections.abc import Sequence
 from pathlib import Path
 from typing import ClassVar
 
@@ -44,6 +45,7 @@ class EgressSuiteTest(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp(prefix="ipl-egress-test-")
         cls.certfile = f"{cls.tmp}/cert.pem"
         cls.keyfile = f"{cls.tmp}/key.pem"
+        assert OPENSSL, "guarded by skipUnless on the class"
         subprocess.run(
             [
                 OPENSSL,
@@ -115,7 +117,7 @@ class EgressSuiteTest(unittest.TestCase):
             keyfile=self.keyfile,
         )
         # Everything-allowed policy: patch the decision method.
-        server.host_allowed = lambda host: True  # type: ignore[method-assign]
+        server.host_allowed = lambda host: True  # ty: ignore[invalid-assignment]
         import threading
 
         threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -809,7 +811,7 @@ class PtrAllowlistTest(unittest.TestCase):
             self.asked = True
             return allow
 
-        server.host_allowed = host_allowed  # type: ignore[method-assign]
+        server.host_allowed = host_allowed  # ty: ignore[invalid-assignment]
         self.addCleanup(server.stop)
         return egress.ProxyClient("127.0.0.1", port)
 
@@ -907,11 +909,11 @@ class DnsRebindTest(unittest.TestCase):
             asked.append(host)
             return allow
 
-        server.host_allowed = host_allowed  # type: ignore[method-assign]
+        server.host_allowed = host_allowed  # ty: ignore[invalid-assignment]
         self.addCleanup(server.stop)
         return egress.ProxyClient("127.0.0.1", port)
 
-    def transcript(self, lookups_per_name: int, trap: list[str] = ()) -> list[str]:
+    def transcript(self, lookups_per_name: int, trap: Sequence[str] = ()) -> list[str]:
         lines = []
         for name in sorted(set(self.asked)):
             answers = ["9.9.9.9", "192.168.64.60"][:lookups_per_name]

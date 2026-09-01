@@ -52,6 +52,7 @@ import subprocess
 import sys
 import time
 import tomllib
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -133,7 +134,7 @@ PTR_FIXTURE_CLAIMS = _FIXTURE.get("ptr_claims", "")
 # --fixture-container. Kept as a module-level hook so the rebinding test
 # can read it without every test function growing a parameter, and so the
 # unit tests can substitute a canned transcript.
-FIXTURE_LOG_SOURCE: callable = list
+FIXTURE_LOG_SOURCE: Callable[[], list[str]] = list
 
 # Engine-specific expectations for the CONNECT-abuse tests: Pipelock is
 # expected to reject; Smokescreen and Squid behavior is recorded
@@ -242,7 +243,7 @@ def resolve_locally(host: str) -> list[str]:
         infos = socket.getaddrinfo(host, None)
     except OSError:
         return []
-    return sorted({info[4][0] for info in infos})
+    return sorted({str(info[4][0]) for info in infos})
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +367,7 @@ def classify_denial(text: str) -> str:
     return "unknown"
 
 
-def aggregate_cause(detail: str, attempts: list[Attempt]) -> str:
+def aggregate_cause(detail: str, attempts: list[Attempt]) -> str | None:
     """One cause for a whole check.
 
     With per-attempt evidence, classify each attempt and combine, rather
@@ -1131,7 +1132,7 @@ def test_raw_tunnel(client: ProxyClient) -> tuple[str, str]:
 
 def test_concurrency(client: ProxyClient) -> tuple[str, str]:
     def one(_: int) -> bool:
-        sock, _status, _ = client.connect(f"{ALLOWED_HTTPS_HOST}:443")
+        sock, _status, _detail = client.connect(f"{ALLOWED_HTTPS_HOST}:443")
         if sock is not None:
             sock.close()
             return True
@@ -1171,7 +1172,7 @@ class Check:
     name: str
     group: str  # "quick" or "full"
     expectation: str  # "allow", "deny" or "record"
-    fn: callable
+    fn: Callable[..., RawOutcome | tuple[str, str]]
     needs_fixtures: bool
     purpose: str  # the question this check asks, in one sentence
 
@@ -1555,12 +1556,16 @@ def diff_results(a: dict, b: dict) -> list[str]:
     b_by_name = {r["name"]: r for r in b.get("results", [])}
     lines: list[str] = []
     for name in sorted(set(a_by_name) | set(b_by_name)):
-        ra, rb = a_by_name.get(name), b_by_name.get(name)
+        rb = b_by_name.get(name)
+        if rb is None:
+            # `name` came from one side or the other, so absent from B puts
+            # it in A: the index cannot raise, and says so.
+            ra = a_by_name[name]
+            lines.append(f"{name}: only in A — {ra['outcome']} ({ra['detail']})")
+            continue
+        ra = a_by_name.get(name)
         if ra is None:
             lines.append(f"{name}: only in B — {rb['outcome']} ({rb['detail']})")
-            continue
-        if rb is None:
-            lines.append(f"{name}: only in A — {ra['outcome']} ({ra['detail']})")
             continue
         if ra["outcome"] != rb["outcome"] or ra.get("cause") != rb.get("cause"):
             a_tag = f"{ra['outcome']}" + (

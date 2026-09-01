@@ -16,6 +16,7 @@ went through — before it is allowed to touch the disk.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
@@ -100,7 +101,7 @@ def render_engine_policies(
     allow: tuple[str, ...] | list[str],
     allow_test: tuple[str, ...] | list[str],
     test_policy: bool,
-    destination: callable,
+    destination: Callable[[ServiceSpec], Path],
 ) -> dict[Path, str]:
     """Render every engine's config from one allowlist pair.
 
@@ -200,7 +201,9 @@ def sync_policies(config: PolicyConfig | None = None) -> list[Path]:
     return write_validated(render_policies(config), check_rendered_policies)
 
 
-def write_validated(rendered: dict[Path, str], check: callable) -> list[Path]:
+def write_validated(
+    rendered: dict[Path, str], check: Callable[[dict[Path, str]], list[str]]
+) -> list[Path]:
     """Validate rendered text, then write only what changed.
 
     Both lanes render templates and both must refuse to overwrite a

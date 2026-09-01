@@ -12,6 +12,7 @@ import os
 import re
 import socket
 import time
+from collections.abc import Callable
 
 from internet_proxy_locally.constants import DEFAULT_ENDPOINT
 
@@ -72,7 +73,7 @@ def probe_proxy(host: str, port: int, timeout: float = 4.0) -> tuple[bool, str, 
     )
 
 
-def wait_until(probe: callable, timeout: float, interval: float = 0.5):
+def wait_until(probe: Callable[[], object], timeout: float, interval: float = 0.5):
     """Poll `probe` until it returns something other than None, or time out.
 
     `None` is what "not yet" means, so a probe that wants to stop early —

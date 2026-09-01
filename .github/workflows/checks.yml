@@ -1,0 +1,64 @@
+# Static checks: ruff for lint and formatting, ty for types. All three are
+# one-liners locally too —
+#
+#     uv run ruff check .           uv run ruff check --fix .   to fix
+#     uv run ruff format --check .  uv run ruff format .        to fix
+#     uv run ty check
+#
+# Nothing here starts a container or touches the network, so it is the fast
+# gate; the container-backed suites (`ipl-verify`, `ipl-lab`) are not run
+# from CI because they need a real container runtime.
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Two jobs rather than two steps: they are independent, so a type error and
+  # a formatting slip are reported in the same run instead of the first one
+  # hiding the second.
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      # --frozen resolves nothing: the ruff version is the one in uv.lock, so
+      # this job and a developer's `uv run ruff` are the same binary. Without
+      # it a newer ruff could fail a build that nothing in the repo changed.
+      # --only-group dev skips installing the project and its runtime
+      # dependencies, which linting does not need.
+      - name: ruff check
+        run: uv run --frozen --only-group dev ruff check .
+
+      # Runs even when the lint step failed, so one push reports both.
+      - name: ruff format
+        if: '!cancelled()'
+        run: uv run --frozen --only-group dev ruff format --check .
+
+  ty:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      # No --only-group here, unlike ruff: ty resolves imports, so it needs
+      # jinja2 and pyyaml actually installed. Without them it reports four
+      # unresolved-import errors instead of checking anything.
+      - name: ty check
+        run: uv run --frozen ty check

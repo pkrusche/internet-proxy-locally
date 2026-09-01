@@ -15,6 +15,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -205,7 +206,7 @@ class RunPyCliTest(unittest.TestCase):
                 "FAKE_STATE": str(self.state),
                 "FAKE_PROXY_PORT": str(self.port),
                 "FAKE_PROXY_SPAWN": str(REPO_ROOT / "tests" / "mock_proxy.py"),
-                "FAKE_PYTHON": os.fspath(Path(os.sys.executable)),
+                "FAKE_PYTHON": os.fspath(Path(sys.executable)),
                 "IPL_ENDPOINT": f"127.0.0.1:{self.port}",
                 "IPL_ROOT": str(self.tmp),
                 "IPL_DATA_ROOT": str(self.tmp / "data"),
@@ -217,7 +218,7 @@ class RunPyCliTest(unittest.TestCase):
 
     def run_cli(self, *args: str) -> CompletedProcess:
         return subprocess.run(
-            [os.sys.executable, "-m", "internet_proxy_locally.cli.run", *args],
+            [sys.executable, "-m", "internet_proxy_locally.cli.run", *args],
             capture_output=True,
             text=True,
             env=self.env,
@@ -1033,7 +1034,7 @@ class RunPyUnitTest(unittest.TestCase):
         # Patched on the module rather than passed in, because what is
         # under test is `sync_policies` calling its own renderer — the path
         # `up` takes, where nothing gets to substitute a good render.
-        policy_render.render_policies = broken
+        policy_render.render_policies = broken  # ty: ignore[invalid-assignment]
         self.addCleanup(setattr, policy_render, "render_policies", original)
         with quiet() as printed, self.assertRaises(Fail):
             policy_render.sync_policies()
@@ -1051,7 +1052,7 @@ class RunPyUnitTest(unittest.TestCase):
 
         def fake(payload, returncode=0):
             backend = Backend("docker")
-            backend._run = lambda *a, **k: CompletedProcess(  # type: ignore[method-assign]
+            backend._run = lambda *a, **k: CompletedProcess(  # ty: ignore[invalid-assignment]
                 a, returncode, stdout=payload, stderr=""
             )
             return backend
@@ -1083,7 +1084,7 @@ class RunPyUnitTest(unittest.TestCase):
 
         def fake(payload, returncode=0):
             backend = Backend("docker")
-            backend._run = lambda *a, **k: CompletedProcess(  # type: ignore[method-assign]
+            backend._run = lambda *a, **k: CompletedProcess(  # ty: ignore[invalid-assignment]
                 a, returncode, stdout=payload, stderr=""
             )
             return backend
@@ -1165,7 +1166,7 @@ class RunPyUnitTest(unittest.TestCase):
 
         def fake(payload, returncode=0):
             backend = Backend("docker")
-            backend._run = lambda *a, **k: CompletedProcess(  # type: ignore[method-assign]
+            backend._run = lambda *a, **k: CompletedProcess(  # ty: ignore[invalid-assignment]
                 a, returncode, stdout=payload, stderr=""
             )
             return backend

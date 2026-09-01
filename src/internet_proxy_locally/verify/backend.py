@@ -112,7 +112,7 @@ def verify(backend_name: str, engine: str, port: int, report: Reporter) -> None:
             "outside this machine is not a fixture.",
         )
         report.check(
-            address and address in proc.stdout,
+            bool(address and address in proc.stdout),
             f"`up` announced the fixture at {address}",
             f"`up` printed:\n{proc.stdout.strip()}\nwhich does not name the "
             "address `inspect` reports, so the two do not agree on what the "

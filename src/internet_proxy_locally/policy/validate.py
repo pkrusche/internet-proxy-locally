@@ -12,6 +12,11 @@ from pathlib import Path
 
 import yaml
 
+# `import yaml` happens to pull these in today; naming them is what
+# makes `yaml.constructor` / `yaml.resolver` below actually guaranteed.
+import yaml.constructor
+import yaml.resolver
+
 from internet_proxy_locally import paths
 from internet_proxy_locally.errors import Fail
 

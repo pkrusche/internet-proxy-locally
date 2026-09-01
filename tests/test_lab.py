@@ -12,6 +12,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,6 +40,18 @@ from internet_proxy_locally.spec import ServiceSpec
 from tests.test_runpy import PACKAGE_DATA, REPO_ROOT, RunPyCliTest
 
 
+def _capture(pattern: str, text: str) -> str:
+    """The one capture of `pattern` in `text`.
+
+    A miss means the spec file changed shape, which is worth saying plainly:
+    `.group(1)` straight off `re.search` reports it as an AttributeError on
+    None, several frames from the pattern that actually stopped matching.
+    """
+    found = re.search(pattern, text)
+    assert found is not None, f"{pattern} no longer matches:\n{text}"
+    return found.group(1)
+
+
 class LabCliTest(RunPyCliTest):
     """`ipl-lab` against the fake backend.
 
@@ -57,7 +70,7 @@ class LabCliTest(RunPyCliTest):
     def lab_cli(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             [
-                __import__("os").sys.executable,
+                sys.executable,
                 "-m",
                 "internet_proxy_locally.cli.lab",
                 *args,
@@ -71,8 +84,8 @@ class LabCliTest(RunPyCliTest):
 
     def fake_dns_fixture_image(self) -> None:
         spec_text = (self.tmp / "data" / "lab" / "dnsfixture.toml").read_text()
-        repo = re.search(r'repository = "([^"]+)"', spec_text).group(1)
-        version = re.search(r'dnsmasq = "([^"]+)"', spec_text).group(1)
+        repo = _capture(r'repository = "([^"]+)"', spec_text)
+        version = _capture(r'dnsmasq = "([^"]+)"', spec_text)
         self.fake_image(f"{repo}:{version}")
 
     def test_up_starts_the_dns_fixture_and_points_the_engine_at_it(self) -> None:
@@ -559,7 +572,7 @@ class LabUnitTest(unittest.TestCase):
             "if m.startswith('internet_proxy_locally.lab')])"
         )
         proc = subprocess.run(
-            [__import__("os").sys.executable, "-c", probe],
+            [sys.executable, "-c", probe],
             capture_output=True,
             text=True,
             timeout=60,

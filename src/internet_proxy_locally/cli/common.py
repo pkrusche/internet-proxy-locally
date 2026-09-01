@@ -14,6 +14,7 @@ import argparse
 import difflib
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from internet_proxy_locally import paths
@@ -74,8 +75,8 @@ def pin_epilogue(cli: str) -> None:
 def run_policy_command(
     *,
     rendered: dict[Path, str],
-    check: callable,
-    sync: callable,
+    check: Callable[[dict[Path, str]], list[str]],
+    sync: Callable[[], list[Path]],
     source: str,
     label: str,
     cli: str,
