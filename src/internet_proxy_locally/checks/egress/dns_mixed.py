@@ -55,9 +55,9 @@ def test_dns_mixed(client: ProxyClient) -> RawOutcome:
     ]
     established = [a for a in attempts[1:] if a.outcome == "established"]
     if established:
-        # Behavioral, not graded: the runner maps it through the engine's
-        # expectation, because Smokescreen's deviation here is recorded
-        # rather than failed (engine_expectations.ENGINE_EXPECTATIONS).
+        # Behavioral, not graded here: the runner maps this through the
+        # check's "deny" expectation (runner._finalize), so an engine that
+        # connects fails the check.
         #
         # Deliberately phrased without a taxonomy reason word: this detail
         # is fed to classify_denial(), and nothing here was denied.

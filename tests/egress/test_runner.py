@@ -1,6 +1,6 @@
 """Suite-level integration tests: running many checks together and
-verifying the runner's orchestration (grading, engine overrides, fixture
-detection, log-window capture) — not any single check's behavior."""
+verifying the runner's orchestration (grading, fixture detection,
+log-window capture) — not any single check's behavior."""
 
 from __future__ import annotations
 
@@ -98,9 +98,11 @@ class EgressSuiteTest(unittest.TestCase):
 
     # -- full suite: CONNECT abuse -----------------------------------------
 
-    def test_full_suite_strict_pipelock_expectations(self) -> None:
+    def test_full_suite_strict_grades_pass(self) -> None:
+        # pipelock is just a representative engine name here — grading no
+        # longer varies by engine, only by what the mock actually did.
         results = self.run_suite("pipelock", "strict", full=True)
-        # Strict mock rejects mismatched SNI and raw bytes => pipelock passes.
+        # Strict mock rejects mismatched SNI and raw bytes => pass.
         self.assertEqual(
             results["connect-sni-mismatch"].outcome,
             "pass",
@@ -116,49 +118,23 @@ class EgressSuiteTest(unittest.TestCase):
         self.assertEqual(results["dns-rebinding"].outcome, "skip")
         self.assertEqual(results["concurrency-sanity"].outcome, "record")
 
-    def test_full_suite_lenient_smokescreen_expectations(self) -> None:
-        results = self.run_suite("smokescreen", "lenient", full=True)
-        # Smokescreen behavior is recorded, not judged.
-        self.assertEqual(
-            results["connect-sni-mismatch"].outcome,
-            "record",
-            results["connect-sni-mismatch"].detail,
-        )
-        self.assertEqual(
-            results["connect-raw-tunnel"].outcome,
-            "record",
-            results["connect-raw-tunnel"].detail,
-        )
-
-    def test_full_suite_lenient_squid_expectations(self) -> None:
-        # Squid relays CONNECT tunnels without inspecting them, like
-        # Smokescreen, so its tunnel behavior is recorded rather than
-        # graded (docs/findings.md).
-        results = self.run_suite("squid", "lenient", full=True)
-        self.assertEqual(
-            results["connect-sni-mismatch"].outcome,
-            "record",
-            results["connect-sni-mismatch"].detail,
-        )
-        self.assertEqual(
-            results["connect-raw-tunnel"].outcome,
-            "record",
-            results["connect-raw-tunnel"].detail,
-        )
-
-    def test_lenient_behavior_would_fail_pipelock_expectations(self) -> None:
-        # If Pipelock behaved leniently, the suite must flag it.
-        results = self.run_suite("pipelock", "lenient", full=True)
-        self.assertEqual(
-            results["connect-sni-mismatch"].outcome,
-            "fail",
-            results["connect-sni-mismatch"].detail,
-        )
-        self.assertEqual(
-            results["connect-raw-tunnel"].outcome,
-            "fail",
-            results["connect-raw-tunnel"].detail,
-        )
+    def test_full_suite_lenient_grades_fail_on_every_engine(self) -> None:
+        """No per-engine grading override exists any more: every engine is
+        judged against the same `deny` expectation, the config this repo
+        ships (docs/findings.md §2)."""
+        for engine in ("pipelock", "smokescreen", "squid"):
+            with self.subTest(engine=engine):
+                results = self.run_suite(engine, "lenient", full=True)
+                self.assertEqual(
+                    results["connect-sni-mismatch"].outcome,
+                    "fail",
+                    results["connect-sni-mismatch"].detail,
+                )
+                self.assertEqual(
+                    results["connect-raw-tunnel"].outcome,
+                    "fail",
+                    results["connect-raw-tunnel"].detail,
+                )
 
     # -- fixture detection --------------------------------------------------
 

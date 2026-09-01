@@ -1,5 +1,5 @@
-"""dns-mixed-answers: pass/fail/skip grading, and its per-engine deviation
-(Smokescreen is recorded, not failed)."""
+"""dns-mixed-answers: pass/fail/skip grading. Every engine is graded
+against the same `deny` expectation — the config this repo ships."""
 
 from __future__ import annotations
 
@@ -43,10 +43,10 @@ class DnsMixedTest(unittest.TestCase):
         for name in dns_mixed.MIXED_FIXTURE_TARGETS:
             self.assertIn(name, raw.detail)
 
-    def test_mixed_answers_is_graded_per_engine(self) -> None:
-        """The same behavior is a failure on the engines that are expected
-        to refuse it and a recorded deviation on Smokescreen, which is not
-        (engine_expectations.ENGINE_EXPECTATIONS)."""
+    def test_mixed_answers_fails_on_every_engine(self) -> None:
+        """Grading no longer varies by engine: every engine is judged
+        against the same `deny` expectation, so a connection that establishes
+        fails the row regardless of which engine made it."""
         port = self._mixed_fixture_server(
             {dns_mixed.MIXED_FIXTURE_CONTROL, *dns_mixed.MIXED_FIXTURE_TARGETS}
         )
@@ -59,19 +59,18 @@ class DnsMixedTest(unittest.TestCase):
             graded[engine] = results["dns-mixed-answers"].outcome
         self.assertEqual(graded["pipelock"], "fail")
         self.assertEqual(graded["squid"], "fail")
-        self.assertEqual(graded["smokescreen"], "record")
+        self.assertEqual(graded["smokescreen"], "fail")
 
-    def test_smokescreens_recorded_deviation_does_not_set_the_exit_code(self) -> None:
-        # The point of the grade: a known, bounded deviation must not make
-        # `check --full` indistinguishable from a broken engine.
+    def test_smokescreens_deviation_fails_and_sets_the_exit_code(self) -> None:
         port = self._mixed_fixture_server(
             {dns_mixed.MIXED_FIXTURE_CONTROL, *dns_mixed.MIXED_FIXTURE_TARGETS}
         )
         results = egress.run_suite(f"http://127.0.0.1:{port}", "smokescreen", full=True)
         row = {r.name: r for r in results}["dns-mixed-answers"]
-        self.assertEqual(row.outcome, "record")
+        self.assertEqual(row.outcome, "fail")
         self.assertIn("established", row.detail)
         self.assertIsNone(row.cause, "nothing was denied, so there is no cause")
+        self.assertTrue(any(r.outcome == "fail" for r in results))
 
     def test_mixed_answers_skips_without_a_working_control(self) -> None:
         # No control means a denial below cannot be attributed to

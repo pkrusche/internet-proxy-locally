@@ -79,12 +79,6 @@ class CheckCatalogTest(unittest.TestCase):
         names = {check.name for check in egress.TESTS}
         self.assertEqual(len(names), len(egress.TESTS), "duplicate check name")
 
-    def test_expectation_overrides_name_real_checks(self) -> None:
-        names = {check.name for check in egress.TESTS}
-        for engine, overrides in egress.ENGINE_EXPECTATIONS.items():
-            for name in overrides:
-                self.assertIn(name, names, f"{engine} overrides unknown check {name}")
-
 
 class BehaviorTest(unittest.TestCase):
     """The grade and the behavior are different facts, and the report has to

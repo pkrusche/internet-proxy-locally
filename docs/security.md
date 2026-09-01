@@ -20,9 +20,9 @@ security decision and not a preference. **Smokescreen is measured as
 non-compliant on mixed DNS answers**: given a name resolving to both a
 public and a private address it connects to the public one rather than
 refusing the name. It does not connect to the private address, so this is a
-weaker guarantee rather than an open door — but the suite *records* that row
-rather than failing it, so a green run on Smokescreen is not a claim of
-compliance here. Both points are measured in
+weaker guarantee rather than an open door — but the suite grades every
+engine against the same `deny` expectation, so this row fails on
+Smokescreen like any other deny check would. Both points are measured in
 [findings.md](findings.md) (§1, §2), which is what to read before choosing
 an engine other than the default.
 

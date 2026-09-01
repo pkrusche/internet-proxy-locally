@@ -1,11 +1,13 @@
-"""connect-raw-tunnel: what the engine does when a tunnel to an allowlisted
-host on 443 carries plaintext rather than TLS."""
+"""connect-raw-tunnel: a tunnel to an allowlisted host on 443 carrying
+plaintext rather than TLS is refused — the engine we ship enforces inside
+the CONNECT tunnel."""
 
 from __future__ import annotations
 
 from .models import Check
-from .targets import ALLOWED_HTTPS_HOST
 from .transport import ProxyClient
+
+ALLOWED_HTTPS_HOST = "pypi.org"  # must be on the allowlist
 
 
 def test_raw_tunnel(client: ProxyClient) -> tuple[str, str]:
@@ -21,9 +23,10 @@ def test_raw_tunnel(client: ProxyClient) -> tuple[str, str]:
 CHECK = Check(
     "connect-raw-tunnel",
     "full",
-    "record",
+    "deny",
     test_raw_tunnel,
     False,
-    "What the engine does when a tunnel to an allowlisted host on "
-    "443 carries plaintext rather than TLS.",
+    "A tunnel to an allowlisted host on 443 carrying plaintext "
+    "rather than TLS is refused — enforcement inside the CONNECT "
+    "tunnel.",
 )

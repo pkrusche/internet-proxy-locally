@@ -5,8 +5,9 @@ from __future__ import annotations
 
 from .models import Check
 from .probes import _classify_deny_http
-from .targets import BLOCKED_HOST
 from .transport import ProxyClient
+
+BLOCKED_HOST = "example.com"  # must NOT be on the allowlist
 
 
 def test_blocked_host_http(client: ProxyClient) -> tuple[str, str]:

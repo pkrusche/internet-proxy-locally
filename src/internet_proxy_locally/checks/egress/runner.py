@@ -1,6 +1,5 @@
-"""The suite driver: run every check, apply engine-specific grading
-overrides, attribute denial causes, and capture the engine's log window for
-each result."""
+"""The suite driver: run every check against every engine, attribute denial
+causes, and capture the engine's log window for each result."""
 
 from __future__ import annotations
 
@@ -12,7 +11,6 @@ import time
 from . import fixture_log
 from .catalogue import TESTS
 from .denial import aggregate_cause, classify_denial
-from .engine_expectations import ENGINE_EXPECTATIONS
 from .models import Result, _normalize
 from .transport import ProxyClient
 
@@ -34,7 +32,7 @@ FIXTURE_SKIP = (
 
 
 def _finalize(name: str, expectation: str, raw: tuple[str, str]) -> tuple[str, str]:
-    """Map a test's raw outcome onto its (possibly engine-specific) expectation."""
+    """Map a test's raw outcome onto its expectation."""
     outcome, detail = raw
     if outcome in ("pass", "fail", "record", "skip", "error"):
         # deny/allow-style tests already classified themselves against the
@@ -96,7 +94,6 @@ def run_suite(
             backend_bin, fixture_container
         )
 
-    overrides = ENGINE_EXPECTATIONS.get(engine, {})
     have_fixtures = None
     results: list[Result] = []
     for check in TESTS:
@@ -104,7 +101,7 @@ def run_suite(
         needs_fixtures = check.needs_fixtures
         if group == "full" and not full:
             continue
-        expectation = overrides.get(name, check.expectation)
+        expectation = check.expectation
         if needs_fixtures:
             if have_fixtures is None:
                 have_fixtures = fixtures_active(client)

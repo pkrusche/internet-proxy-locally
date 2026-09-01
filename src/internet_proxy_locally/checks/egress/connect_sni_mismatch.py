@@ -1,13 +1,13 @@
-"""connect-sni-mismatch: what the engine does when a tunnel to one
-allowlisted host carries a ClientHello for another: enforcement inside the
-tunnel, or none."""
+"""connect-sni-mismatch: a tunnel to one allowlisted host carrying a
+ClientHello for another is refused — the engine we ship enforces inside the
+CONNECT tunnel."""
 
 from __future__ import annotations
 
 from .models import Check
-from .targets import ALLOWED_HTTPS_HOST
 from .transport import ProxyClient
 
+ALLOWED_HTTPS_HOST = "pypi.org"  # must be on the allowlist
 ALLOWED_ALT_HOST = "files.pythonhosted.org"  # allowlisted, used as mismatching SNI
 
 
@@ -22,10 +22,9 @@ def test_sni_mismatch(client: ProxyClient) -> tuple[str, str]:
 CHECK = Check(
     "connect-sni-mismatch",
     "full",
-    "record",
+    "deny",
     test_sni_mismatch,
     False,
-    "What the engine does when a tunnel to one allowlisted host "
-    "carries a ClientHello for another: enforcement inside the "
-    "tunnel, or none.",
+    "A tunnel to one allowlisted host carrying a ClientHello for "
+    "another is refused — enforcement inside the CONNECT tunnel.",
 )

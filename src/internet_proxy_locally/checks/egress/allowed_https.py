@@ -4,8 +4,9 @@ TLS handshake, so ordinary HTTPS works through the proxy."""
 from __future__ import annotations
 
 from .models import Check
-from .targets import ALLOWED_HTTPS_HOST
 from .transport import ProxyClient
+
+ALLOWED_HTTPS_HOST = "pypi.org"  # must be on the allowlist
 
 
 def test_allowed_https(client: ProxyClient) -> tuple[str, str]:

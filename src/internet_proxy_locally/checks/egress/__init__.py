@@ -45,10 +45,9 @@ docs/findings.md's tables from.
 from __future__ import annotations
 
 from .catalogue import CHECKS_BY_NAME, TESTS, check_purpose
-from .cli import DEFAULT_PROXY, main
+from .cli import DEFAULT_PROXY, ENGINES, main
 from .denial import aggregate_cause, classify_denial
 from .diff import cmd_diff, diff_results
-from .engine_expectations import ENGINE_EXPECTATIONS, ENGINES
 from .models import Attempt, Check, RawOutcome, Result
 from .reporting import SCHEMA_VERSION, envelope, print_text
 from .runner import FIXTURE_SKIP, policy_in_use, run_suite
@@ -58,7 +57,6 @@ __all__ = [
     "CHECKS_BY_NAME",
     "DEFAULT_PROXY",
     "ENGINES",
-    "ENGINE_EXPECTATIONS",
     "FIXTURE_SKIP",
     "SCHEMA_VERSION",
     "TESTS",

@@ -206,22 +206,18 @@ later: an engine that accepts a mixed answer has to be trusted never to fall
 back to the other address on a retry and never to re-resolve without
 re-validating. Neither is visible from outside.
 
-**How it is graded, and why.** `record` for Smokescreen, an override in
-`ENGINE_EXPECTATIONS`. The row is the same measurement either way — it still
-says `established`, with both orderings, in the matrix — but the grade was
-doing a job it cannot do. The suite exited 1 on *every* Smokescreen run,
-which made the exit code useless for the thing an exit code is for: telling
-"this engine has a known, bounded deviation I have already read about" apart
-from "something just broke". A permanent failure is not a signal, it is
-noise with a red label.
-
-The two arguments considered and rejected: **leave it failing** — honest,
-and what shipped first, but a suite whose exit code is permanently 1 on one
-engine stops being run on that engine, and a deviation nobody re-measures is
-worse than one recorded in a table. **Relax the rule** to "must not *connect
-to* a private address", which all three satisfy — that weakens the stated
-policy to match the weakest engine, and [policy.md](policy.md) would then no
-longer describe what Pipelock and Squid actually enforce.
+**How it is graded, and why.** `deny` for every engine, the same expectation
+`dns-mixed-answers` carries everywhere else. The suite used to carry a
+per-engine override table (`ENGINE_EXPECTATIONS`) that turned this row
+`record` for Smokescreen specifically, on the reasoning that a permanent
+`fail` on one engine made the exit code useless for telling "a known,
+bounded deviation" apart from "something just broke". That table is gone:
+this repo ships one engine, Pipelock, and grading against what the shipped
+config actually enforces is simpler and more honest than maintaining a
+second, engine-shaped table of exceptions to it. Smokescreen now fails this
+row like any other deny check would — which is accurate, since
+[policy.md](policy.md) requires the connection not be made and Smokescreen
+made it.
 
 ### 3. DNS rebinding: two different defences
 
@@ -502,10 +498,9 @@ with less surface. Squid is also the only engine that never re-resolves,
 which cuts both ways (§3).
 
 **Smokescreen is the one to choose deliberately or not at all.** It deviates
-on mixed DNS answers (§2), and that row is graded `record` rather than `fail`
-— **a statement about the exit code, not about the behavior**. Choosing it
-means accepting that deviation, plus unconstrained tunnel contents to
-allowlisted hosts (§1).
+on mixed DNS answers (§2), which now fails the row like any other deny
+check. Choosing it means accepting that deviation, plus unconstrained tunnel
+contents to allowlisted hosts (§1).
 
 ## Matrix
 
@@ -535,7 +530,7 @@ Bracketed values are the **attributed cause**: what the engine said it was rejec
 | [connect-raw-tunnel](#connect-raw-tunnel) | full | deny/record | PASS [non-tls-in-tunnel] | RECORD (allowed) | RECORD (allowed) |
 | [concurrency-sanity](#concurrency-sanity) | full | record | RECORD | RECORD | RECORD |
 
-Where the expectation column shows two values, the check is graded differently per engine (`ENGINE_EXPECTATIONS` in `checks.egress.engine_expectations` says why).
+Where the expectation column shows two values, the check was graded differently per engine in this run.
 
 <!-- END GENERATED matrix -->
 
@@ -721,7 +716,7 @@ An address whose PTR record claims an allowlisted hostname is still refused, so 
 
 ### connect-sni-mismatch
 
-What the engine does when a tunnel to one allowlisted host carries a ClientHello for another: enforcement inside the tunnel, or none.
+A tunnel to one allowlisted host carrying a ClientHello for another is refused — enforcement inside the CONNECT tunnel.
 
 * **Pipelock** — PASS [sni-mismatch] (expectation: deny, 17ms)  
   tunnel established but TLS handshake failed (SNI=files.pythonhosted.org): [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1032)
@@ -732,7 +727,7 @@ What the engine does when a tunnel to one allowlisted host carries a ClientHello
 
 ### connect-raw-tunnel
 
-What the engine does when a tunnel to an allowlisted host on 443 carries plaintext rather than TLS.
+A tunnel to an allowlisted host on 443 carrying plaintext rather than TLS is refused — enforcement inside the CONNECT tunnel.
 
 * **Pipelock** — PASS [non-tls-in-tunnel] (expectation: deny, 16ms)  
   tunnel established; connection closed with no response to raw (non-TLS) bytes — consistent with a non-TLS-in-tunnel policy check

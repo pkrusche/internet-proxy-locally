@@ -348,6 +348,7 @@ def _matrix(runs: dict[str, dict]) -> str:
         + " |"
     )
     add("| --- | --- | --- |" + " --- |" * len(engines))
+    mixed = False
     for name, group in ((c.name, c.group) for c in egress.TESTS):
         cells = []
         expectations = set()
@@ -356,18 +357,19 @@ def _matrix(runs: dict[str, dict]) -> str:
             cells.append(verdict(row))
             if row:
                 expectations.add(row["expectation"])
+        mixed = mixed or len(expectations) > 1
         expectation = "/".join(sorted(expectations)) if expectations else "—"
         add(
             f"| [{name}](#{name}) | {group} | {expectation} | "
             + " | ".join(cells)
             + " |"
         )
-    add("")
-    add(
-        "Where the expectation column shows two values, the check is graded "
-        "differently per engine (`ENGINE_EXPECTATIONS` in "
-        "`checks.egress.engine_expectations` says why)."
-    )
+    if mixed:
+        add("")
+        add(
+            "Where the expectation column shows two values, the check was "
+            "graded differently per engine in this run."
+        )
     return "\n".join(out)
 
 

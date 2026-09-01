@@ -6,8 +6,9 @@ from __future__ import annotations
 import concurrent.futures
 
 from .models import Check
-from .targets import ALLOWED_HTTPS_HOST
 from .transport import ProxyClient
+
+ALLOWED_HTTPS_HOST = "pypi.org"  # must be on the allowlist
 
 
 def test_concurrency(client: ProxyClient) -> tuple[str, str]:

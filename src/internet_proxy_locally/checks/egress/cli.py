@@ -6,11 +6,11 @@ import argparse
 import json
 
 from .diff import cmd_diff
-from .engine_expectations import ENGINES
 from .reporting import envelope, print_text
 from .runner import run_suite
 
 DEFAULT_PROXY = "http://127.0.0.1:18080"
+ENGINES = ("pipelock", "smokescreen", "squid")
 
 
 def main(argv: list[str] | None = None) -> int:
