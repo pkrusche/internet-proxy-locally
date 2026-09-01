@@ -124,7 +124,7 @@ says only "Access control configuration prevents your request", which
 classifies as `unknown`. `deny_info` plus five one-line templates in
 `data/images/squid/errors` make each denial state its cause, which is what fills
 the bracketed column in the matrix. The exact strings are pinned in
-`tests/test_egress.py::ClassifyDenialRealWordingTest`, and
+`tests/egress/test_denial.py::ClassifyDenialRealWordingTest`, and
 `validate_policy_file()` refuses a Squid config whose `deny_info` lines have
 come loose from the ACLs they name.
 
@@ -535,7 +535,7 @@ Bracketed values are the **attributed cause**: what the engine said it was rejec
 | [connect-raw-tunnel](#connect-raw-tunnel) | full | deny/record | PASS [non-tls-in-tunnel] | RECORD (allowed) | RECORD (allowed) |
 | [concurrency-sanity](#concurrency-sanity) | full | record | RECORD | RECORD | RECORD |
 
-Where the expectation column shows two values, the check is graded differently per engine (`ENGINE_EXPECTATIONS` in `checks.egress` says why).
+Where the expectation column shows two values, the check is graded differently per engine (`ENGINE_EXPECTATIONS` in `checks.egress.engine_expectations` says why).
 
 <!-- END GENERATED matrix -->
 

@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 
 from internet_proxy_locally import paths
-from internet_proxy_locally.checks import egress
+from internet_proxy_locally.checks.egress import dns_mixed, dns_rebind, ptr_allowlist
 
 # Run from the repository root, so everything imports by name. See the
 # comment in `verify.harness`.
@@ -221,17 +221,19 @@ class LabUnitTest(unittest.TestCase):
         used to state the same names three times, each with a "keep in
         sync" comment and nothing enforcing it.
 
-        Now the checker reads the TOML and the container is built from it,
-        so this asserts the wiring rather than the values: the checker
-        agrees with the file, and every fact the responder needs actually
-        reaches the image as a build arg.
+        The checker's fixture-dependent checks (`dns_mixed`, `dns_rebind`,
+        `ptr_allowlist`) now hardcode these facts as plain Python constants
+        rather than reading the TOML at import time, so this is what
+        catches a hand-transcription slip: it asserts the checker's
+        constants against the file, and that every fact the responder needs
+        actually reaches the image as a build arg.
         """
         fixture = load_lab_config().fixture
-        self.assertEqual(egress.MIXED_FIXTURE_CONTROL, fixture.control)
-        self.assertEqual(set(egress.MIXED_FIXTURE_TARGETS), set(fixture.targets))
-        self.assertEqual(egress.REBIND_ZONE, fixture.rebind_zone)
-        self.assertEqual(egress.PTR_FIXTURE_ADDRESS, fixture.ptr_address)
-        self.assertEqual(egress.PTR_FIXTURE_CLAIMS, fixture.ptr_claims)
+        self.assertEqual(dns_mixed.MIXED_FIXTURE_CONTROL, fixture.control)
+        self.assertEqual(set(dns_mixed.MIXED_FIXTURE_TARGETS), set(fixture.targets))
+        self.assertEqual(dns_rebind.REBIND_ZONE, fixture.rebind_zone)
+        self.assertEqual(ptr_allowlist.PTR_FIXTURE_ADDRESS, fixture.ptr_address)
+        self.assertEqual(ptr_allowlist.PTR_FIXTURE_CLAIMS, fixture.ptr_claims)
 
         args = fixture_spec().build_args
         self.assertEqual(args["REBIND_ZONE"], fixture.rebind_zone)
@@ -485,19 +487,20 @@ class LabUnitTest(unittest.TestCase):
     # -- the fixture's own constants ----------------------------------------
 
     def test_checker_constants_match_the_fixture_table(self) -> None:
-        """`checks.egress` names the fixture records in its own constants;
-        lab/fixtures.toml is what the fixture actually serves."""
+        """`checks.egress`'s per-check modules name the fixture records in
+        their own constants; lab/fixtures.toml is what the fixture actually
+        serves."""
         fixture = load_lab_config().fixture
-        self.assertEqual(egress.MIXED_FIXTURE_CONTROL, fixture.control)
-        self.assertEqual(set(egress.MIXED_FIXTURE_TARGETS), set(fixture.targets))
-        self.assertEqual(egress.REBIND_ZONE, fixture.rebind_zone)
-        self.assertEqual(egress.PTR_FIXTURE_ADDRESS, fixture.ptr_address)
-        self.assertEqual(egress.PTR_FIXTURE_CLAIMS, fixture.ptr_claims)
+        self.assertEqual(dns_mixed.MIXED_FIXTURE_CONTROL, fixture.control)
+        self.assertEqual(set(dns_mixed.MIXED_FIXTURE_TARGETS), set(fixture.targets))
+        self.assertEqual(dns_rebind.REBIND_ZONE, fixture.rebind_zone)
+        self.assertEqual(ptr_allowlist.PTR_FIXTURE_ADDRESS, fixture.ptr_address)
+        self.assertEqual(ptr_allowlist.PTR_FIXTURE_CLAIMS, fixture.ptr_claims)
 
     def test_dns_fixture_records_cover_the_checker_names(self) -> None:
-        """The hosts file and `checks.egress` must agree, and the mixed
-        names must each carry one public and one private address in both
-        orderings — that is the whole content of the check."""
+        """The hosts file and `checks.egress.dns_mixed` must agree, and the
+        mixed names must each carry one public and one private address in
+        both orderings — that is the whole content of the check."""
         spec = fixture_spec()
         records: dict[str, list[str]] = {}
         for line in (REPO_ROOT / spec.config_file).read_text().splitlines():
@@ -509,19 +512,19 @@ class LabUnitTest(unittest.TestCase):
                 records.setdefault(name, []).append(address)
 
         self.assertEqual(
-            len(records.get(egress.MIXED_FIXTURE_CONTROL, [])),
+            len(records.get(dns_mixed.MIXED_FIXTURE_CONTROL, [])),
             1,
             "the control must resolve to exactly one address",
         )
         self.assertFalse(
             any(
                 ipaddress.ip_address(a).is_private
-                for a in records[egress.MIXED_FIXTURE_CONTROL]
+                for a in records[dns_mixed.MIXED_FIXTURE_CONTROL]
             )
         )
 
         orderings = set()
-        for name in egress.MIXED_FIXTURE_TARGETS:
+        for name in dns_mixed.MIXED_FIXTURE_TARGETS:
             addresses = records.get(name, [])
             self.assertEqual(len(addresses), 2, f"{name}: expected two records")
             private = [ipaddress.ip_address(a).is_private for a in addresses]

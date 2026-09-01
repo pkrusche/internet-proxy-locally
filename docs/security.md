@@ -97,8 +97,9 @@ different policies. v1 has one.
 
 ## The adversarial suite
 
-`src/internet_proxy_locally/checks/egress.py` runs identically against every engine and emits
-comparable text or `--json` results.
+`src/internet_proxy_locally/checks/egress/` runs identically against every engine and emits
+comparable text or `--json` results — one check per file, assembled in order
+by `checks/egress/catalogue.py`.
 
 ```bash
 ipl check     # ordinary allow/deny behavior, against the live proxy
@@ -121,7 +122,7 @@ records rather than raw bytes for the tunnel-abuse checks, and the engine's
 own log lines for that test's exact window.
 
 `classify_denial()`'s accuracy against each engine's real wording is pinned
-by `tests/test_egress.py::ClassifyDenialRealWordingTest`. Its patterns match
+by `tests/egress/test_denial.py::ClassifyDenialRealWordingTest`. Its patterns match
 a **stated reason** only — never an address the engine echoes back, and
 never a reason word the checker itself wrote. Both were real bugs: an engine
 reports `domain not in allowlist: 127.0.0.1`, so a pattern for a bare

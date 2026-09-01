@@ -365,7 +365,8 @@ def _matrix(runs: dict[str, dict]) -> str:
     add("")
     add(
         "Where the expectation column shows two values, the check is graded "
-        "differently per engine (`ENGINE_EXPECTATIONS` in `checks.egress` says why)."
+        "differently per engine (`ENGINE_EXPECTATIONS` in "
+        "`checks.egress.engine_expectations` says why)."
     )
     return "\n".join(out)
 
