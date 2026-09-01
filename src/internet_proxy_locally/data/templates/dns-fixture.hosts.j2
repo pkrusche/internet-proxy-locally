@@ -8,7 +8,7 @@
 #
 # `{{ fixture.rebind_zone }}` is NOT here: its answers change between the
 # first lookup and the next, which no static file can express, so
-# lab/dnsfixture/rebind.py serves that zone instead.
+# data/images/dnsfixture/rebind.py serves that zone instead.
 {% for record in fixture_records %}
 
 {% if record.role == "control" %}

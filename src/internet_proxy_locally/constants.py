@@ -33,5 +33,5 @@ HEALTH_WAIT_SECONDS = 15.0
 FIXTURE_CONTAINER = "internet-proxy-dnsfixture"
 
 # The lab lane's service name, and the stem of the two files that define
-# it: data/lab/dnsfixture.toml and data/lab/dnsfixture/Dockerfile.
+# it: data/lab/dnsfixture.toml and data/images/dnsfixture/Dockerfile.
 DNS_FIXTURE = "dnsfixture"

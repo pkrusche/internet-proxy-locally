@@ -5,7 +5,7 @@
 # It serves two fixtures that public DNS cannot provide:
 #
 #   * mixed answers — one name resolving to a public *and* a private
-#     address, from config/dns-fixture.hosts via dnsmasq's `--addn-hosts`.
+#     address, from lab/config/dns-fixture.hosts via dnsmasq's `--addn-hosts`.
 #     A hosts file mounted at /etc/hosts cannot do this: duplicate names
 #     collapse to one address (musl keeps the first, Squid's parser the
 #     last), and `--host-record=name,v4,v4` keeps only one because the
@@ -37,7 +37,7 @@ RUN for pin in "dnsmasq=${DNSMASQ_VERSION}" "python3=${PYTHON3_VERSION}"; do \
 
 RUN apk add --no-cache "dnsmasq=${DNSMASQ_VERSION}" "python3=${PYTHON3_VERSION}"
 
-# What this fixture serves, from lab/fixtures.toml via lab.py
+# What this fixture serves, from data/lab/fixtures.toml via lab.py
 # `fixture_spec()`. Baked in as env so rebind.py has one source for them
 # rather than a third copy of the literals; it refuses to start if any is
 # empty, so a stale image cannot quietly serve the wrong names.

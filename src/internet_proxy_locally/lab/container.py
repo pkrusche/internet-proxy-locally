@@ -27,7 +27,7 @@ def fixture_spec(config: LabConfig | None = None) -> ServiceSpec:
     PTR claim and the public address. The container needs them too, and
     `ServiceSpec.build` is already passed through to the Dockerfile as
     uppercase ARGs — so they arrive there by construction instead of being
-    restated as literals in data/lab/dnsfixture/rebind.py, where nothing outside
+    restated as literals in data/images/dnsfixture/rebind.py, where nothing outside
     the image could check them.
     """
     spec = ServiceSpec.load(DNS_FIXTURE, root=paths.lab_dir())

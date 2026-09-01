@@ -2,7 +2,7 @@
 # operational run.
 #
 # Loaded by ./lab.py alone. It serves the two fixtures that public DNS
-# cannot (see lab/dnsfixture/Dockerfile): the mixed public+private answer
+# cannot (see data/images/dnsfixture/Dockerfile): the mixed public+private answer
 # set in lab/config/dns-fixture.hosts, and the `rebind.fixture.test` zone
 # whose answers change between the first lookup and the next.
 #

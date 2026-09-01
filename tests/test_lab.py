@@ -217,7 +217,7 @@ class LabUnitTest(unittest.TestCase):
     # -- one source of truth for what the fixture serves ---------------------
 
     def test_the_fixture_facts_have_exactly_one_source(self) -> None:
-        """lab/fixtures.toml, `checks.egress` and lab/dnsfixture/rebind.py
+        """lab/fixtures.toml, `checks.egress` and data/images/dnsfixture/rebind.py
         used to state the same names three times, each with a "keep in
         sync" comment and nothing enforcing it.
 
@@ -243,7 +243,7 @@ class LabUnitTest(unittest.TestCase):
 
         # rebind.py must hold none of them as a literal, and the Dockerfile
         # must declare every ARG that carries one.
-        fixture_image = PACKAGE_DATA / "lab" / "dnsfixture"
+        fixture_image = PACKAGE_DATA / "images" / "dnsfixture"
         rebind = (fixture_image / "rebind.py").read_text()
         dockerfile = (fixture_image / "Dockerfile").read_text()
         for arg, value in (

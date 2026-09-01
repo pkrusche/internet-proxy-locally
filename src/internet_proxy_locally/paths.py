@@ -100,7 +100,7 @@ def template_dir() -> Path:
 
 
 def image_dir() -> Path:
-    """Image build contexts for the engines this repository builds itself."""
+    """Image build contexts — one directory per image, including the fixture."""
     return data_root() / "images"
 
 
@@ -110,7 +110,11 @@ def squid_error_dir() -> Path:
 
 
 def lab_dir() -> Path:
-    """The lab lane's specs: fixtures.toml, dnsfixture.toml, dnsfixture/."""
+    """The lab lane's specs: fixtures.toml and dnsfixture.toml.
+
+    What the fixture *serves*. How its image is built is in
+    `data/images/dnsfixture/`, with every other build context.
+    """
     return data_root() / "lab"
 
 

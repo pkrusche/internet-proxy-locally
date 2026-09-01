@@ -27,7 +27,7 @@ allow = [
     "public-only.fixture.test",
     "mixed-public-first.fixture.test",
     "mixed-private-first.fixture.test",
-    # Rebinding zone, answered by lab/dnsfixture/rebind.py. Allowlisted
+    # Rebinding zone, answered by data/images/dnsfixture/rebind.py. Allowlisted
     # so that a denial can only come from the address it was handed.
     "*.rebind.fixture.test",
 ]
@@ -35,7 +35,7 @@ allow = [
 # ---------------------------------------------------------------------------
 
 [fixture]
-# The local DNS fixture (lab/dnsfixture.toml, lab/dnsfixture) — the source
+# The local DNS fixture (data/lab/dnsfixture.toml, data/images/dnsfixture) — the source
 # of truth for the records it serves. `./lab.py policy` renders
 # lab/config/dns-fixture.hosts from this table, so the hosts file and the
 # `[policy.test]` allowlist above can no longer disagree: rendering refuses
@@ -56,7 +56,7 @@ allow = [
 # the file is rendered.
 control = "public-only.fixture.test"
 
-# The rebinding zone, answered by lab/dnsfixture/rebind.py rather than
+# The rebinding zone, answered by data/images/dnsfixture/rebind.py rather than
 # from the records below: the first A query for a name is answered with a
 # public address and every later one with the fixture's own — private —
 # address, on which it listens as a trap.

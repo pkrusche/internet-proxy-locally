@@ -50,10 +50,13 @@ class ServiceSpec:
 
     @property
     def image_context(self) -> Path:
-        """The directory holding this service's Dockerfile."""
-        if self.root == paths.service_dir():
-            return paths.image_dir() / self.engine
-        return self.root / self.engine
+        """The directory holding this service's Dockerfile.
+
+        Every build context lives under `data/images/`, including the DNS
+        fixture's — the lab lane owns what the fixture *serves*
+        (data/lab/fixtures.toml), not how its image is put together.
+        """
+        return paths.image_dir() / self.engine
 
     @classmethod
     def load(cls, engine: str, root: Path | None = None) -> ServiceSpec:

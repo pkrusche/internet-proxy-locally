@@ -15,7 +15,7 @@
 #
 # `rebind.fixture.test` is NOT here: its answers change between the
 # first lookup and the next, which no static file can express, so
-# lab/dnsfixture/rebind.py serves that zone instead.
+# data/images/dnsfixture/rebind.py serves that zone instead.
 
 # Control: one public address, nothing else — must be reachable through
 # the proxy or the mixed-answer rows below cannot be attributed.

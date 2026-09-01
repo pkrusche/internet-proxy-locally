@@ -74,7 +74,7 @@ control must establish before anything is graded; without it a denial could
 not be attributed to mixed-answer handling, and the row skips.
 
 **Rebinding.** dnsmasq delegates `rebind.fixture.test` to a small stdlib
-responder (`lab/dnsfixture/rebind.py`), which answers the *first* lookup of
+responder (`data/images/dnsfixture/rebind.py`), which answers the *first* lookup of
 a name with a public address and every later one with the fixture's own
 private address — where it also listens. Each name is probed twice, with a
 pause between passes, so the second answer is actually handed out; two

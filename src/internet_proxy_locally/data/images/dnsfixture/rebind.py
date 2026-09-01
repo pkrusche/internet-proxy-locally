@@ -4,7 +4,7 @@
 Runs as PID 1 in the DNS-fixture container and does three things:
 
 1. supervises dnsmasq, which serves the static mixed-answer records and
-   forwards everything else upstream (lab/dnsfixture/Dockerfile);
+   forwards everything else upstream (data/images/dnsfixture/Dockerfile);
 2. answers the `rebind.fixture.test` zone, which dnsmasq delegates here.
    The *first* A query for a given name is answered with a public address;
    every later query for that same name is answered with this container's
@@ -36,7 +36,7 @@ import sys
 import threading
 
 # Every fact about what this fixture serves comes from lab/fixtures.toml,
-# baked in as Dockerfile ARGs at build time (lab/dnsfixture/Dockerfile,
+# baked in as Dockerfile ARGs at build time (data/images/dnsfixture/Dockerfile,
 # lab.py `fixture_spec()`). It used to be a third copy of those values,
 # with a "keep in sync" comment and nothing enforcing it — and this copy
 # is the one nothing could check, because it only exists inside the image.
