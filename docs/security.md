@@ -60,8 +60,11 @@ different policies. v1 has one.
 ## Fail-closed properties
 
 * `up` refuses to start with an invalid or non-strict policy file.
-* `up` refuses unpinned images (no digest / no source SHA) and `latest`
-  tags.
+* `up` refuses to start on an image that has not been built.
+* Every image is pinned in its own Dockerfile — an explicit base tag or
+  manifest digest, an exact apk version, a full commit SHA. The unit suite
+  refuses a floating `FROM`, a `latest` tag, an unpinned `apk add`, and a
+  tag constant that no longer matches the pin its Dockerfile names.
 * `up` refuses the endpoint when an unknown process occupies it.
 * The post-start health check requires the proxy to *deny* a
   non-allowlisted probe host; a proxy that answers 2xx/3xx for it is

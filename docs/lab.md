@@ -168,10 +168,9 @@ is not importable", and the modules get imported twice under two names,
 which silently runs every inherited CLI test a second time.
 
 The tests do not copy the code into a temporary directory. They copy the
-*data* — `IPL_DATA_ROOT` for the templates and service specs a test may
-edit a pin in, `IPL_ROOT` for the workspace `up` regenerates `config/` in
-— so what runs is always the checkout's code against an isolated
-repository.
+*data* — `IPL_DATA_ROOT` for the templates and image build contexts,
+`IPL_ROOT` for the workspace `up` regenerates `config/` in — so what runs
+is always the checkout's code against an isolated repository.
 
 The end-to-end scripts above are **not** part of this suite: they need a
 real container runtime, and the unit suite runs against a fake backend and
@@ -179,8 +178,8 @@ a mock proxy with no network egress at all.
 
 ## Backend parity
 
-Both backends are verified end to end for `setup`, image pull/build, `up`,
-loopback publication, `status`/`logs`/`check`/`down`, `pin`, and the DNS
+Both backends are verified end to end for `setup`, image build, `up`,
+loopback publication, `status`/`logs`/`check`/`down`, and the DNS
 fixture. The fixture is the one place a real backend difference is
 load-bearing: the fixture container's address has to be read out of
 `inspect`, which Docker reports under `NetworkSettings` and Apple
@@ -194,6 +193,13 @@ load-bearing: the fixture container's address has to be read out of
 
 ## Upgrading the fixture
 
-`ipl-lab pin` resolves the dnsmasq and python3 apk versions from the base
-image and writes them into `lab/dnsfixture.toml`; review, commit, then
-`ipl-lab setup`. Engine pins are `ipl pin <engine>`.
+The dnsmasq and python3 apk versions are literals in
+`data/images/dnsfixture/Dockerfile`. Edit them, bump `DNSFIXTURE_IMAGE` in
+`images.py` to the new dnsmasq version, commit, then `ipl-lab setup`.
+Engine pins work the same way (README, "Pins").
+
+What the fixture *serves* is not in the image at all: `[fixture]` in
+`data/lab/fixtures.toml` is rendered into `lab/config/dns-fixture.hosts`
+and `lab/config/fixture.env`, both bind-mounted read-only, so an edit
+there takes effect on the next `ipl-lab up` rather than on the next
+rebuild.

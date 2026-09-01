@@ -13,7 +13,7 @@ both first-class. No Docker Compose.
 
 ```bash
 uv sync                 # once: create the environment uv run uses
-ipl setup          # validate prerequisites, pull/build pinned images
+ipl setup          # validate prerequisites, build the pinned images
 ipl up             # start the proxy and health-check it
 ipl check          # confirm allow/deny behavior
 
@@ -30,9 +30,9 @@ the interpreter from `.python-version` and the dependencies (Jinja2,
 PyYAML) from `pyproject.toml`. There is no bare-interpreter path to keep
 working, so nothing is imported lazily to preserve one.
 
-The Python lives in `src/internet_proxy_locally/`, and the templates,
-service specs and image build contexts ship inside it under `data/` — so
-the package can render a policy and build an image without a checkout.
+The Python lives in `src/internet_proxy_locally/`, and the templates and
+image build contexts ship inside it under `data/` — so the package can
+render a policy and build an image without a checkout.
 What stays at the repository root is what a person edits or the tool
 generates: `config.toml`, `config/`, `lab/config/`, `results/`.
 
@@ -56,21 +56,33 @@ different policies. Edit `config.toml`, run `ipl up`, commit both.
 
 | | |
 | --- | --- |
-| `ipl setup` | validate prerequisites, pull/build pinned images |
+| `ipl setup` | validate prerequisites, build the pinned images |
 | `ipl up` | (re)create the container and health-check it |
-| `ipl status` | engine, backend, container state, pins, live health |
+| `ipl status` | engine, backend, container state, image, live health |
 | `ipl logs` | engine logs |
 | `ipl check` | allow/deny behavior against the live proxy |
 | `ipl restart` | explicit teardown then up |
 | `ipl down` | remove containers owned by this repository |
 | `ipl policy` | render `config/*` from `config.toml` (`--check` for drift) |
-| `ipl pin` | record immutable image/source pins |
 
 `--engine pipelock|smokescreen|squid` and `--backend docker|container`
 override the defaults; `ipl --help` is the full reference.
 
-To upgrade an engine: `ipl pin <engine>` (needs network), review the
-change to `data/services/<engine>.toml`, commit it, then `ipl setup`.
+## Pins
+
+Every image is built from a Dockerfile in
+`src/internet_proxy_locally/data/images/<name>/`, and every pin it depends
+on — the base image, an apk version, an upstream commit SHA, Pipelock's
+upstream manifest digest — is a literal in that file. Nothing resolves a
+pin at run time and nothing writes one back, so what an image is made of
+is whatever the last reviewed diff said.
+
+`images.py` holds one constant tag per image, which is what `up` runs and
+what `setup` checks before deciding to build. To upgrade an engine: edit
+its Dockerfile, bump the matching tag constant, commit, then `ipl setup`.
+The unit suite asserts every `FROM` and every `apk add` is pinned and that
+each tag still matches the pin its Dockerfile names, so a bump that gets
+only half done is a failing test rather than a stale image.
 
 ## Stable interface
 

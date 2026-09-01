@@ -2,11 +2,7 @@
 
 Every image is named by a Dockerfile under `data/images/<name>/`, and every
 pin those images depend on — a base image digest, an apk version, an
-upstream commit SHA — is a literal in that Dockerfile. Nothing here
-resolves a pin, writes one, or validates one: upgrading is editing the
-Dockerfile, which is the file that has to be true anyway, and reviewing the
-diff. That replaced a `pin` subcommand that pulled or cloned on a networked
-machine and rewrote a TOML spec in place.
+upstream commit SHA — is a literal in that Dockerfile.
 
 The constants below are the *only* thing Python knows about an image. They
 carry one rule with them:
@@ -16,8 +12,7 @@ carry one rule with them:
 `prepare_image` skips a build when the tag is already present, so a
 Dockerfile edited without a matching bump would leave the old image in
 place and running. `--rebuild` is the manual escape hatch, and
-`tests/test_runpy.py` asserts each tag still matches the pin its Dockerfile
-names, so the mistake is a red test rather than a stale container.
+`tests/test_runpy.py` checks we do pin dependencies in the images.
 """
 
 from __future__ import annotations

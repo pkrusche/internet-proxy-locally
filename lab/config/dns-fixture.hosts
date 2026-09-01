@@ -6,7 +6,7 @@
 # `ipl-lab policy`. A hand edit here is silently overwritten and is
 # caught by the test suite.
 #
-# TEST FIXTURE — served by the dnsmasq container that `./lab.py up`
+# TEST FIXTURE — served by the dnsmasq container that `ipl-lab up`
 # starts, and read only through it. Never present in normal operation.
 #
 # Source of truth: `[fixture.records]` in lab/fixtures.toml. Full rationale

@@ -38,9 +38,8 @@ ipl-verify = "internet_proxy_locally.verify.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# data/ carries the templates, the service specs and the image build
-# contexts, so an installed wheel can render a policy and build an image
-# without a checkout. Hatchling ships every file under the package
+# data/ carries the templates and the image build contexts, so an installed
+# wheel can render a policy and build an image without a checkout. Hatchling ships every file under the package
 # directory, which is what makes that work — `unzip -l dist/*.whl` is the
 # check that it still does.
 [tool.hatch.build.targets.wheel]

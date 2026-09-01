@@ -37,7 +37,7 @@ from internet_proxy_locally.spec import ServiceSpec
 def test_config_path(spec: ServiceSpec) -> Path:
     """`config/squid.conf` -> `lab/config/squid.test.conf`.
 
-    By convention rather than by a key in data/services/*.toml: the engine
+    By convention rather than by a key in `spec.SERVICES`: the service
     definitions describe how to run an engine, and where this lane keeps
     its rendered fixtures is not their business.
     """

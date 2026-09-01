@@ -515,8 +515,6 @@ class RunPyCliTest(unittest.TestCase):
                     f"--file {context / 'Dockerfile'} {context}",
                     log,
                 )
-                # No --build-arg: a build argument would be a pin Python
-                # could get wrong on the way in.
                 self.assertNotIn("--build-arg", log)
 
 

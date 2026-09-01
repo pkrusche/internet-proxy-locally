@@ -19,7 +19,7 @@
 # pipelock 3.3.0
 FROM ghcr.io/luckypipewrench/pipelock@sha256:42b58a428defca8f57d74b005e865898deb9568c9d742e46b32c80b0d2b011f7
 
-# The upstream ENTRYPOINT is inherited; this is what run.py used to pass as
-# `container.args`. The policy arrives through the read-only bind mount at
-# /config/pipelock.yaml.
+# The upstream ENTRYPOINT is inherited; this is what the CLI used to pass
+# as `container.args`. The policy arrives through the read-only bind mount
+# at /config/pipelock.yaml.
 CMD ["run", "--config", "/config/pipelock.yaml", "--listen", "0.0.0.0:8888"]

@@ -1,15 +1,15 @@
 # The allowlist — the single source of truth for what this proxy permits.
 #
-# `./run.py` renders this file, through templates/, into the engine
+# `ipl` renders this file, through data/templates/, into the engine
 # configurations: config/pipelock.yaml, config/smokescreen.yaml and
 # config/squid.conf. Those files are generated; do not edit them by hand.
-# `setup`, `up` and `restart` regenerate them, and `./run.py policy --check`
+# `setup`, `up` and `restart` regenerate them, and `ipl policy --check`
 # reports drift without writing.
 #
 # The rules the allowlist sits on top of — default deny, the IP-layer SSRF
 # floors, no TLS interception — are NOT configurable here. They live in the
 # templates as literal text and are checked independently by
-# `validate_policy_file()` in run.py. See docs/policy.md.
+# `validate_policy_file()` in policy/validate.py. See docs/policy.md.
 #
 # The adversarial test policy and its DNS fixture live in lab/fixtures.toml
 # and never touch this file (docs/lab.md).

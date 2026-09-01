@@ -3,8 +3,8 @@
 # TEST POLICY — NEVER use for normal operation. config/squid.conf plus the
 # `[policy.test]` fixtures from lab/fixtures.toml. See docs/lab.md.
 #
-# Activate with:  ./lab.py --engine squid up
-# Deactivate with `./run.py up` (recreates with the real policy).
+# Activate with:  ipl-lab --engine squid up
+# Deactivate with `ipl up` (recreates with the real policy).
 {% else %}
 # Squid egress policy: default deny, hostname allowlist, IP-layer SSRF
 # floors evaluated after DNS resolution. This is the Squid rendering of

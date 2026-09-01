@@ -9,8 +9,8 @@
 # TEST POLICY — NEVER use for normal operation. config/smokescreen.yaml
 # plus the `[policy.test]` fixtures from lab/fixtures.toml. See docs/lab.md.
 #
-# Activate with:  ./lab.py --engine smokescreen up
-# Deactivate with `./run.py up` (recreates with the real policy).
+# Activate with:  ipl-lab --engine smokescreen up
+# Deactivate with `ipl up` (recreates with the real policy).
 
 ---
 version: v1

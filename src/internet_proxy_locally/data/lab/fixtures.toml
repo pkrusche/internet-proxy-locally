@@ -1,20 +1,20 @@
 # The adversarial test policy and the local DNS fixture.
 #
-# Read by ./lab.py only. `./run.py` never opens this file: nothing here is
-# ever part of an operational policy, and `./run.py up` cannot start an
+# Read by ipl-lab only. `ipl` never opens this file: nothing here is
+# ever part of an operational policy, and `ipl up` cannot start an
 # engine on it. Every name below is a name that resolves to an
 # attacker-chosen address by design.
 #
-# ./lab.py renders this file, plus the real allowlist in config.toml,
+# ipl-lab renders this file, plus the real allowlist in config.toml,
 # into lab/config/*.test.* and lab/config/dns-fixture.hosts. Those files
-# are generated; `./lab.py policy --check` reports drift without writing.
+# are generated; `ipl-lab policy --check` reports drift without writing.
 #
 # See docs/lab.md.
 
 [policy.test]
 # Added to the `.test` configs ONLY, on top of everything in
 # config.toml — the test policy is a strict superset by construction.
-# These exist so that `./lab.py check` can prove the IP-layer SSRF floors
+# These exist so that `ipl-lab check` can prove the IP-layer SSRF floors
 # hold even for an allowlisted hostname.
 #
 # Never add an operational domain here.
@@ -36,7 +36,7 @@ allow = [
 
 [fixture]
 # The local DNS fixture (data/lab/dnsfixture.toml, data/images/dnsfixture) — the source
-# of truth for the records it serves. `./lab.py policy` renders
+# of truth for the records it serves. `ipl-lab policy` renders
 # lab/config/dns-fixture.hosts from this table, so the hosts file and the
 # `[policy.test]` allowlist above can no longer disagree: rendering refuses
 # a record name the test policy does not allowlist, and refuses a

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DNS rebinding fixture and connection trap for `./lab.py check`.
+"""DNS rebinding fixture and connection trap for `ipl-lab check`.
 
 Runs as PID 1 in the DNS-fixture container and does three things:
 

@@ -83,7 +83,7 @@ check_wheel_data() {
     uv run --no-sync python3 -c "
 import sys, zipfile
 wheel = sys.argv[1]
-required = ('data/templates/', 'data/services/', 'data/images/', 'data/lab/')
+required = ('data/templates/', 'data/images/', 'data/lab/')
 names = zipfile.ZipFile(wheel).namelist()
 missing = [r for r in required if not any(f'/{r}' in n for n in names)]
 if missing:
@@ -97,7 +97,7 @@ step "wheel carries data/" check_wheel_data
 
 # -- the unit suite, against the real install rather than a sandbox stub ----
 
-step "unit suite (216 tests)" uv run --no-sync python -m unittest discover -s tests -t .
+step "unit suite" uv run --no-sync python -m unittest discover -s tests -t .
 
 # -- rendered configs still match the committed ones under a real toolchain -
 
