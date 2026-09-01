@@ -30,8 +30,9 @@ PACKAGE_DATA = REPO_ROOT / "src" / "internet_proxy_locally" / "data"
 # owns them. `run.X` for all of it was one flat namespace; these
 # import lines are what the split looks like from outside.
 from internet_proxy_locally.backend import Backend
-from internet_proxy_locally.constants import ENGINES
+from internet_proxy_locally.constants import DNS_FIXTURE, ENGINES
 from internet_proxy_locally.errors import Fail
+from internet_proxy_locally.images import IMAGES
 from internet_proxy_locally.net import probe_proxy
 from internet_proxy_locally.policy import render as policy_render
 from internet_proxy_locally.policy.config import PolicyConfig, load_policy_config
@@ -49,8 +50,15 @@ from internet_proxy_locally.policy.validate import (
     policy_allowlist_text,
     validate_policy_file,
 )
-from internet_proxy_locally.spec import ServiceSpec
+from internet_proxy_locally.spec import SERVICES, ServiceSpec
 from tests import quiet
+
+
+def dockerfile(name: str) -> Path:
+    """The Dockerfile that defines `name`'s image — and, since the pins
+    moved out of Python, every pin it depends on."""
+    return PACKAGE_DATA / "images" / name / "Dockerfile"
+
 
 FAKE_BACKEND = r"""#!/usr/bin/env bash
 set -u
@@ -168,7 +176,7 @@ class RunPyCliTest(unittest.TestCase):
         # writes is here. That is what lets a test edit a pin, or let `up`
         # regenerate config/, without touching the working tree.
         #
-        # The data root carries the templates, the service specs and the
+        # The data root carries the templates, the fixture records and the
         # image contexts. data/images/ is not optional: a rendered squid.conf is
         # only valid if every `deny_info` page it names exists in
         # data/images/squid/errors.
@@ -177,12 +185,9 @@ class RunPyCliTest(unittest.TestCase):
         # that `setup` and `up` regenerate from it.
         shutil.copy(REPO_ROOT / "config.toml", self.tmp / "config.toml")
         shutil.copytree(REPO_ROOT / "config", self.tmp / "config")
-        # Start from unpinned service specs regardless of what the checkout
-        # currently pins, so the fail-closed tests stay meaningful and the
-        # tests that need a pin set one explicitly.
-        self.unpin("pipelock", "digest")
-        self.unpin("smokescreen", "ref")
-        self.unpin("squid", "squid")
+        # No image is present until a test says so: `up` fails closed on an
+        # image that has not been built, and that is what the fail-closed
+        # tests below turn on.
 
         bindir = self.tmp / "bin"
         bindir.mkdir()
@@ -226,34 +231,20 @@ class RunPyCliTest(unittest.TestCase):
             check=False,
         )
 
-    def unpin(self, engine: str, key: str) -> None:
-        toml = self.tmp / "data" / "services" / f"{engine}.toml"
-        text, count = re.subn(
-            rf'^{key} = ".*"$',
-            f'{key} = ""',
-            toml.read_text(),
-            count=1,
-            flags=re.MULTILINE,
-        )
-        if count != 1:
-            raise AssertionError(f"no `{key}` pin found in data/services/{engine}.toml")
-        toml.write_text(text)
-
-    def pin_pipelock(self, digest: str = "sha256:" + "ab" * 32) -> None:
-        toml = self.tmp / "data" / "services" / "pipelock.toml"
-        toml.write_text(
-            re.sub(
-                r'^digest = ""$',
-                f'digest = "{digest}"',
-                toml.read_text(),
-                flags=re.MULTILINE,
-            )
-        )
-
     def fake_image(self, ref: str) -> None:
         """Mark an image as present in the shim's state (its `build` is a no-op)."""
         key = ref.translate(str.maketrans("/:@", "___"))
         (self.state / f"image-{key}").write_text("[{}]\n")
+
+    def build_engine(self, engine: str = "pipelock") -> str:
+        """Pretend `setup` has built `engine`'s image, and return its tag.
+
+        Every engine is built from a Dockerfile now, so this replaced three
+        different ways of saying "this one is pinned" — a digest written
+        into a TOML, a source SHA, an apk version.
+        """
+        self.fake_image(IMAGES[engine])
+        return IMAGES[engine]
 
     def backend_log(self) -> str:
         return self.log.read_text()
@@ -281,27 +272,27 @@ class RunPyCliTest(unittest.TestCase):
 
     # -- fail-closed behavior ----------------------------------------------
 
-    def test_up_refuses_unpinned_pipelock(self) -> None:
-        proc = self.run_cli("--backend", "docker", "up")
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("pin pipelock", proc.stderr)
-        self.assertNotIn("run --detach", self.backend_log())
+    def test_up_refuses_an_engine_whose_image_is_not_built(self) -> None:
+        """One rule for all three, where there used to be three.
 
-    def test_up_refuses_unpinned_smokescreen(self) -> None:
-        proc = self.run_cli("--backend", "docker", "--engine", "smokescreen", "up")
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("pin smokescreen", proc.stderr)
-
-    def test_up_refuses_unpinned_squid(self) -> None:
-        proc = self.run_cli("--backend", "docker", "--engine", "squid", "up")
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("pin squid", proc.stderr)
-        self.assertNotIn("run --detach", self.backend_log())
+        Pipelock was pulled by digest and the other two built, so "not
+        ready to start" had a different shape and a different message per
+        engine. Every image is built from a Dockerfile now.
+        """
+        for engine in ENGINES:
+            with self.subTest(engine=engine):
+                self.log.write_text("")
+                proc = self.run_cli("--backend", "docker", "--engine", engine, "up")
+                self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+                self.assertIn("not built yet", proc.stderr)
+                self.assertIn(f"--engine {engine} setup", proc.stderr)
+                self.assertIn(IMAGES[engine], proc.stderr)
+                self.assertNotIn("run --detach", self.backend_log())
 
     def test_up_regenerates_a_hand_edited_policy(self) -> None:
         """`up` renders config/ from config.toml before mounting it, so a
         hand edit cannot reach a running container."""
-        self.pin_pipelock()
+        self.build_engine()
         policy = self.tmp / "config" / "pipelock.yaml"
         policy.write_text(
             policy.read_text(encoding="utf-8").replace(
@@ -315,13 +306,13 @@ class RunPyCliTest(unittest.TestCase):
         self.assertNotIn("evil.example", policy.read_text(encoding="utf-8"))
 
     def test_up_is_quiet_when_the_configs_are_current(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         proc = self.run_cli("--backend", "docker", "up")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertNotIn("regenerated", proc.stdout)
 
     def test_up_propagates_a_new_domain_to_the_engine_config(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         config_toml = self.tmp / "config.toml"
         config_toml.write_text(
             config_toml.read_text(encoding="utf-8").replace(
@@ -347,7 +338,7 @@ class RunPyCliTest(unittest.TestCase):
     def test_up_refuses_a_bad_config_toml_and_starts_nothing(self) -> None:
         """A malformed allowlist entry must stop `up` before any container
         runs, and must not damage the configs already on disk."""
-        self.pin_pipelock()
+        self.build_engine()
         config_toml = self.tmp / "config.toml"
         before = (self.tmp / "config" / "squid.conf").read_text(encoding="utf-8")
         config_toml.write_text(
@@ -382,7 +373,7 @@ class RunPyCliTest(unittest.TestCase):
         self.assertEqual(self.run_cli("policy", "--check").returncode, 0)
 
     def test_up_refuses_occupied_port(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         self.env["FAKE_PROXY_SPAWN"] = ""  # backend won't serve the port
         with socket.socket() as blocker:
             blocker.bind(("127.0.0.1", self.port))
@@ -392,7 +383,7 @@ class RunPyCliTest(unittest.TestCase):
         self.assertIn("already in use", proc.stderr)
 
     def test_up_fails_when_proxy_never_listens(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         self.env["FAKE_PROXY_SPAWN"] = ""
         proc = self.run_cli("--backend", "docker", "up")
         self.assertEqual(proc.returncode, 1)
@@ -401,7 +392,7 @@ class RunPyCliTest(unittest.TestCase):
     # -- lifecycle ----------------------------------------------------------
 
     def test_up_status_check_down_lifecycle(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         up = self.run_cli("--backend", "docker", "up")
         self.assertEqual(up.returncode, 0, up.stderr)
         self.assertIn("healthy", up.stdout)
@@ -410,10 +401,16 @@ class RunPyCliTest(unittest.TestCase):
         run_line = next(l for l in log.splitlines() if l.startswith("run "))
         self.assertIn("--name internet-proxy-pipelock", run_line)
         self.assertIn(f"--publish 127.0.0.1:{self.port}:8888", run_line)
-        self.assertIn("@sha256:", run_line)
+        self.assertIn(IMAGES["pipelock"], run_line)
         self.assertIn(":/config/pipelock.yaml:ro", run_line)
-        self.assertIn("--listen 0.0.0.0:8888", run_line)
         self.assertNotIn(":latest", run_line)
+        # How the engine is launched is the image's business now — the
+        # `run` line ends at the image, with no trailing arguments, and
+        # `--listen 0.0.0.0:8888` is a CMD in its Dockerfile.
+        self.assertTrue(
+            run_line.rstrip().endswith(IMAGES["pipelock"]),
+            f"run line carries arguments after the image: {run_line}",
+        )
 
         status = self.run_cli("--backend", "docker", "status")
         self.assertEqual(status.returncode, 0, status.stderr)
@@ -434,7 +431,7 @@ class RunPyCliTest(unittest.TestCase):
         # `checks.egress` so each result's `engine_logs` is populated
         # from the running container's own log stream (docs/security.md,
         # "The adversarial suite").
-        self.pin_pipelock()
+        self.build_engine()
         up = self.run_cli("--backend", "docker", "up")
         self.assertEqual(up.returncode, 0, up.stderr)
 
@@ -456,14 +453,7 @@ class RunPyCliTest(unittest.TestCase):
     def test_up_mounts_smokescreen_daemon_config(self) -> None:
         # allow_missing_role has no CLI flag; without this mount every request
         # is rejected before the ACL's `default` rule is reached.
-        sha = "c" * 40
-        toml = self.tmp / "data" / "services" / "smokescreen.toml"
-        toml.write_text(
-            re.sub(
-                r'^ref = ""$', f'ref = "{sha}"', toml.read_text(), flags=re.MULTILINE
-            )
-        )
-        self.fake_image(f"internet-proxy-locally/smokescreen:{sha[:12]}")
+        self.build_engine("smokescreen")
         up = self.run_cli("--backend", "docker", "--engine", "smokescreen", "up")
         self.assertEqual(up.returncode, 0, up.stderr)
         run_line = next(
@@ -471,23 +461,19 @@ class RunPyCliTest(unittest.TestCase):
         )
         self.assertIn(":/etc/smokescreen/acl.yaml:ro", run_line)
         self.assertIn(":/etc/smokescreen/config.yaml:ro", run_line)
-        self.assertIn("--config-file /etc/smokescreen/config.yaml", run_line)
+        # `--config-file /etc/smokescreen/config.yaml` is a CMD in the
+        # image now (asserted in RunPyUnitTest); what this lane still owns
+        # is the mount underneath it.
+        self.assertTrue(
+            run_line.rstrip().endswith(IMAGES["smokescreen"]),
+            f"run line carries arguments after the image: {run_line}",
+        )
 
     def test_up_squid_mounts_policy_over_the_stock_config(self) -> None:
         # Squid's whole policy is the bind-mounted file; the image ships no
         # squid.conf, so a mount that did not land would fail closed rather
         # than run a permissive default.
-        version = "6.12-r0"
-        toml = self.tmp / "data" / "services" / "squid.toml"
-        toml.write_text(
-            re.sub(
-                r'^squid = ""$',
-                f'squid = "{version}"',
-                toml.read_text(),
-                flags=re.MULTILINE,
-            )
-        )
-        self.fake_image(f"internet-proxy-locally/squid:{version}")
+        image = self.build_engine("squid")
         up = self.run_cli("--backend", "docker", "--engine", "squid", "up")
         self.assertEqual(up.returncode, 0, up.stderr)
         run_line = next(
@@ -495,62 +481,43 @@ class RunPyCliTest(unittest.TestCase):
         )
         self.assertIn("--name internet-proxy-squid", run_line)
         self.assertIn(f"--publish 127.0.0.1:{self.port}:3128", run_line)
-        self.assertIn(f"internet-proxy-locally/squid:{version}", run_line)
+        self.assertIn(image, run_line)
         self.assertIn(":/etc/squid/squid.conf:ro", run_line)
         self.assertNotIn(":latest", run_line)
 
-    def test_up_squid_refuses_unbuilt_image(self) -> None:
-        toml = self.tmp / "data" / "services" / "squid.toml"
-        toml.write_text(
-            re.sub(
-                r'^squid = ""$',
-                'squid = "6.12-r0"',
-                toml.read_text(),
-                flags=re.MULTILINE,
-            )
-        )
-        proc = self.run_cli("--backend", "docker", "--engine", "squid", "up")
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("not built yet", proc.stderr)
-        self.assertIn("--engine squid setup", proc.stderr)
-
     def fake_dns_fixture_image(self) -> None:
-        self.fake_image("internet-proxy-locally/dnsfixture:2.91-r1")
+        self.fake_image(IMAGES[DNS_FIXTURE])
 
     def test_check_requires_running_engine(self) -> None:
         proc = self.run_cli("--backend", "docker", "check")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("no engine is running", proc.stderr)
 
-    def test_setup_is_fail_closed_for_every_pin_kind(self) -> None:
-        """`setup` never resolves a pin itself, whatever the pin is.
+    def test_setup_builds_each_engine_from_its_own_dockerfile(self) -> None:
+        """One build path for all three, and nothing pulled.
 
-        It used to, for Pipelock alone: with no digest recorded it pulled
-        the mutable tag, read a digest back out and wrote it into the
-        TOML. So a fresh checkout ran whatever `3.3.0` pointed at that
-        day, recorded after the fact rather than reviewed before it, while
-        the other two refused and pointed at `pin`. Now all three refuse,
-        and each says how to pin the thing it is pinned by.
+        Pipelock used to be pulled by digest, and with no digest recorded
+        `setup` pulled the mutable tag, read a digest back out and wrote it
+        into the TOML — so a fresh checkout ran whatever `3.3.0` pointed at
+        that day, recorded after the fact rather than reviewed before it.
+        There is no pin for `setup` to resolve any more: the digest is a
+        literal in data/images/pipelock/Dockerfile.
         """
-        # setUp() blanks all three; the key is what each is pinned *by*.
-        for engine, key in (
-            ("pipelock", "digest"),
-            ("smokescreen", "ref"),
-            ("squid", "squid"),
-        ):
+        proc = self.run_cli("--backend", "docker", "setup", "--all")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        log = self.backend_log()
+        self.assertNotIn("pull", log)
+        for engine in ENGINES:
             with self.subTest(engine=engine):
-                proc = self.run_cli("--engine", engine, "setup")
-                self.assertNotEqual(proc.returncode, 0, proc.stdout)
-                combined = proc.stdout + proc.stderr
-                self.assertIn("not pinned", combined)
-                self.assertIn(f"ipl pin {engine}", combined)
-                # And nothing was written back into the pin file.
-                text = (self.tmp / "data" / "services" / f"{engine}.toml").read_text()
+                context = self.tmp / "data" / "images" / engine
                 self.assertIn(
-                    f'{key} = ""',
-                    text,
-                    f"setup recorded a {engine} pin instead of refusing",
+                    f"build --tag {IMAGES[engine]} "
+                    f"--file {context / 'Dockerfile'} {context}",
+                    log,
                 )
+                # No --build-arg: a build argument would be a pin Python
+                # could get wrong on the way in.
+                self.assertNotIn("--build-arg", log)
 
 
 class RunPyUnitTest(unittest.TestCase):
@@ -1136,29 +1103,112 @@ class RunPyUnitTest(unittest.TestCase):
         self.assertEqual(fake("", returncode=1).published_ports("x"), [])
         self.assertEqual(fake(json.dumps([{}])).published_ports("x"), [])
 
-    def test_build_args_come_from_the_build_table(self) -> None:
-        """`[build]` is passed through as `KEY.upper()`, not mapped by hand.
+    # -- pins, which live in the Dockerfiles --------------------------------
 
-        The mapping used to be three named fields and three literal
-        uppercase strings, so a new base pin meant editing the CLI as well
-        as the TOML and the Dockerfile. These are the ARGs the Dockerfiles
-        actually declare.
+    def test_every_image_has_a_build_context(self) -> None:
+        """Every service `SERVICES` names is built from data/images/<name>/.
+
+        This is what `prepare_image` assumes instead of branching per
+        service, and what makes "which image" have one answer.
         """
-        load = ServiceSpec.load
-        self.assertEqual(
-            load("smokescreen").build_args,
-            {"GO_IMAGE": "golang:1.24.6-alpine3.22", "RUNTIME_IMAGE": "alpine:3.22.1"},
-        )
-        squid = load("squid").build_args
-        self.assertEqual(squid["BASE_IMAGE"], "alpine:3.22.1")
-        # [source.packages] arrives as `<NAME>_VERSION` in the same table.
-        self.assertEqual(squid["SQUID_VERSION"], load("squid").packages["squid"])
+        self.assertEqual(set(IMAGES), set(SERVICES))
+        for name, spec in SERVICES.items():
+            with self.subTest(name=name):
+                self.assertEqual(spec.image, IMAGES[name])
+                self.assertTrue(dockerfile(name).is_file(), f"no Dockerfile for {name}")
 
-    def test_pin_kind_per_service(self) -> None:
-        kinds = {engine: ServiceSpec.load(engine).pin_kind for engine in ENGINES}
-        self.assertEqual(
-            kinds, {"pipelock": "digest", "smokescreen": "source", "squid": "package"}
+    def test_every_from_line_is_pinned(self) -> None:
+        """No floating base images, and no `latest`.
+
+        `up` used to refuse an unpinned service spec at run time. The pins
+        are literals in the Dockerfiles now, so this is where that
+        guarantee lives — and it covers the base images too, which the
+        run-time check never did.
+        """
+        pinned = re.compile(
+            r"^[\w./-]+"
+            r"(@sha256:[0-9a-f]{64}"  # a digest, or
+            r"|:[\w][\w.-]*)$"  # an explicit non-latest tag
         )
+        for name in IMAGES:
+            for line in dockerfile(name).read_text().splitlines():
+                if not line.startswith("FROM "):
+                    continue
+                with self.subTest(name=name, line=line):
+                    ref = line.split()[1]
+                    self.assertNotIn("${", ref, "FROM must not take a build arg")
+                    self.assertNotIn(":latest", ref)
+                    self.assertRegex(ref, pinned)
+
+    def test_every_apk_package_is_pinned(self) -> None:
+        """`apk add pkg` installs whatever the index says today.
+
+        The Dockerfiles used to guard this themselves, with a `grep -Eq`
+        over a build arg. There is no build arg left to check, so the
+        check moved here — where it reads the line that actually runs.
+        """
+        version = re.compile(r"^[\w.+-]+=\d[\w.]*-r\d+$")
+        # The base image's own build tooling, not part of what the proxy is:
+        # these carry no version and are not what an upgrade is about.
+        unversioned = {"ca-certificates", "git"}
+        found = 0
+        for name in IMAGES:
+            for line in dockerfile(name).read_text().splitlines():
+                # Instructions only — "apk add" appears in the prose above
+                # them too, and a comment installs nothing.
+                if line.lstrip().startswith("#") or "apk add" not in line:
+                    continue
+                packages = line.split("apk add", 1)[1].replace('"', "").split()
+                for package in packages:
+                    if package.startswith("-") or package in ("&&", "\\"):
+                        continue
+                    if package in unversioned:
+                        continue
+                    with self.subTest(name=name, package=package):
+                        self.assertRegex(package, version)
+                    found += 1
+        self.assertTrue(found, "no pinned apk package found in any Dockerfile")
+
+    def test_image_tags_match_the_pins_they_name(self) -> None:
+        """The tag constant is what `setup` skips a rebuild on, so a
+        Dockerfile edited without bumping it would leave the old image
+        running. This is that mistake, as a red test."""
+        squid = dockerfile("squid").read_text()
+        self.assertIn(f'"squid={IMAGES["squid"].rpartition(":")[2]}"', squid)
+
+        fixture = dockerfile(DNS_FIXTURE).read_text()
+        self.assertIn(f'"dnsmasq={IMAGES[DNS_FIXTURE].rpartition(":")[2]}"', fixture)
+
+        smokescreen = dockerfile("smokescreen").read_text()
+        sha = re.search(r"checkout --detach ([0-9a-f]{40})", smokescreen)
+        self.assertIsNotNone(sha, "no pinned commit in the smokescreen Dockerfile")
+        assert sha is not None
+        self.assertEqual(IMAGES["smokescreen"].rpartition(":")[2], sha.group(1)[:12])
+
+        pipelock = dockerfile("pipelock").read_text()
+        self.assertIn(f"# pipelock {IMAGES['pipelock'].rpartition(':')[2]}", pipelock)
+
+    def test_no_dockerfile_disables_private_range_blocking(self) -> None:
+        """The launch arguments moved from the service specs into CMD, and
+        the guard that refused these two flags moved with them."""
+        for name in IMAGES:
+            with self.subTest(name=name):
+                text = dockerfile(name).read_text()
+                self.assertNotIn("--unsafe-allow-private-ranges", text)
+                self.assertNotIn("--danger-allow-access-to-private-ranges", text)
+
+    def test_the_engines_are_launched_by_their_images(self) -> None:
+        """`run_detached` passes no trailing arguments, so every engine has
+        to carry its own command."""
+        for engine in ENGINES:
+            with self.subTest(engine=engine):
+                text = dockerfile(engine).read_text()
+                self.assertTrue(
+                    "ENTRYPOINT" in text or "CMD" in text,
+                    f"{engine}: nothing launches the process",
+                )
+        self.assertIn("--egress-acl-file", dockerfile("smokescreen").read_text())
+        self.assertIn("--listen", dockerfile("pipelock").read_text())
 
     # -- [fixture] in config.toml -------------------------------------------
 
@@ -1179,12 +1229,6 @@ class RunPyUnitTest(unittest.TestCase):
         self.assertEqual(fake(stopped).container_state("x"), "stopped")
         self.assertEqual(fake("", returncode=1).container_state("x"), "absent")
 
-    def test_service_specs_load_and_refuse_unsafe_flags(self) -> None:
-        for engine in ENGINES:
-            spec = ServiceSpec.load(engine)
-            self.assertNotIn("--unsafe-allow-private-ranges", spec.args)
-            self.assertNotEqual(spec.image_tag, "latest")
-
     def test_every_engine_has_a_shipped_config(self) -> None:
         for engine in ENGINES:
             spec = ServiceSpec.load(engine)
@@ -1193,24 +1237,9 @@ class RunPyUnitTest(unittest.TestCase):
             # reachable from a service definition any more.
             self.assertFalse(hasattr(spec, "test_config_file"))
 
-    def test_squid_image_ref_is_the_pinned_package_version(self) -> None:
-        spec = ServiceSpec.load("squid")
-        self.assertEqual(spec.packages.get("squid"), spec.primary_package_version)
-        self.assertEqual(
-            spec.run_image_ref(),
-            f"{spec.image_repository}:{spec.primary_package_version}",
-        )
-        self.assertTrue(
-            spec.primary_package_version, "data/services/squid.toml must pin a version"
-        )
-
-    def test_every_pinned_package_has_a_version(self) -> None:
-        for engine in ENGINES:
-            spec = ServiceSpec.load(engine)
-            for name, version in spec.packages.items():
-                self.assertTrue(
-                    version, f"data/services/{engine}.toml: {name} is unpinned"
-                )
+    def test_an_unknown_service_fails_loudly(self) -> None:
+        with self.assertRaises(Fail):
+            ServiceSpec.load("nginx")
 
 
 if __name__ == "__main__":

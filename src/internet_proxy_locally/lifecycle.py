@@ -15,7 +15,6 @@ from pathlib import Path
 from internet_proxy_locally import net
 from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.constants import (
-    BUILT_ENGINES,
     ENGINES,
     FIXTURE_CONTAINER,
     HEALTH_WAIT_SECONDS,
@@ -74,8 +73,8 @@ def start_engine(
     """
     engine = spec.engine
     host, port = endpoint()
-    image = spec.run_image_ref()
-    if engine in BUILT_ENGINES and not backend.image_present(image):
+    image = spec.image
+    if not backend.image_present(image):
         raise Fail(f"image {image} not built yet — run `ipl --engine {engine} setup`")
 
     # Recreate: remove every container owned by this repository first —
@@ -100,7 +99,6 @@ def start_engine(
         publish_port=port,
         internal_port=spec.internal_port,
         mounts=spec.mounts(config_path),
-        args=spec.args,
         dns=dns,
     )
 
@@ -166,5 +164,5 @@ def egress_command(backend: Backend, engine: str | None, cli: str) -> list[str]:
         # build it measured; `report` reads it back into the
         # conditions table in docs/findings.md.
         "--image",
-        spec.run_image_ref(),
+        spec.image,
     ]

@@ -3,8 +3,8 @@
 There are two roots, and keeping them apart is the point of this file.
 
 **The data root** holds what ships with the package and is read, never
-written, at runtime: the Jinja templates, the service specs with their
-pins, and the image build contexts. It lives inside the package so an
+written, at runtime: the Jinja templates, the lab fixture's records, and
+the image build contexts with their pins. It lives inside the package so an
 installed wheel is self-contained — `ipl setup` can build the Squid image
 without a checkout to find the Dockerfile in.
 
@@ -17,7 +17,7 @@ work from anywhere inside a checkout, the way git does.
 
 Both are overridable by environment variable. That is not a convenience
 for users: it is how the test suite gets an isolated repository without
-copying the code into it, and it is how `pin` is pointed at a checkout.
+copying the code into it.
 
 This replaces eight separate `REPO_ROOT = Path(__file__).resolve().parent`
 lines that all had to stay in agreement about the layout.
@@ -33,7 +33,7 @@ from internet_proxy_locally.errors import Fail
 
 
 def data_root() -> Path:
-    """Files that ship with the package: templates, service specs, images."""
+    """Files that ship with the package: templates, images, fixture data."""
     override = os.environ.get("IPL_DATA_ROOT")
     if override:
         return Path(override)
@@ -67,32 +67,7 @@ def workspace_root() -> Path:
     return start
 
 
-def writable_data_root() -> Path:
-    """The data root, when recording a pin into it is legitimate.
-
-    `pin` rewrites a service spec, and a spec is source: its whole purpose
-    is to be reviewed in a diff and committed. Writing one into an
-    installed wheel would edit site-packages and be silently lost on the
-    next upgrade, so that fails loudly here instead.
-    """
-    if os.environ.get("IPL_DATA_ROOT"):
-        return data_root()
-    root = data_root()
-    if len(root.parents) > 2 and (root.parents[2] / "pyproject.toml").is_file():
-        return root
-    raise Fail(
-        "recording a pin edits a service spec, which is source: run "
-        "`pin` in a checkout of the repository, review the change and "
-        "commit it"
-    )
-
-
 # --- the data root ---------------------------------------------------------
-
-
-def service_dir() -> Path:
-    """The operational lane's service specs (pipelock, smokescreen, squid)."""
-    return data_root() / "services"
 
 
 def template_dir() -> Path:
@@ -110,10 +85,10 @@ def squid_error_dir() -> Path:
 
 
 def lab_dir() -> Path:
-    """The lab lane's specs: fixtures.toml and dnsfixture.toml.
+    """The lab lane's own data: fixtures.toml, what the fixture serves.
 
-    What the fixture *serves*. How its image is built is in
-    `data/images/dnsfixture/`, with every other build context.
+    How its image is built is in `data/images/dnsfixture/`, with every
+    other build context; how it is run is in `spec.SERVICES`.
     """
     return data_root() / "lab"
 

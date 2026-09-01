@@ -1,28 +1,26 @@
-# Minimal image for Squid, built by `./run.py --engine squid setup` through
+# Minimal image for Squid, built by `ipl --engine squid setup` through
 # Docker or Apple `container`; no Compose.
 #
 # Upstream Squid publishes no official OCI image, so this installs the
-# distribution package at a pinned apk version. That version is recorded in
-# services/squid.toml — builds with an unpinned version are refused by
-# run.py, and the Dockerfile itself rejects a non-pinned value as a second
-# line of defense.
+# distribution package at a pinned apk version. Every pin this image
+# depends on is a literal in this file — the base image and the squid
+# version — and the unit suite asserts they stay pinned and stay in step
+# with `SQUID_IMAGE` in images.py.
 #
-# Base image: keep the default here in sync with [build] in
-# services/squid.toml. Alpine is multi-arch (amd64/arm64).
+# Upgrading: edit the versions below, bump `SQUID_IMAGE` to match, commit,
+# then `ipl --engine squid setup`. Alpine keeps one squid version per
+# release branch, so a pin is stable until the base image moves; if a bump
+# ever removes the pinned version from the repository, the build fails at
+# `apk add` rather than silently installing something else.
+#
+# Alpine is multi-arch (amd64/arm64), and its squid is built
+# `--with-openssl`.
 
-ARG BASE_IMAGE=alpine:3.22.1
+FROM alpine:3.22.1
 
-FROM ${BASE_IMAGE}
+RUN apk add --no-cache ca-certificates "squid=6.12-r0"
 
-ARG SQUID_VERSION
-
-RUN test -n "${SQUID_VERSION}" \
-    && echo "${SQUID_VERSION}" | grep -Eq '^[0-9]+(\.[0-9]+)+-r[0-9]+$' \
-    || { echo "SQUID_VERSION must be a pinned apk version such as 6.12-r0 (see services/squid.toml; run ./run.py pin squid)" >&2; exit 1; }
-
-RUN apk add --no-cache ca-certificates "squid=${SQUID_VERSION}"
-
-# The packaged default config is never used — run.py bind-mounts the real
+# The packaged default config is never used — ipl bind-mounts the real
 # policy over /etc/squid/squid.conf — but removing it means a mount failure
 # cannot silently fall back to a permissive stock configuration.
 RUN rm -f /etc/squid/squid.conf
@@ -44,5 +42,6 @@ USER squid
 EXPOSE 3128
 
 # -N runs in the foreground (no daemon); the config sends both logs to the
-# container's stdout/stderr.
+# container's stdout/stderr. No CMD: the policy arrives entirely through
+# the read-only bind mount over /etc/squid/squid.conf.
 ENTRYPOINT ["/usr/sbin/squid", "-N", "-f", "/etc/squid/squid.conf"]

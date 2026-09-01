@@ -22,7 +22,7 @@ from internet_proxy_locally.constants import (
     ENGINES,
 )
 from internet_proxy_locally.errors import Fail
-from internet_proxy_locally.images import PIN_BY_KIND, prepare_engine
+from internet_proxy_locally.images import prepare_image
 from internet_proxy_locally.lifecycle import (
     all_specs,
     owned_containers,
@@ -87,17 +87,8 @@ def cmd_setup(opts: argparse.Namespace) -> int:
 
     engines = ENGINES if opts.all else (opts.engine or DEFAULT_ENGINE,)
     for engine in engines:
-        prepare_engine(backend, engine, rebuild=opts.rebuild)
+        prepare_image(backend, engine, rebuild=opts.rebuild)
     print("setup complete")
-    return 0
-
-
-def cmd_pin(opts: argparse.Namespace) -> int:
-    spec = ServiceSpec.load(opts.target)
-    PIN_BY_KIND[spec.pin_kind](
-        spec, lambda: detect_backend(opts.backend), opts.ref or ""
-    )
-    common.pin_epilogue("ipl")
     return 0
 
 
@@ -150,26 +141,13 @@ def cmd_status(opts: argparse.Namespace) -> int:
     print(f"endpoint: http://{host}:{port}")
     for spec in all_specs():
         state = backend.container_state(spec.container_name)
-        # What to show as the pin is the same question `pin_kind` already
-        # answers; branching on the engine name here meant a fourth engine
-        # would have printed an empty pin rather than its own.
-        pin = {
-            "digest": spec.image_digest,
-            "package": spec.primary_package_version,
-            "source": spec.source_ref,
-        }[spec.pin_kind]
-        pin = pin or "(unpinned)"
         marker = " (active)" if spec.engine == active else ""
         print(f"{spec.engine}: {state}{marker}")
         print(f"  container: {spec.container_name}")
-        tag = (
-            spec.image_tag
-            or spec.primary_package_version
-            or spec.source_ref[:12]
-            or "?"
-        )
-        print(f"  image:     {spec.image_repository}:{tag}")
-        print(f"  pin:       {pin or '(unpinned)'}")
+        # The tag `up` runs, not a reconstruction of it: what the pin
+        # behind it is belongs to data/images/<engine>/Dockerfile.
+        print(f"  image:     {spec.image}")
+        print(f"  built:     {'yes' if backend.image_present(spec.image) else 'no'}")
     if active:
         healthy, detail, _ = (
             probe_proxy(host, port)
@@ -240,12 +218,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_policy.set_defaults(func=cmd_policy)
 
     p_setup = sub.add_parser(
-        "setup", help="validate prerequisites, pull/build pinned images"
+        "setup", help="validate prerequisites, build the engine images"
     )
     p_setup.add_argument(
         "--rebuild",
         action="store_true",
-        help="rebuild a locally built image (smokescreen, squid) even if present",
+        help="rebuild the image even if it is already present",
     )
     p_setup.add_argument(
         "--all",
@@ -265,7 +243,7 @@ def build_parser() -> argparse.ArgumentParser:
         "down", help="remove containers owned by this repository"
     ).set_defaults(func=cmd_down)
     sub.add_parser(
-        "status", help="show engine/backend/pin/endpoint state"
+        "status", help="show engine/backend/image/endpoint state"
     ).set_defaults(func=cmd_status)
 
     p_logs = sub.add_parser("logs", help="show engine logs")
@@ -279,16 +257,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("--json", action="store_true", help="machine-readable results")
     p_check.set_defaults(func=cmd_check)
 
-    p_pin = sub.add_parser(
-        "pin", help="record immutable pins in the service specs (needs network)"
-    )
-    p_pin.add_argument("target", choices=ENGINES)
-    p_pin.add_argument(
-        "--ref",
-        help="smokescreen: pin a specific tag/branch instead of HEAD; "
-        "squid: pin a specific apk version instead of the base image's",
-    )
-    p_pin.set_defaults(func=cmd_pin)
     return parser
 
 

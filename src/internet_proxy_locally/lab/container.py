@@ -12,7 +12,7 @@ though it knows nothing else about this module.
 
 from __future__ import annotations
 
-from internet_proxy_locally import net, paths
+from internet_proxy_locally import net
 from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.constants import DNS_FIXTURE, HEALTH_WAIT_SECONDS
 from internet_proxy_locally.errors import Fail
@@ -30,7 +30,7 @@ def fixture_spec() -> ServiceSpec:
     made them a property of the image rather than of the run — so an image
     built before an edit to fixtures.toml went on serving the old values.
     """
-    return ServiceSpec.load(DNS_FIXTURE, root=paths.lab_dir())
+    return ServiceSpec.load(DNS_FIXTURE)
 
 
 def start_dns_fixture(backend: Backend) -> str:
@@ -40,7 +40,7 @@ def start_dns_fixture(backend: Backend) -> str:
     container and from nothing else.
     """
     spec = fixture_spec()
-    image = spec.run_image_ref()
+    image = spec.image
     if not backend.image_present(image):
         raise Fail(
             f"the DNS fixture image {image} is not built — run `ipl-lab setup`.\n"
@@ -55,7 +55,6 @@ def start_dns_fixture(backend: Backend) -> str:
         publish_port=0,
         internal_port=spec.internal_port,
         mounts=spec.mounts(),
-        args=spec.args,
         publish=False,
     )
 

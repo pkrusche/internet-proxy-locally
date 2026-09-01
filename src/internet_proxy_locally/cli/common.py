@@ -67,11 +67,6 @@ def client_hint(host: str, port: int) -> None:
     )
 
 
-def pin_epilogue(cli: str) -> None:
-    """Recording a pin is half the operation; reviewing it is the other half."""
-    print(f"review the change and commit it; then run `{cli} setup`")
-
-
 def run_policy_command(
     *,
     rendered: dict[Path, str],

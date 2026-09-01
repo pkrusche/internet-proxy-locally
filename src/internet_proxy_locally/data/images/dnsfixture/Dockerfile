@@ -1,6 +1,6 @@
-# The local DNS fixture for `check --full`: dnsmasq plus a small stdlib
-# responder. Built by `./run.py setup`, started only by
-# `./run.py up --test-policy`, never part of normal operation.
+# The local DNS fixture for `ipl-lab check`: dnsmasq plus a small stdlib
+# responder. Built by `ipl-lab setup`, started only by `ipl-lab up`, never
+# part of normal operation.
 #
 # It serves two fixtures that public DNS cannot provide:
 #
@@ -20,22 +20,17 @@
 # only ever answers one delegated zone over UDP from localhost, which is
 # why its DNS handling can be as small as it is.
 #
-# Both packages are pinned in services/dnsfixture.toml and refused by
-# run.py when unpinned.
+# Every pin this image depends on is a literal in this file — the base
+# image and both apk versions — and the unit suite asserts they stay pinned
+# and stay in step with `DNSFIXTURE_IMAGE` in images.py, whose tag is the
+# dnsmasq version.
+#
+# Upgrading: edit the versions below, bump `DNSFIXTURE_IMAGE` to match,
+# commit, then `ipl-lab setup`.
 
-ARG BASE_IMAGE=alpine:3.22.1
+FROM alpine:3.22.1
 
-FROM ${BASE_IMAGE}
-
-ARG DNSMASQ_VERSION
-ARG PYTHON3_VERSION
-
-RUN for pin in "dnsmasq=${DNSMASQ_VERSION}" "python3=${PYTHON3_VERSION}"; do \
-        echo "${pin}" | grep -Eq '^[a-z0-9]+=[0-9]+(\.[0-9]+)+-r[0-9]+$' \
-        || { echo "package pins must look like name=1.2.3-r0 (got '${pin}'; see services/dnsfixture.toml, run ./run.py pin dnsfixture)" >&2; exit 1; }; \
-    done
-
-RUN apk add --no-cache "dnsmasq=${DNSMASQ_VERSION}" "python3=${PYTHON3_VERSION}"
+RUN apk add --no-cache "dnsmasq=2.91-r1" "python3=3.12.14-r0"
 
 COPY rebind.py /usr/local/bin/rebind.py
 

@@ -183,7 +183,6 @@ class Backend:
         publish_port: int,
         internal_port: int,
         mounts: list[tuple[Path, str]],
-        args: list[str],
         publish: bool = True,
         dns: str = "",
     ) -> None:
@@ -198,8 +197,10 @@ class Backend:
             cmd += ["--dns", dns]
         for src, dst in mounts:
             cmd += ["--volume", f"{src}:{dst}:ro"]
+        # No trailing arguments: how a service is launched is its
+        # image's business, and every one of them says so in its
+        # Dockerfile's ENTRYPOINT/CMD (data/images/*/Dockerfile).
         cmd.append(image)
-        cmd += args
         self._run(*cmd)
 
     def logs(self, name: str, follow: bool) -> int:
@@ -220,34 +221,9 @@ class Backend:
         # `image <verb>` works for both docker and Apple `container`.
         return self._run("image", *args, check=check)
 
-    def pull(self, ref: str) -> None:
-        if self.name == "docker":
-            self._run("pull", ref, capture=False)
-        else:
-            self._run("image", "pull", ref, capture=False)
-
     def image_present(self, ref: str) -> bool:
         proc = self._image("inspect", ref, check=False)
         return proc.returncode == 0
-
-    def image_digest(self, ref: str) -> str:
-        """Best-effort immutable digest lookup for a local image."""
-        entry = self._inspect_entry("image", "inspect", ref)
-        digests = entry.get("RepoDigests")
-        if isinstance(digests, list) and digests:
-            return str(digests[0]).rpartition("@")[2]
-        # Apple `container image inspect` reports the manifest digest under
-        # `configuration.descriptor.digest` (a manifest-list digest for
-        # multi-arch images); older shapes put it at the top level.
-        descriptor = (entry.get("configuration") or {}).get("descriptor") or {}
-        for source in (descriptor, entry):
-            if not isinstance(source, dict):
-                continue
-            for key in ("digest", "Digest"):
-                value = source.get(key)
-                if isinstance(value, str) and value.startswith("sha256:"):
-                    return value
-        return ""
 
     def image_size(self, ref: str) -> int:
         """On-disk size of a local image in bytes; 0 when it cannot be read.
@@ -272,20 +248,18 @@ class Backend:
                     total += int(value)
         return total
 
-    def run_once(self, image: str, args: list[str]) -> str:
-        """Run a throwaway container and return its stdout. Used by `pin` to
-        ask a base image what package version it would install."""
-        proc = self._run("run", "--rm", image, *args)
-        return proc.stdout or ""
-
-    def build(
-        self, *, tag: str, dockerfile: Path, context: Path, build_args: dict[str, str]
-    ) -> None:
-        cmd = ["build", "--tag", tag, "--file", str(dockerfile)]
-        for key, value in build_args.items():
-            cmd += ["--build-arg", f"{key}={value}"]
-        cmd.append(str(context))
-        self._run(*cmd, capture=False)
+    def build(self, *, tag: str, dockerfile: Path, context: Path) -> None:
+        """Build one image. No `--build-arg`: a Dockerfile that took one
+        would have a pin Python could get wrong."""
+        self._run(
+            "build",
+            "--tag",
+            tag,
+            "--file",
+            str(dockerfile),
+            str(context),
+            capture=False,
+        )
 
 
 def detect_backend(override: str | None) -> Backend:

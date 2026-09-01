@@ -17,13 +17,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from internet_proxy_locally import paths
 from internet_proxy_locally.checks.egress import dns_mixed, dns_rebind, ptr_allowlist
 
 # Run from the repository root, so everything imports by name. See the
 # comment in `verify.harness`.
 from internet_proxy_locally.constants import DNS_FIXTURE, ENGINES, FIXTURE_CONTAINER
 from internet_proxy_locally.errors import Fail
+from internet_proxy_locally.images import IMAGES
 from internet_proxy_locally.lab.container import fixture_spec
 from internet_proxy_locally.lab.fixtures import load_lab_config
 from internet_proxy_locally.lab.render import (
@@ -36,7 +36,7 @@ from internet_proxy_locally.policy.validate import (
     policy_allowlist,
     policy_allowlist_text,
 )
-from internet_proxy_locally.spec import ServiceSpec
+from internet_proxy_locally.spec import SERVICES, ServiceSpec
 from tests.test_runpy import PACKAGE_DATA, REPO_ROOT, RunPyCliTest
 
 
@@ -55,7 +55,7 @@ def _capture(pattern: str, text: str) -> str:
 class LabCliTest(RunPyCliTest):
     """`ipl-lab` against the fake backend.
 
-    Inherits the shim, the isolated repository and the pin helpers. The
+    Inherits the shim, the isolated repository and the image helpers. The
     inherited `test_*` methods run again here, which is deliberate: they
     exercise `ipl` in a workspace that also holds lab/config/, and that
     combination is exactly what a real checkout is.
@@ -83,13 +83,10 @@ class LabCliTest(RunPyCliTest):
         )
 
     def fake_dns_fixture_image(self) -> None:
-        spec_text = (self.tmp / "data" / "lab" / "dnsfixture.toml").read_text()
-        repo = _capture(r'repository = "([^"]+)"', spec_text)
-        version = _capture(r'dnsmasq = "([^"]+)"', spec_text)
-        self.fake_image(f"{repo}:{version}")
+        self.fake_image(IMAGES[DNS_FIXTURE])
 
     def test_up_starts_the_dns_fixture_and_points_the_engine_at_it(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         self.fake_dns_fixture_image()
         up = self.lab_cli("--backend", "docker", "up")
         self.assertEqual(up.returncode, 0, up.stderr + up.stdout)
@@ -104,7 +101,7 @@ class LabCliTest(RunPyCliTest):
         self.assertIn("--dns 172.17.0.9", engine)
 
     def test_up_mounts_the_test_policy_not_the_real_one(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         self.fake_dns_fixture_image()
         self.assertEqual(self.lab_cli("--backend", "docker", "up").returncode, 0)
         engine = next(
@@ -128,7 +125,7 @@ class LabCliTest(RunPyCliTest):
             )
 
     def test_up_says_loudly_that_this_is_not_an_operational_proxy(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         self.fake_dns_fixture_image()
         up = self.lab_cli("--backend", "docker", "up")
         self.assertIn("TEST policy", up.stdout)
@@ -137,7 +134,7 @@ class LabCliTest(RunPyCliTest):
         self.assertIn("`ipl up`", up.stdout)
 
     def test_normal_up_runs_no_dns_fixture(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         up = self.run_cli("--backend", "docker", "up")
         self.assertEqual(up.returncode, 0, up.stderr)
         runs = [l for l in self.backend_log().splitlines() if l.startswith("run ")]
@@ -149,7 +146,7 @@ class LabCliTest(RunPyCliTest):
         # A fixture left over from `ipl-lab up` must not outlive the engine
         # it was attached to: it answers allowlisted names with private
         # addresses, and must never be running alongside a real policy.
-        self.pin_pipelock()
+        self.build_engine()
         self.fake_dns_fixture_image()
         self.assertEqual(self.lab_cli("--backend", "docker", "up").returncode, 0)
         self.assertTrue((self.state / "container-internet-proxy-dnsfixture").exists())
@@ -159,7 +156,7 @@ class LabCliTest(RunPyCliTest):
         self.assertFalse((self.state / "container-internet-proxy-dnsfixture").exists())
 
     def test_run_py_down_removes_the_dns_fixture(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         self.fake_dns_fixture_image()
         self.assertEqual(self.lab_cli("--backend", "docker", "up").returncode, 0)
         down = self.run_cli("--backend", "docker", "down")
@@ -167,7 +164,7 @@ class LabCliTest(RunPyCliTest):
         self.assertIn("removed internet-proxy-dnsfixture", down.stdout)
 
     def test_lab_down_removes_both(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         self.fake_dns_fixture_image()
         self.assertEqual(self.lab_cli("--backend", "docker", "up").returncode, 0)
         down = self.lab_cli("--backend", "docker", "down")
@@ -176,7 +173,7 @@ class LabCliTest(RunPyCliTest):
         self.assertIn("removed internet-proxy-pipelock", down.stdout)
 
     def test_up_refuses_without_the_fixture_image(self) -> None:
-        self.pin_pipelock()  # fixture image deliberately absent
+        self.build_engine()  # fixture image deliberately absent
         proc = self.lab_cli("--backend", "docker", "up")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("DNS fixture image", proc.stderr)
@@ -188,7 +185,7 @@ class LabCliTest(RunPyCliTest):
         self.assertIn("no engine is running", proc.stderr)
 
     def test_check_runs_the_full_group_and_wires_the_fixture_logs(self) -> None:
-        self.pin_pipelock()
+        self.build_engine()
         self.fake_dns_fixture_image()
         self.assertEqual(self.lab_cli("--backend", "docker", "up").returncode, 0)
         proc = self.lab_cli("--backend", "docker", "check", "--json")
@@ -551,10 +548,15 @@ class LabUnitTest(unittest.TestCase):
     # -- the lane boundary ---------------------------------------------------
 
     def test_the_dns_fixture_is_not_an_engine(self) -> None:
+        """It is a service like the three engines and is built like them,
+        but nothing in the operational lane may run it as one."""
         self.assertNotIn(DNS_FIXTURE, ENGINES)
+        self.assertIn(DNS_FIXTURE, SERVICES)
         spec = fixture_spec()
-        self.assertEqual(spec.root, paths.lab_dir())
-        self.assertFalse((PACKAGE_DATA / "services" / "dnsfixture.toml").exists())
+        self.assertEqual(spec.engine, DNS_FIXTURE)
+        # What it serves is the lab lane's, and stays there.
+        self.assertTrue(spec.config_file.startswith("lab/config/"))
+        self.assertTrue(spec.extra_config_file.startswith("lab/config/"))
 
     def test_run_py_knows_the_fixture_container_name(self) -> None:
         """The operational lane removes the fixture by name without loading it.

@@ -18,13 +18,9 @@ import sys
 from internet_proxy_locally.backend import detect_backend
 from internet_proxy_locally.cli import common
 from internet_proxy_locally.cli import run as run_cli
-from internet_proxy_locally.constants import DEFAULT_ENGINE, ENGINES
+from internet_proxy_locally.constants import DEFAULT_ENGINE, DNS_FIXTURE, ENGINES
 from internet_proxy_locally.errors import Fail
-from internet_proxy_locally.images import (
-    SETUP_BY_PIN_KIND,
-    pin_packages,
-    prepare_engine,
-)
+from internet_proxy_locally.images import prepare_image
 from internet_proxy_locally.lab.container import fixture_spec, start_dns_fixture
 from internet_proxy_locally.lab.render import (
     check_rendered_test_policies,
@@ -67,11 +63,8 @@ def cmd_setup(opts: argparse.Namespace) -> int:
     backend = detect_backend(opts.backend)
     print(f"selected backend: {backend.name}")
     report_synced(sync_test_policies(), _POLICY_SOURCE)
-    for engine in ENGINES:
-        prepare_engine(backend, engine, rebuild=opts.rebuild)
-    SETUP_BY_PIN_KIND[fixture_spec().pin_kind](
-        backend, fixture_spec(), rebuild=opts.rebuild
-    )
+    for name in (*ENGINES, DNS_FIXTURE):
+        prepare_image(backend, name, rebuild=opts.rebuild)
     print("lab setup complete")
     return 0
 
@@ -142,19 +135,6 @@ def cmd_check(opts: argparse.Namespace) -> int:
         as_json=opts.json,
         extra=extra,
     )
-
-
-def cmd_pin(opts: argparse.Namespace) -> int:
-    """Pin the DNS fixture's apk versions. Engine pins are `ipl pin`.
-
-    The fixture is a `package` service like Squid, so this is `ipl pin
-    squid` with a different TOML — shared rather than copied, or the two
-    would answer "which version would this base image install?"
-    differently.
-    """
-    pin_packages(fixture_spec(), lambda: detect_backend(opts.backend))
-    common.pin_epilogue("ipl-lab")
-    return 0
 
 
 def _report():
@@ -242,9 +222,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_report.set_defaults(func=cmd_report)
 
-    sub.add_parser(
-        "pin", help="record the DNS fixture's apk pins (needs network)"
-    ).set_defaults(func=cmd_pin)
     return parser
 
 

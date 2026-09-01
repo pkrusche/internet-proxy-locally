@@ -166,10 +166,7 @@ def verify(engine: str, port: int, report: Reporter, backend_name: str) -> None:
     try:
         elapsed, detail = measure_startup(backend_name, engine, port, env)
         report.note(f"{engine}: up to healthy in {elapsed:.1f}s — {detail}")
-        report.note(
-            f"{engine}: image {spec.run_image_ref()} — "
-            f"{image_size(backend, spec.run_image_ref())}"
-        )
+        report.note(f"{engine}: image {spec.image} — {image_size(backend, spec.image)}")
 
         with Load(port) as load:
             # Wait for the stream rather than assuming a fixed warm-up. A

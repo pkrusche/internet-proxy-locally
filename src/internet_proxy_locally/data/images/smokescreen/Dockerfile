@@ -1,37 +1,34 @@
-# Minimal multi-stage image for stripe/smokescreen.
+# Minimal multi-stage image for stripe/smokescreen, built by `ipl setup`
+# (or `ipl --engine smokescreen setup`) through Docker or Apple
+# `container`; no Compose.
 #
-# Built by `./run.py setup` (or `./run.py --engine smokescreen setup`)
-# through Docker or Apple `container`; no Compose. The source revision is
-# pinned in services/smokescreen.toml and passed in as SMOKESCREEN_REF —
-# builds with an unpinned ref are refused by run.py, and the Dockerfile
-# itself rejects a non-SHA ref as a second line of defense.
+# Upstream publishes no OCI images and no regular version tags, so this
+# builds from a pinned source commit. Every pin this image depends on is a
+# literal in this file — both base images and the 40-character commit SHA —
+# and the unit suite asserts they stay pinned and stay in step with
+# `SMOKESCREEN_IMAGE` in images.py, whose tag is the first 12 characters of
+# that SHA.
 #
-# Base images: keep the defaults here in sync with [build] in
-# services/smokescreen.toml. Both stages are multi-arch (amd64/arm64).
+# Upgrading: resolve the new commit on a networked machine
+# (`git ls-remote https://github.com/stripe/smokescreen HEAD`), put the full
+# SHA in the checkout below, bump `SMOKESCREEN_IMAGE` to its first 12
+# characters, commit, then `ipl --engine smokescreen setup`.
+#
+# Both stages are multi-arch (amd64/arm64).
 
-ARG GO_IMAGE=golang:1.24.6-alpine3.22
-ARG RUNTIME_IMAGE=alpine:3.22.1
-
-FROM ${GO_IMAGE} AS build
-
-ARG SMOKESCREEN_REPO=https://github.com/stripe/smokescreen
-ARG SMOKESCREEN_REF
-
-RUN test -n "${SMOKESCREEN_REF}" \
-    && echo "${SMOKESCREEN_REF}" | grep -Eq '^[0-9a-f]{40}$' \
-    || { echo "SMOKESCREEN_REF must be a full commit SHA (see services/smokescreen.toml; run ./run.py pin smokescreen)" >&2; exit 1; }
+FROM golang:1.24.6-alpine3.22 AS build
 
 RUN apk add --no-cache git ca-certificates
 
-RUN git clone --filter=blob:none "${SMOKESCREEN_REPO}" /src \
-    && git -C /src checkout --detach "${SMOKESCREEN_REF}"
+RUN git clone --filter=blob:none https://github.com/stripe/smokescreen /src \
+    && git -C /src checkout --detach 131fba29ce1e3c2b9d78f359a2fb633703d5013d
 
 WORKDIR /src
 RUN CGO_ENABLED=0 go build -trimpath \
-      -ldflags "-s -w -X main.version=${SMOKESCREEN_REF}" \
+      -ldflags "-s -w -X main.version=131fba29ce1e3c2b9d78f359a2fb633703d5013d" \
       -o /out/smokescreen .
 
-FROM ${RUNTIME_IMAGE}
+FROM alpine:3.22.1
 
 RUN apk add --no-cache ca-certificates \
     && addgroup -S smokescreen \
@@ -44,6 +41,12 @@ COPY --from=build /src/LICENSE.txt /licenses/smokescreen.LICENSE
 
 USER smokescreen
 
-# ACL is bind-mounted read-only at /etc/smokescreen/acl.yaml by run.py.
+# The ACL is bind-mounted read-only at /etc/smokescreen/acl.yaml and the
+# daemon config at /etc/smokescreen/config.yaml. The latter exists only
+# because `allow_missing_role` is a config-file key with no CLI equivalent.
 EXPOSE 4750
 ENTRYPOINT ["/usr/local/bin/smokescreen"]
+CMD ["--config-file", "/etc/smokescreen/config.yaml", \
+     "--listen-ip", "0.0.0.0", \
+     "--listen-port", "4750", \
+     "--egress-acl-file", "/etc/smokescreen/acl.yaml"]
