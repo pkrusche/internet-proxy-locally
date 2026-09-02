@@ -14,7 +14,7 @@ any network egress:
   - lenient mode (Smokescreen-like): non-TLS bytes get a fake origin
     response, and any SNI is accepted.
 
-TLS termination requires a self-signed cert (see tests/test_egress.py).
+TLS termination requires a self-signed cert (see tests/egress/).
 Used two ways: imported and started in-process by tests, and spawned as
 a process by the fake container backend shim to emulate a published port.
 """

@@ -11,21 +11,6 @@ two halves owned by two repositories, and only one of them is here:
     `HTTP_PROXY`/`HTTPS_PROXY` to that endpoint, and whether its firewall
     drops everything else, is decided entirely in that tool.
 
-The second half was carried as "unverified" for a long time, which framed
-it as a test nobody had run. It is not: it is a fact about the installed
-tool, and this script reads it off the installation rather than assuming
-it either way. The distinction matters, because "unverified" quietly
-implies "probably fine", and an integration that is simply absent is not
-fine — it means the diagram describes an intention, and an agent's egress
-is governed by whatever `project-sandbox` does on its own.
-
-**Measured 2026-08-28** against project-sandbox as installed here: it
-neither sets the proxy variables nor mentions the endpoint. It filters
-egress with its own iptables/ipset domain allowlist instead. So nothing
-on this machine routes through this proxy unless something sets
-`HTTP_PROXY` by hand, and the wiring, if it is wanted, belongs in
-`project-sandbox`.
-
 `--run-sandbox` executes the in-sandbox half — the four assertions that
 matter once the routing exists — and is opt-in because it builds images
 and starts containers in the caller's environment. It refuses to run when

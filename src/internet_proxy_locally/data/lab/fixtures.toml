@@ -23,7 +23,7 @@ allow = [
     "*.nip.io",
     "*.sslip.io",
     # Mixed public+private answer sets, served by the local DNS fixture
-    # from lab/config/dns-fixture.hosts (lab/dnsfixture.toml).
+    # from lab/config/dns-fixture.hosts, rendered from [fixture] below.
     "public-only.fixture.test",
     "mixed-public-first.fixture.test",
     "mixed-private-first.fixture.test",
@@ -35,7 +35,7 @@ allow = [
 # ---------------------------------------------------------------------------
 
 [fixture]
-# The local DNS fixture (data/lab/dnsfixture.toml, data/images/dnsfixture) — the source
+# The local DNS fixture (built from data/images/dnsfixture) — the source
 # of truth for the records it serves. `ipl-lab policy` renders
 # lab/config/dns-fixture.hosts from this table, so the hosts file and the
 # `[policy.test]` allowlist above can no longer disagree: rendering refuses

@@ -1,13 +1,13 @@
 # GENERATED FILE — do not edit.
 #
-# Rendered from config.toml + lab/fixtures.toml by `ipl-lab`,
+# Rendered from config.toml + data/lab/fixtures.toml by `ipl-lab`,
 # via data/templates/pipelock.yaml.j2.
-# To change the test policy, edit lab/fixtures.toml and run
+# To change the test policy, edit data/lab/fixtures.toml and run
 # `ipl-lab policy`. A hand edit here is silently overwritten and is
 # caught by the test suite.
 #
 # TEST POLICY — NEVER use for normal operation. config/pipelock.yaml plus
-# the `[policy.test]` fixtures from lab/fixtures.toml. See docs/lab.md.
+# the `[policy.test]` fixtures from data/lab/fixtures.toml. See docs/lab.md.
 #
 # Activate with:  ipl-lab --engine pipelock up
 # Deactivate with `ipl up` (recreates with the real policy).
@@ -23,7 +23,7 @@ api_allowlist:
   - pypi.org
   - files.pythonhosted.org
   - registry.npmjs.org
-  # --- [policy.test] in lab/fixtures.toml: adversarial fixtures only ---
+  # --- [policy.test] in data/lab/fixtures.toml: adversarial fixtures only ---
   - "*.nip.io"
   - "*.sslip.io"
   - public-only.fixture.test

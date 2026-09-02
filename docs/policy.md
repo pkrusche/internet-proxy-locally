@@ -14,7 +14,7 @@ is put through `validate_policy_file()` *before* it is written, so a bad
 run in review.
 
 The adversarial test policy is a separate file in a separate lane
-(`lab/fixtures.toml`, [lab.md](lab.md)); `ipl` never reads it.
+(`data/lab/fixtures.toml`, [lab.md](lab.md)); `ipl` never reads it.
 
 ## Mode
 

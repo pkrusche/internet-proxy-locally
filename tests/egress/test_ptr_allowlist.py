@@ -1,4 +1,4 @@
-"""ptr-allowlist: `checks/egress.py` guards a bypass the rest of the suite
+"""ptr-allowlist: `checks.egress` guards a bypass the rest of the suite
 cannot see: Squid retries a `dstdomain` miss as a reverse lookup, so an
 address whose PTR names an allowlisted host is allowed through. Measured
 before the fix (docs/findings.md), and `direct-ip-connect` passed

@@ -7,7 +7,7 @@ local DNS fixture, the full egress suite, and the three-engine comparison
 in [findings.md](findings.md).
 
 Nothing here can reach an operational run. `ipl` never reads
-`lab/fixtures.toml`, the fixture names live under `.test` (RFC 6761, can
+`data/lab/fixtures.toml`, the fixture names live under `.test` (RFC 6761, can
 never resolve publicly), and any `ipl up` removes the fixture
 container.
 
@@ -23,7 +23,7 @@ ipl-lab measure   # all three engines end to end, then rewrite findings.md
 
 ## The test policy
 
-`lab/fixtures.toml` holds `[policy.test]` — domains added **on top of**
+`data/lab/fixtures.toml` holds `[policy.test]` — domains added **on top of**
 `config.toml`'s allowlist — and `[fixture]`, the DNS records. `ipl-lab
 policy` renders both, with the same templates and the same Jinja
 environment `ipl policy` uses, into `lab/config/`:
@@ -155,7 +155,7 @@ loopback-only publication is one this repository cannot use.
 ## Running the unit suite
 
 ```bash
-uv run python -m unittest discover -s tests -t .      # all 216
+uv run python -m unittest discover -s tests -t .      # everything
 uv run python -m unittest tests.test_runpy            # one module
 uv run python -m unittest discover -s tests -t . -k rebind   # by name
 ```

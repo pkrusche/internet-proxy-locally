@@ -1,12 +1,4 @@
-"""data/lab/fixtures.toml: the test allowlist and the DNS fixture records.
-
-Validated at least as hard as config.toml, and cross-checked against it.
-A test policy is the shipped policy plus fixture names — never a different
-policy — so an entry that config.toml would reject is rejected here too,
-an address that should be public is checked to be public, and a name the
-test allowlist covers but the fixture never serves is an error rather than
-a check that silently reports NXDOMAIN as a denial.
-"""
+"""data/lab/fixtures.toml: the test allowlist and the DNS fixture records."""
 
 from __future__ import annotations
 

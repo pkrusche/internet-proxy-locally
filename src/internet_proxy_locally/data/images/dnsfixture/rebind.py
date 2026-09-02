@@ -18,7 +18,7 @@ Runs as PID 1 in the DNS-fixture container and does three things:
    observation.
 
 Both the answers and the trap hits are logged as single `IPL-FIXTURE`
-lines, which checks/egress.py parses out of the container's log stream.
+lines, which `checks.egress` parses out of the container's log stream.
 
 Stdlib only; the parsing here is deliberately minimal because dnsmasq
 fronts it — this responder only ever sees queries for one zone, already
@@ -34,7 +34,7 @@ import subprocess
 import sys
 import threading
 
-# Every fact about what this fixture serves comes from lab/fixtures.toml,
+# Every fact about what this fixture serves comes from data/lab/fixtures.toml,
 # rendered into lab/config/fixture.env and bind-mounted read-only at the
 # path below (lab/render.py `_render_fixture_env()`). It used to be a third
 # copy of those values, with a "keep in sync" comment and nothing enforcing
@@ -60,7 +60,7 @@ def _fixture_env() -> dict[str, str]:
     except OSError as exc:
         raise SystemExit(
             f"cannot read {FIXTURE_ENV} ({exc}) — it is bind-mounted by "
-            "`ipl-lab up`, which renders it from lab/fixtures.toml."
+            "`ipl-lab up`, which renders it from data/lab/fixtures.toml."
         ) from exc
     values = {}
     for line in text.splitlines():

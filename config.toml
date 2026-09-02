@@ -11,7 +11,7 @@
 # templates as literal text and are checked independently by
 # `validate_policy_file()` in policy/validate.py. See docs/policy.md.
 #
-# The adversarial test policy and its DNS fixture live in lab/fixtures.toml
+# The adversarial test policy and its DNS fixture live in data/lab/fixtures.toml
 # and never touch this file (docs/lab.md).
 
 [policy]

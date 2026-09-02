@@ -204,7 +204,7 @@ class LabCliTest(RunPyCliTest):
 
 
 class LabUnitTest(unittest.TestCase):
-    """In-process tests for lab/fixtures.toml validation and rendering.
+    """In-process tests for data/lab/fixtures.toml validation and rendering.
 
     `Fail` is imported straight from `errors` here. It used to have to be
     reached through the lab CLI's own reference to the run one, because loading a
@@ -215,7 +215,7 @@ class LabUnitTest(unittest.TestCase):
     # -- one source of truth for what the fixture serves ---------------------
 
     def test_the_fixture_facts_have_exactly_one_source(self) -> None:
-        """lab/fixtures.toml, `checks.egress` and data/images/dnsfixture/rebind.py
+        """data/lab/fixtures.toml, `checks.egress` and data/images/dnsfixture/rebind.py
         used to state the same names three times, each with a "keep in
         sync" comment and nothing enforcing it.
 
@@ -264,10 +264,10 @@ class LabUnitTest(unittest.TestCase):
             self.assertIn(f'_required("{key}")', rebind)
             self.assertRegex(rendered[env_path], rf"(?m)^{key}={re.escape(value)}$")
 
-    # -- lab/fixtures.toml ---------------------------------------------------
+    # -- data/lab/fixtures.toml ---------------------------------------------------
 
     def fixture_config(self, **overrides) -> Path:
-        """A complete lab/fixtures.toml whose `[fixture]` can be perturbed.
+        """A complete data/lab/fixtures.toml whose `[fixture]` can be perturbed.
 
         The real allowlist is read from the checkout's config.toml, so these
         exercise the same cross-file check the CLI does.
@@ -603,12 +603,12 @@ class LabUnitTest(unittest.TestCase):
         path.write_text('[policy]\nallow = ["pypi.org"]\n\n[fixture]\ncontrol = "x"\n')
         with self.assertRaises(Fail) as caught:
             load_policy_config(path)
-        self.assertIn("lab/fixtures.toml", str(caught.exception))
+        self.assertIn("data/lab/fixtures.toml", str(caught.exception))
 
         path.write_text('[policy]\nallow = ["pypi.org"]\n\n[policy.test]\nallow = []\n')
         with self.assertRaises(Fail) as caught:
             load_policy_config(path)
-        self.assertIn("lab/fixtures.toml", str(caught.exception))
+        self.assertIn("data/lab/fixtures.toml", str(caught.exception))
 
 
 if __name__ == "__main__":

@@ -7,8 +7,8 @@
 # by inspection ("the first `uv sync` on a networked machine is the step
 # that has not run"). This script is that machine's checklist, in one
 # command: build the package for real, confirm the wheel still carries
-# data/ (the templates, service specs and image build contexts an installed
-# wheel needs to be self-contained), then run the unit suite and the
+# data/ (the templates, the fixture spec and the image build contexts an
+# installed wheel needs to be self-contained), then run the unit suite and the
 # `ipl-verify` scripts against a real backend.
 #
 # Every step runs even if an earlier one fails, so one bad step does not
