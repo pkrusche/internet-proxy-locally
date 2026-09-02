@@ -21,15 +21,13 @@ ENGINE_LABELS = {
 
 HEALTH_WAIT_SECONDS = 15.0
 
-# The DNS fixture belongs to the lab lane and is defined in `spec.SERVICES`;
-# this is the one thing about it the operational lane still has to know.
-# A fixture left running answers allowlisted names
-# with private addresses, so it must never outlive the engine it was
-# started for — `up` and `down` remove it by name, whether or not the lab
-# lane was ever used. A test asserts this string still matches the
-# fixture's entry in `spec.SERVICES`.
-FIXTURE_CONTAINER = "internet-proxy-dnsfixture"
-
 # The lab lane's service name: its key in `spec.SERVICES`, and the
 # directory holding its build context (data/images/dnsfixture/).
+#
+# The operational lane needs it too, but only to look the fixture's
+# container name up in `spec.SERVICES` — a fixture left running answers
+# allowlisted names with private addresses, so it must never outlive the
+# engine it was started for, and `up`/`down` remove it whether or not the
+# lab lane was ever used. `spec` is shared, so that lookup is not a lab
+# import and the container name stays stated once.
 DNS_FIXTURE = "dnsfixture"

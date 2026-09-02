@@ -5,9 +5,9 @@ private ones, rebinding ones, a PTR claiming an allowlisted host — so that
 `dns-mixed-answers`, `dns-rebinding` and `ptr-allowlist` are testing an
 engine against a hostile resolver rather than against nothing.
 
-That is also why it must never outlive the run that started it, and why
-the operational lane knows its container name (`FIXTURE_CONTAINER`) even
-though it knows nothing else about this module.
+That is also why it must never outlive the run that started it, and why the
+operational lane sweeps its container — by the name in `spec.SERVICES`,
+which it can read without knowing anything else about this module.
 """
 
 from __future__ import annotations
@@ -51,11 +51,8 @@ def start_dns_fixture(backend: Backend) -> str:
     backend.run_detached(
         name=spec.container_name,
         image=image,
-        publish_host="",
-        publish_port=0,
         internal_port=spec.internal_port,
         mounts=spec.mounts(),
-        publish=False,
     )
 
     def addressed():

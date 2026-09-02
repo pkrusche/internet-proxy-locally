@@ -21,6 +21,7 @@ from internet_proxy_locally.policy.config import (
     ALLOW_ENTRY,
     allow_list,
     load_policy_config,
+    reject_unknown,
 )
 
 
@@ -123,9 +124,7 @@ def _fixture_config(
             "rendered from it)"
         )
     known = {"control", "rebind_zone", "ptr_address", "ptr_claims", "records"}
-    unknown = sorted(set(raw) - known)
-    if unknown:
-        raise Fail(f"{path}: unknown key(s) in [fixture]: {', '.join(unknown)}")
+    reject_unknown(raw, known, path, "key(s) in [fixture]")
     missing = sorted(known - set(raw))
     if missing:
         raise Fail(f"{path}: [fixture] is missing {', '.join(missing)}")
@@ -303,24 +302,21 @@ def load_lab_config(path: Path | None = None) -> LabConfig:
     allow = list(load_policy_config().allow)
     with path.open("rb") as fh:
         data = tomllib.load(fh)
-    unknown = sorted(set(data) - {"policy", "fixture"})
-    if unknown:
-        raise Fail(f"{path}: unknown top-level table(s): {', '.join(unknown)}")
+    reject_unknown(data, {"policy", "fixture"}, path, "top-level table(s)")
     policy = data.get("policy")
     if not isinstance(policy, dict):
         raise Fail(f"{path}: missing the [policy.test] table")
-    unknown = sorted(set(policy) - {"test"})
-    if unknown:
-        raise Fail(
-            f"{path}: unknown key(s) in [policy]: {', '.join(unknown)}. "
-            "The operational allowlist lives in config.toml."
-        )
+    reject_unknown(
+        policy,
+        {"test"},
+        path,
+        "key(s) in [policy]",
+        hint=". The operational allowlist lives in config.toml.",
+    )
     test = policy.get("test", {})
     if not isinstance(test, dict):
         raise Fail(f"{path}: [policy.test] must be a table")
-    unknown = sorted(set(test) - {"allow"})
-    if unknown:
-        raise Fail(f"{path}: unknown key(s) in [policy.test]: {', '.join(unknown)}")
+    reject_unknown(test, {"allow"}, path, "key(s) in [policy.test]")
     allow_test = allow_list(test.get("allow", []), path, "policy.test.allow")
     if not allow_test:
         raise Fail(

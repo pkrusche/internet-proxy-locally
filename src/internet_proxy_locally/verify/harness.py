@@ -15,13 +15,7 @@ import os
 import subprocess
 import sys
 
-# The CLIs are driven as modules rather than as console scripts, so a
-# verification run does not depend on `ipl` having been put on PATH — and
-# so it drives the same interpreter this script is running under.
-CLI_MODULE = {
-    "ipl": "internet_proxy_locally.cli.run",
-    "ipl-lab": "internet_proxy_locally.cli.lab",
-}
+from internet_proxy_locally.cli import CLI_MODULE
 
 
 class Reporter:

@@ -47,6 +47,23 @@ class PolicyConfig:
         return [entry for entry in entries if entry.startswith("*.")]
 
 
+def reject_unknown(
+    mapping: dict, known: set[str], path: Path, where: str, hint: str = ""
+) -> None:
+    """Refuse any key outside `known`, naming all of them at once.
+
+    Both config sources are strict about this for the same reason: a typo
+    (`allows = [...]`) is not an error TOML can catch, and the result would
+    be a silently empty or truncated allowlist — which is an open policy.
+    Every table in both files goes through here so that none of them can be
+    the lenient one. `hint` is the sentence that names the fix where there
+    is a specific one, such as a key that moved to the other file.
+    """
+    unknown = sorted(set(mapping) - known)
+    if unknown:
+        raise Fail(f"{path}: unknown {where}: {', '.join(unknown)}{hint}")
+
+
 def allow_list(raw: object, path: Path, key: str) -> list[str]:
     if not isinstance(raw, list):
         raise Fail(f"{path}: {key} must be an array of strings")
@@ -83,30 +100,30 @@ def load_policy_config(path: Path | None = None) -> PolicyConfig:
         raise Fail(f"missing the policy source {path} (it holds the allowlist)")
     with path.open("rb") as fh:
         data = tomllib.load(fh)
-    unknown = sorted(set(data) - {"policy"})
-    if unknown:
+    reject_unknown(
+        data,
+        {"policy"},
+        path,
+        "top-level table(s)",
         # `[fixture]` and `[policy.test]` moved to the fixture spec; say so
         # rather than reporting them as an anonymous typo.
-        hint = ""
-        if {"fixture"} & set(unknown):
-            hint = (
-                "\n[fixture] and [policy.test] belong in data/lab/fixtures.toml, "
-                "which only ipl-lab reads (docs/lab.md)."
-            )
-        raise Fail(f"{path}: unknown top-level table(s): {', '.join(unknown)}{hint}")
+        hint="\n[fixture] and [policy.test] belong in data/lab/fixtures.toml, "
+        "which only ipl-lab reads (docs/lab.md)."
+        if "fixture" in data
+        else "",
+    )
     policy = data.get("policy")
     if not isinstance(policy, dict):
         raise Fail(f"{path}: missing the [policy] table")
-    unknown = sorted(set(policy) - {"allow"})
-    if unknown:
-        # A typo here (`allows = [...]`) would otherwise silently render an
-        # empty or truncated allowlist.
-        hint = (
-            "\nThe test allowlist belongs in data/lab/fixtures.toml (docs/lab.md)."
-            if "test" in unknown
-            else ""
-        )
-        raise Fail(f"{path}: unknown key(s) in [policy]: {', '.join(unknown)}{hint}")
+    reject_unknown(
+        policy,
+        {"allow"},
+        path,
+        "key(s) in [policy]",
+        hint="\nThe test allowlist belongs in data/lab/fixtures.toml (docs/lab.md)."
+        if "test" in policy
+        else "",
+    )
     allow = allow_list(policy.get("allow", []), path, "policy.allow")
     if not allow:
         raise Fail(

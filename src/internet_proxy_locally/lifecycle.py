@@ -15,8 +15,8 @@ from pathlib import Path
 from internet_proxy_locally import net
 from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.constants import (
+    DNS_FIXTURE,
     ENGINES,
-    FIXTURE_CONTAINER,
     HEALTH_WAIT_SECONDS,
 )
 from internet_proxy_locally.errors import Fail
@@ -37,10 +37,13 @@ def owned_containers(include_fixture: bool = True) -> list[str]:
     never be left running alongside a real policy. `include_fixture=False`
     is for `ipl-lab up`, which starts the fixture *before* the engine —
     it has to, the engine needs its address for `--dns`.
+
+    The fixture's name is read from `spec.SERVICES` rather than restated:
+    `spec` is shared, so naming it here is a lookup and not a lab import.
     """
     names = [spec.container_name for spec in all_specs()]
     if include_fixture:
-        names.append(FIXTURE_CONTAINER)
+        names.append(ServiceSpec.load(DNS_FIXTURE).container_name)
     return names
 
 
@@ -95,10 +98,9 @@ def start_engine(
     backend.run_detached(
         name=spec.container_name,
         image=image,
-        publish_host=host,
-        publish_port=port,
         internal_port=spec.internal_port,
         mounts=spec.mounts(config_path),
+        publish=(host, port),
         dns=dns,
     )
 

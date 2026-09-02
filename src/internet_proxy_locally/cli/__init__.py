@@ -7,3 +7,12 @@ bodies — so the lanes differ only where they are meant to.
 """
 
 from __future__ import annotations
+
+# How to reach each lane as a module. The subprocess callers — the report
+# generator and the end-to-end verification scripts — drive the CLIs this
+# way rather than as console scripts, so a run does not depend on `ipl`
+# having been put on PATH and uses the interpreter already running.
+CLI_MODULE = {
+    "ipl": "internet_proxy_locally.cli.run",
+    "ipl-lab": "internet_proxy_locally.cli.lab",
+}

@@ -229,10 +229,11 @@ def write_validated(
 
 
 def report_synced(changed: list[Path], source: str) -> None:
+    """Name what a sync rewrote; quiet when everything was already current.
+
+    Both lanes report a regeneration the same way, and each names its own
+    source — `config.toml` for the operational lane, that plus the fixture
+    spec for the lab one.
+    """
     for path in changed:
         print(f"regenerated {path.relative_to(paths.workspace_root())} from {source}")
-
-
-def sync_policies_reporting() -> None:
-    """`sync_policies()` for the lifecycle commands: quiet when up to date."""
-    report_synced(sync_policies(), "config.toml")

@@ -18,11 +18,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 from internet_proxy_locally import paths
-from internet_proxy_locally.backend import Backend
-from internet_proxy_locally.constants import BACKENDS, ENGINES
+from internet_proxy_locally.backend import Backend, detect_backend
+from internet_proxy_locally.constants import BACKENDS, DEFAULT_ENGINE, ENGINES
 from internet_proxy_locally.errors import Fail
-from internet_proxy_locally.lifecycle import egress_command
+from internet_proxy_locally.lifecycle import egress_command, start_engine
+from internet_proxy_locally.net import endpoint
 from internet_proxy_locally.policy.render import fail_on, report_synced
+from internet_proxy_locally.policy.validate import validate_policy_file
+from internet_proxy_locally.spec import ServiceSpec
 
 BACKEND_HELP = (
     "container backend (default: Apple `container` on macOS when "
@@ -121,6 +124,58 @@ def run_policy_command(
         print(f"Run `{cli} policy` to regenerate, then commit.", file=sys.stderr)
         return 1
     print(label)
+    return 0
+
+
+def run_up_command(
+    *,
+    opts: argparse.Namespace,
+    sync: Callable[[], list[Path]],
+    source: str,
+    destination: Callable[[ServiceSpec], Path],
+    missing_hint: str = "",
+    notice: str = "",
+    prestart: Callable[[Backend], str] | None = None,
+) -> int:
+    """`up` for either lane: regenerate, validate, then start one engine.
+
+    The order is the contract and both lanes need all of it — the policy
+    the container is about to bind-mount is rendered from its reviewed
+    source first, so `up` can never start an engine on a config that
+    disagrees with the allowlist under review, and a config that fails
+    validation stops the start rather than being mounted.
+
+    `destination` resolves which policy file this lane mounts, `notice` is
+    printed before anything starts, and `prestart` runs after validation
+    and returns a resolver address to point the engine at — the lab lane's
+    DNS fixture, which has to exist before the engine that uses it.
+    """
+    engine = opts.engine or DEFAULT_ENGINE
+    spec = ServiceSpec.load(engine)
+    backend = detect_backend(opts.backend)
+    host, port = endpoint()
+
+    report_synced(sync(), source)
+
+    config_path = destination(spec)
+    if missing_hint and not config_path.is_file():
+        raise Fail(f"missing policy: {config_path} — {missing_hint}")
+    fail_on(
+        validate_policy_file(engine, config_path),
+        "refusing to start with an invalid policy (fail closed)",
+    )
+
+    if notice:
+        print(notice)
+
+    # Truthy exactly when this run just started a fixture, which is the
+    # condition `start_engine` documents for `keep_fixture`: sweeping the
+    # owned containers would otherwise delete the resolver the engine is
+    # about to be pointed at.
+    dns = prestart(backend) if prestart else ""
+
+    start_engine(backend, spec, config_path, dns=dns, keep_fixture=bool(dns))
+    client_hint(host, port)
     return 0
 
 

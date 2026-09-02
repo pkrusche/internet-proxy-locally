@@ -179,15 +179,18 @@ class Backend:
         *,
         name: str,
         image: str,
-        publish_host: str,
-        publish_port: int,
         internal_port: int,
         mounts: list[tuple[Path, str]],
-        publish: bool = True,
+        # (host_ip, host_port), or None for no host port at all. The DNS
+        # fixture is the latter: it is reachable from the engine container
+        # and from nothing else, which is why this is one argument rather
+        # than a host/port pair plus a flag saying to ignore them.
+        publish: tuple[str, int] | None = None,
         dns: str = "",
     ) -> None:
         cmd: list[str] = ["run", "--detach", "--name", name]
-        if publish:
+        if publish is not None:
+            publish_host, publish_port = publish
             cmd += ["--publish", f"{publish_host}:{publish_port}:{internal_port}"]
         if dns:
             # Both CLIs spell this `--dns <ip>`. Docker also has --add-host,

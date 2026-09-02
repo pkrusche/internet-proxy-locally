@@ -21,7 +21,7 @@ from internet_proxy_locally.checks.egress import dns_mixed, dns_rebind, ptr_allo
 
 # Run from the repository root, so everything imports by name. See the
 # comment in `verify.harness`.
-from internet_proxy_locally.constants import DNS_FIXTURE, ENGINES, FIXTURE_CONTAINER
+from internet_proxy_locally.constants import DNS_FIXTURE, ENGINES
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.images import IMAGES
 from internet_proxy_locally.lab.container import fixture_spec
@@ -31,6 +31,7 @@ from internet_proxy_locally.lab.render import (
     render_test_policies,
     test_config_path,
 )
+from internet_proxy_locally.lifecycle import owned_containers
 from internet_proxy_locally.policy.config import load_policy_config
 from internet_proxy_locally.policy.validate import (
     policy_allowlist,
@@ -489,17 +490,10 @@ class LabUnitTest(unittest.TestCase):
                 )
 
     # -- the fixture's own constants ----------------------------------------
-
-    def test_checker_constants_match_the_fixture_table(self) -> None:
-        """`checks.egress`'s per-check modules name the fixture records in
-        their own constants; lab/fixtures.toml is what the fixture actually
-        serves."""
-        fixture = load_lab_config().fixture
-        self.assertEqual(dns_mixed.MIXED_FIXTURE_CONTROL, fixture.control)
-        self.assertEqual(set(dns_mixed.MIXED_FIXTURE_TARGETS), set(fixture.targets))
-        self.assertEqual(dns_rebind.REBIND_ZONE, fixture.rebind_zone)
-        self.assertEqual(ptr_allowlist.PTR_FIXTURE_ADDRESS, fixture.ptr_address)
-        self.assertEqual(ptr_allowlist.PTR_FIXTURE_CLAIMS, fixture.ptr_claims)
+    #
+    # The checker constants are asserted against the fixture table by
+    # `test_the_fixture_facts_have_exactly_one_source` above, which made the
+    # same five assertions this section used to repeat verbatim.
 
     def test_dns_fixture_records_cover_the_checker_names(self) -> None:
         """The hosts file and `checks.egress.dns_mixed` must agree, and the
@@ -558,14 +552,19 @@ class LabUnitTest(unittest.TestCase):
         self.assertTrue(spec.config_file.startswith("lab/config/"))
         self.assertTrue(spec.extra_config_file.startswith("lab/config/"))
 
-    def test_run_py_knows_the_fixture_container_name(self) -> None:
-        """The operational lane removes the fixture by name without loading it.
+    def test_the_operational_sweep_covers_the_fixture(self) -> None:
+        """`ipl down` removes the fixture without loading the lab lane.
 
-        The constant is the whole coupling, so it is asserted rather than
-        trusted: a rename in lab/dnsfixture.toml would otherwise leave a
-        fixture running under a real policy.
+        The name comes from `spec.SERVICES`, so it cannot drift; what is
+        asserted here is the sweep itself, because a fixture left behind
+        answers allowlisted names with private addresses under a real
+        policy. `include_fixture=False` is `ipl-lab up`, which started the
+        fixture a moment ago and must not delete it.
         """
-        self.assertEqual(FIXTURE_CONTAINER, fixture_spec().container_name)
+        self.assertIn(fixture_spec().container_name, owned_containers())
+        self.assertNotIn(
+            fixture_spec().container_name, owned_containers(include_fixture=False)
+        )
 
     def test_the_operational_lane_cannot_reach_the_fixture(self) -> None:
         """The split is the point: `ipl` must not grow this back.

@@ -39,6 +39,7 @@ SECTIONS = ("conditions", "summary", "matrix", "per-check")
 
 from internet_proxy_locally import paths
 from internet_proxy_locally.checks import egress  # the catalogue this renders
+from internet_proxy_locally.cli import CLI_MODULE
 from internet_proxy_locally.constants import ENGINE_LABELS as LABELS
 from internet_proxy_locally.constants import ENGINES
 from internet_proxy_locally.errors import Fail
@@ -511,7 +512,7 @@ def measure_all(
     results_dir = paths.results_dir() if results_dir is None else results_dir
     out = paths.findings_file() if out is None else out
     results_dir.mkdir(parents=True, exist_ok=True)
-    lab_cli = [sys.executable, "-m", "internet_proxy_locally.cli.lab"]
+    lab_cli = [sys.executable, "-m", CLI_MODULE["ipl-lab"]]
     common = ["--backend", backend] if backend else []
     try:
         try:

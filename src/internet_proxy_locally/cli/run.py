@@ -27,18 +27,22 @@ from internet_proxy_locally.lifecycle import (
     all_specs,
     owned_containers,
     running_engine,
-    start_engine,
 )
 from internet_proxy_locally.net import endpoint, port_listening, probe_proxy
 from internet_proxy_locally.policy.render import (
     check_rendered_policies,
+    config_destination,
     fail_on,
     render_policies,
+    report_synced,
     sync_policies,
-    sync_policies_reporting,
 )
 from internet_proxy_locally.policy.validate import validate_policy_file
 from internet_proxy_locally.spec import ServiceSpec
+
+# What `ipl policy` regenerates from, and what `up` re-renders before it
+# mounts anything. The lab lane's counterpart is `cli.lab._POLICY_SOURCE`.
+_POLICY_SOURCE = "config.toml"
 
 
 def cmd_policy(opts: argparse.Namespace) -> int:
@@ -52,7 +56,7 @@ def cmd_policy(opts: argparse.Namespace) -> int:
         rendered=render_policies(),
         check=check_rendered_policies,
         sync=sync_policies,
-        source="config.toml",
+        source=_POLICY_SOURCE,
         label="configs: up to date with config.toml",
         cli="ipl",
         check_only=opts.check,
@@ -65,7 +69,7 @@ def cmd_setup(opts: argparse.Namespace) -> int:
     # Before validating: the files validated below are rendered from
     # config.toml, so a stale one would be reported as a policy problem
     # that editing it could not fix.
-    sync_policies_reporting()
+    report_synced(sync_policies(), _POLICY_SOURCE)
 
     for name in BACKENDS:
         state = "available" if Backend(name).available() else "not installed"
@@ -93,27 +97,21 @@ def cmd_setup(opts: argparse.Namespace) -> int:
 
 
 def cmd_up(opts: argparse.Namespace) -> int:
-    engine = opts.engine or DEFAULT_ENGINE
-    spec = ServiceSpec.load(engine)
-    backend = detect_backend(opts.backend)
-    host, port = endpoint()
+    """Start one engine on the shipped policy.
 
-    # The policy the container is about to bind-mount is rendered from
-    # config.toml first, so `up` can never start an engine on a config that
-    # disagrees with the reviewed allowlist. `sync_policies()` validates
-    # the rendered text before writing it, so a bad config.toml fails here
-    # rather than replacing a working file.
-    sync_policies_reporting()
-
-    config_path = spec.config_path()
-    fail_on(
-        validate_policy_file(engine, config_path),
-        "refusing to start with an invalid policy (fail closed)",
+    `sync_policies()` validates the rendered text before writing it, so a
+    bad config.toml fails here rather than replacing a working file. No
+    resolver is started: `ipl` is the operational lane, and a fixture
+    reachable from it would answer allowlisted names with private
+    addresses.
+    """
+    return common.run_up_command(
+        opts=opts,
+        sync=sync_policies,
+        source=_POLICY_SOURCE,
+        destination=config_destination,
+        missing_hint="run `ipl policy`",
     )
-
-    start_engine(backend, spec, config_path)
-    common.client_hint(host, port)
-    return 0
 
 
 def cmd_down(opts: argparse.Namespace) -> int:

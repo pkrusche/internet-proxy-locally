@@ -15,11 +15,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-from internet_proxy_locally.backend import detect_backend
+from internet_proxy_locally.backend import Backend, detect_backend
 from internet_proxy_locally.cli import common
 from internet_proxy_locally.cli import run as run_cli
 from internet_proxy_locally.constants import DEFAULT_ENGINE, DNS_FIXTURE, ENGINES
-from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.images import prepare_image
 from internet_proxy_locally.lab.container import fixture_spec, start_dns_fixture
 from internet_proxy_locally.lab.render import (
@@ -28,11 +27,7 @@ from internet_proxy_locally.lab.render import (
     sync_test_policies,
     test_config_path,
 )
-from internet_proxy_locally.lifecycle import start_engine
-from internet_proxy_locally.net import endpoint
-from internet_proxy_locally.policy.render import fail_on, report_synced
-from internet_proxy_locally.policy.validate import validate_policy_file
-from internet_proxy_locally.spec import ServiceSpec
+from internet_proxy_locally.policy.render import report_synced
 
 # What `ipl-lab policy` regenerates from, and the line it prints when it
 # has nothing to do. Both lanes render from config.toml; this one adds
@@ -69,36 +64,32 @@ def cmd_setup(opts: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_up(opts: argparse.Namespace) -> int:
-    engine = opts.engine or DEFAULT_ENGINE
-    spec = ServiceSpec.load(engine)
-    backend = detect_backend(opts.backend)
-    host, port = endpoint()
+def _start_fixture(backend: Backend) -> str:
+    """Bring the DNS fixture up and hand back its address for `--dns`.
 
-    report_synced(sync_test_policies(), _POLICY_SOURCE)
-
-    config_path = test_config_path(spec)
-    if not config_path.is_file():
-        raise Fail(f"missing test policy: {config_path} — run `ipl-lab policy`")
-    fail_on(
-        validate_policy_file(engine, config_path),
-        "refusing to start with an invalid policy (fail closed)",
-    )
-
-    print(
-        "NOTE: starting with the TEST policy — an allowlist that includes "
-        "*.nip.io, *.sslip.io and the local fixture zones, and a dnsmasq "
-        "container answering them. This is not an operational proxy. "
-        "Run `ipl up` for one."
-    )
-
+    It has to exist before the engine that will be pointed at it, which is
+    the one ordering constraint this lane adds to `up`.
+    """
     fixture = fixture_spec()
-    fixture_dns = start_dns_fixture(backend)
-    print(f"started the DNS fixture at {fixture_dns} (serving {fixture.config_file})")
+    address = start_dns_fixture(backend)
+    print(f"started the DNS fixture at {address} (serving {fixture.config_file})")
+    return address
 
-    start_engine(backend, spec, config_path, dns=fixture_dns, keep_fixture=True)
-    common.client_hint(host, port)
-    return 0
+
+def cmd_up(opts: argparse.Namespace) -> int:
+    """`ipl up` for the lab lane: the test policy, next to the fixture."""
+    return common.run_up_command(
+        opts=opts,
+        sync=sync_test_policies,
+        source=_POLICY_SOURCE,
+        destination=test_config_path,
+        missing_hint="run `ipl-lab policy`",
+        notice="NOTE: starting with the TEST policy — an allowlist that "
+        "includes *.nip.io, *.sslip.io and the local fixture zones, and a "
+        "dnsmasq container answering them. This is not an operational "
+        "proxy. Run `ipl up` for one.",
+        prestart=_start_fixture,
+    )
 
 
 def cmd_down(opts: argparse.Namespace) -> int:
