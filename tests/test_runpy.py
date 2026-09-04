@@ -485,6 +485,96 @@ class RunPyCliTest(unittest.TestCase):
         self.assertIn(":/etc/squid/squid.conf:ro", run_line)
         self.assertNotIn(":latest", run_line)
 
+    # -- TLS interception (opt-in; docs/tls-interception.md) -----------------
+
+    def _enable_tls_interception(self) -> None:
+        config_toml = self.tmp / "config.toml"
+        config_toml.write_text(
+            config_toml.read_text(encoding="utf-8").replace(
+                "tls_interception = false", "tls_interception = true"
+            ),
+            encoding="utf-8",
+        )
+
+    def test_up_fails_closed_on_smokescreen_with_tls_interception(self) -> None:
+        self.build_engine("smokescreen")
+        self._enable_tls_interception()
+        self.assertEqual(self.run_cli("ca", "init").returncode, 0)
+        proc = self.run_cli("--backend", "docker", "--engine", "smokescreen", "up")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("does not support TLS interception", proc.stderr)
+        self.assertNotIn("run --detach", self.backend_log())
+
+    def test_up_fails_closed_with_tls_interception_and_no_ca(self) -> None:
+        self.build_engine("squid")
+        self._enable_tls_interception()
+        proc = self.run_cli("--backend", "docker", "--engine", "squid", "up")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("no CA exists", proc.stderr)
+        self.assertNotIn("run --detach", self.backend_log())
+
+    def test_up_mounts_ca_files_when_tls_interception_is_on(self) -> None:
+        for engine, cert_mount, key_mount in (
+            ("pipelock", "/config/ca.pem", "/config/ca-key.pem"),
+            ("squid", "/etc/squid/ca.pem", "/etc/squid/ca-key.pem"),
+        ):
+            with self.subTest(engine=engine):
+                self.log.write_text("")
+                self.build_engine(engine)
+                self._enable_tls_interception()
+                self.assertEqual(self.run_cli("ca", "init").returncode, 0)
+                proc = self.run_cli("--backend", "docker", "--engine", engine, "up")
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                run_line = next(
+                    l for l in self.backend_log().splitlines() if l.startswith("run ")
+                )
+                self.assertIn(f":{cert_mount}:ro", run_line)
+                self.assertIn(f":{key_mount}:ro", run_line)
+
+    def test_ca_init_status_rotate_export(self) -> None:
+        status = self.run_cli("ca", "status")
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertIn("absent", status.stdout)
+
+        init = self.run_cli("ca", "init")
+        self.assertEqual(init.returncode, 0, init.stderr)
+        self.assertIn("generated", init.stdout)
+        cert_path = self.tmp / "state" / "ca" / "ca.pem"
+        key_path = self.tmp / "state" / "ca" / "ca-key.pem"
+        self.assertTrue(cert_path.is_file())
+        self.assertTrue(key_path.is_file())
+        first_key = key_path.read_bytes()
+
+        again = self.run_cli("ca", "init")
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertIn("already present", again.stdout)
+        self.assertEqual(key_path.read_bytes(), first_key)
+
+        status2 = self.run_cli("ca", "status")
+        self.assertEqual(status2.returncode, 0, status2.stderr)
+        self.assertIn("present", status2.stdout)
+        self.assertIn("subject", status2.stdout)
+
+        rebuilt = self.run_cli("ca", "init", "--rebuild")
+        self.assertEqual(rebuilt.returncode, 0, rebuilt.stderr)
+        self.assertNotEqual(key_path.read_bytes(), first_key)
+
+        before_rotate = key_path.read_bytes()
+        rotate = self.run_cli("ca", "rotate")
+        self.assertEqual(rotate.returncode, 0, rotate.stderr)
+        self.assertNotEqual(key_path.read_bytes(), before_rotate)
+
+        out = self.tmp / "exported-ca.pem"
+        export = self.run_cli("ca", "export", "--out", str(out))
+        self.assertEqual(export.returncode, 0, export.stderr)
+        self.assertEqual(out.read_bytes(), cert_path.read_bytes())
+        self.assertNotEqual(out.read_bytes(), key_path.read_bytes())
+
+    def test_ca_export_fails_with_no_ca(self) -> None:
+        proc = self.run_cli("ca", "export", "--out", str(self.tmp / "out.pem"))
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("no CA exists", proc.stderr)
+
     def fake_dns_fixture_image(self) -> None:
         self.fake_image(IMAGES[DNS_FIXTURE])
 

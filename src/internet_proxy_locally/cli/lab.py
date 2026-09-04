@@ -21,6 +21,7 @@ from internet_proxy_locally.cli import run as run_cli
 from internet_proxy_locally.constants import DEFAULT_ENGINE, DNS_FIXTURE, ENGINES
 from internet_proxy_locally.images import prepare_image
 from internet_proxy_locally.lab.container import fixture_spec, start_dns_fixture
+from internet_proxy_locally.lab.fixtures import load_lab_config
 from internet_proxy_locally.lab.render import (
     check_rendered_test_policies,
     render_test_policies,
@@ -89,6 +90,7 @@ def cmd_up(opts: argparse.Namespace) -> int:
         "dnsmasq container answering them. This is not an operational "
         "proxy. Run `ipl up` for one.",
         prestart=_start_fixture,
+        tls_interception=load_lab_config().tls_interception,
     )
 
 

@@ -136,6 +136,7 @@ def run_up_command(
     missing_hint: str = "",
     notice: str = "",
     prestart: Callable[[Backend], str] | None = None,
+    tls_interception: bool = False,
 ) -> int:
     """`up` for either lane: regenerate, validate, then start one engine.
 
@@ -174,7 +175,14 @@ def run_up_command(
     # about to be pointed at.
     dns = prestart(backend) if prestart else ""
 
-    start_engine(backend, spec, config_path, dns=dns, keep_fixture=bool(dns))
+    start_engine(
+        backend,
+        spec,
+        config_path,
+        dns=dns,
+        keep_fixture=bool(dns),
+        tls_interception=tls_interception,
+    )
     client_hint(host, port)
     return 0
 

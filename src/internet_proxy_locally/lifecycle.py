@@ -12,7 +12,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from internet_proxy_locally import net
+from internet_proxy_locally import ca, net
 from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.constants import (
     DNS_FIXTURE,
@@ -60,6 +60,7 @@ def start_engine(
     config_path: Path,
     dns: str = "",
     keep_fixture: bool = False,
+    tls_interception: bool = False,
 ) -> None:
     """Recreate one engine container on `config_path` and health-check it.
 
@@ -80,6 +81,23 @@ def start_engine(
     if not backend.image_present(image):
         raise Fail(f"image {image} not built yet — run `ipl --engine {engine} setup`")
 
+    mounts = spec.mounts(config_path)
+    if tls_interception:
+        # This single check is what makes Smokescreen's exclusion fail
+        # closed at `up`-time with no smokescreen-specific code anywhere
+        # else — it falls out of `supports_tls_interception` being False on
+        # that one ServiceSpec entry.
+        if not spec.supports_tls_interception:
+            raise Fail(
+                f"{engine} does not support TLS interception "
+                "(pipelock and squid do; set tls_interception = false or switch engine)"
+            )
+        if not ca.ca_present():
+            raise Fail(
+                "tls_interception is enabled but no CA exists — run `ipl ca init`"
+            )
+        mounts += spec.ca_mounts()
+
     # Recreate: remove every container owned by this repository first —
     # every engine publishes the same endpoint, so they cannot coexist.
     # The DNS fixture goes too, even from the operational lane: a stale one
@@ -99,7 +117,7 @@ def start_engine(
         name=spec.container_name,
         image=image,
         internal_port=spec.internal_port,
-        mounts=spec.mounts(config_path),
+        mounts=mounts,
         publish=(host, port),
         dns=dns,
     )

@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import argparse
 import platform
+from pathlib import Path
 
+from internet_proxy_locally import ca
 from internet_proxy_locally.backend import Backend, detect_backend
 from internet_proxy_locally.cli import common
 from internet_proxy_locally.constants import (
@@ -29,6 +31,7 @@ from internet_proxy_locally.lifecycle import (
     running_engine,
 )
 from internet_proxy_locally.net import endpoint, port_listening, probe_proxy
+from internet_proxy_locally.policy.config import load_policy_config
 from internet_proxy_locally.policy.render import (
     check_rendered_policies,
     config_destination,
@@ -71,6 +74,12 @@ def cmd_setup(opts: argparse.Namespace) -> int:
     # that editing it could not fix.
     report_synced(sync_policies(), _POLICY_SOURCE)
 
+    # Gated strictly on the config flag — a repo that never opts into TLS
+    # interception gets zero new files here, identical footprint to today.
+    if load_policy_config().tls_interception and not ca.ca_present():
+        ca.generate_ca()
+        print(f"generated the TLS-interception CA at {ca.ca_cert_path()}")
+
     for name in BACKENDS:
         state = "available" if Backend(name).available() else "not installed"
         print(f"backend {name}: {state}")
@@ -111,6 +120,7 @@ def cmd_up(opts: argparse.Namespace) -> int:
         source=_POLICY_SOURCE,
         destination=config_destination,
         missing_hint="run `ipl policy`",
+        tls_interception=load_policy_config().tls_interception,
     )
 
 
@@ -187,6 +197,51 @@ def cmd_check(opts: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# `ipl ca` — the TLS-interception CA's lifecycle (docs/tls-interception.md)
+# ---------------------------------------------------------------------------
+
+
+def cmd_ca_init(opts: argparse.Namespace) -> int:
+    """Generate the CA if absent; `--rebuild` forces a fresh one."""
+    if ca.ca_present() and not opts.rebuild:
+        print(f"CA already present at {ca.ca_cert_path()}")
+        return 0
+    ca.generate_ca(force=opts.rebuild)
+    print(f"generated the TLS-interception CA at {ca.ca_cert_path()}")
+    return 0
+
+
+def cmd_ca_status(opts: argparse.Namespace) -> int:
+    if not ca.ca_present():
+        print("CA: absent (run `ipl ca init`)")
+        return 0
+    subject, expiry = ca.ca_info()
+    print(f"CA: present at {ca.ca_cert_path()}")
+    print(f"  subject: {subject}")
+    print(f"  expires: {expiry.isoformat()}")
+    return 0
+
+
+def cmd_ca_export(opts: argparse.Namespace) -> int:
+    """Write the public cert only — never the key — to `--out`."""
+    ca.export_ca_cert(opts.out)
+    print(f"exported the CA cert (public only) to {opts.out}")
+    return 0
+
+
+def cmd_ca_rotate(opts: argparse.Namespace) -> int:
+    """`ca init --rebuild` under a verb that states the real consequence.
+
+    Not a new mechanism: `generate_ca` is the one code path for "make a new
+    CA," and this is a thin alias so the command names what rotation
+    actually does — invalidate trust everywhere the old cert was installed.
+    """
+    ca.generate_ca(force=True)
+    print(f"rotated the TLS-interception CA at {ca.ca_cert_path()}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -254,6 +309,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_check.add_argument("--json", action="store_true", help="machine-readable results")
     p_check.set_defaults(func=cmd_check)
+
+    p_ca = sub.add_parser(
+        "ca", help="manage the TLS-interception CA (docs/tls-interception.md)"
+    )
+    ca_sub = p_ca.add_subparsers(dest="ca_command", required=True)
+
+    p_ca_init = ca_sub.add_parser(
+        "init", help="generate the CA if absent; --rebuild forces a fresh one"
+    )
+    p_ca_init.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="regenerate even if a CA is already present "
+        "(invalidates trust everywhere the old cert was installed)",
+    )
+    p_ca_init.set_defaults(func=cmd_ca_init)
+
+    ca_sub.add_parser(
+        "status", help="present/absent, cert subject and expiry"
+    ).set_defaults(func=cmd_ca_status)
+
+    p_ca_export = ca_sub.add_parser(
+        "export", help="write the public cert (never the key) to --out"
+    )
+    p_ca_export.add_argument(
+        "--out", required=True, type=Path, help="destination file for the exported cert"
+    )
+    p_ca_export.set_defaults(func=cmd_ca_export)
+
+    ca_sub.add_parser(
+        "rotate",
+        help="generate a new CA "
+        "(invalidates trust everywhere the old cert was installed)",
+    ).set_defaults(func=cmd_ca_rotate)
 
     return parser
 
