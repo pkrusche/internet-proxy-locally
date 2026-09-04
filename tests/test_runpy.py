@@ -614,13 +614,38 @@ class RunPyUnitTest(unittest.TestCase):
         self.assertTrue(any("mode: strict" in p for p in problems))
         self.assertTrue(any("enforce" in p for p in problems))
 
-    def test_pipelock_policy_rejects_tls_interception(self) -> None:
+    def test_pipelock_policy_rejects_tls_interception_with_no_ca(self) -> None:
         path = self.write(
             (REPO_ROOT / "config" / "pipelock.yaml")
             .read_text()
             .replace(
                 "tls_interception:\n  enabled: false",
                 "tls_interception:\n  enabled: true",
+            )
+        )
+        problems = validate_policy_file("pipelock", path)
+        self.assertTrue(any("tls_interception" in p for p in problems))
+
+    def test_pipelock_policy_accepts_tls_interception_with_a_ca(self) -> None:
+        path = self.write(
+            (REPO_ROOT / "config" / "pipelock.yaml")
+            .read_text()
+            .replace(
+                "tls_interception:\n  enabled: false",
+                "tls_interception:\n  enabled: true\n"
+                '  ca_cert: "/config/ca.pem"\n  ca_key: "/config/ca-key.pem"',
+            )
+        )
+        problems = validate_policy_file("pipelock", path)
+        self.assertEqual(problems, [])
+
+    def test_pipelock_policy_rejects_tls_interception_missing_ca_key(self) -> None:
+        path = self.write(
+            (REPO_ROOT / "config" / "pipelock.yaml")
+            .read_text()
+            .replace(
+                "tls_interception:\n  enabled: false",
+                'tls_interception:\n  enabled: true\n  ca_cert: "/config/ca.pem"',
             )
         )
         problems = validate_policy_file("pipelock", path)
@@ -779,11 +804,41 @@ class RunPyUnitTest(unittest.TestCase):
         problems = validate_policy_file("squid", path)
         self.assertTrue(any("169.254.0.0/16" in p for p in problems), problems)
 
-    def test_squid_policy_rejects_tls_interception(self) -> None:
+    def _squid_bump_recipe(self) -> str:
+        """`config/squid.conf` with a fully-formed `ssl_bump` recipe grafted on."""
         text = (REPO_ROOT / "config" / "squid.conf").read_text()
-        path = self.write(text + "\nssl_bump bump all\n")
-        problems = validate_policy_file("squid", path)
-        self.assertTrue(any("ssl_bump" in p for p in problems), problems)
+        text = text.replace(
+            "http_port 3128\n",
+            "http_port 3128 ssl-bump tls-cert=/etc/squid/ca.pem "
+            "tls-key=/etc/squid/ca-key.pem generate-host-certificates=on "
+            "dynamic_cert_mem_cache_size=4MB\n"
+            "sslcrtd_program /usr/lib/squid/security_file_certgen "
+            "-s /var/lib/ssl_db -M 4MB\n"
+            "sslcrtd_children 8\n",
+        )
+        return (
+            text
+            + "\nacl step1 at_step SslBump1\nssl_bump peek step1\nssl_bump bump all\n"
+        )
+
+    def test_squid_policy_accepts_a_fully_formed_bump_recipe(self) -> None:
+        problems = validate_policy_file("squid", self.write(self._squid_bump_recipe()))
+        self.assertEqual(problems, [])
+
+    def test_squid_policy_rejects_an_orphaned_peek_without_bump_all(self) -> None:
+        text = self._squid_bump_recipe().replace("ssl_bump bump all\n", "")
+        problems = validate_policy_file("squid", self.write(text))
+        self.assertTrue(any("peek without bump" in p for p in problems), problems)
+
+    def test_squid_policy_rejects_ssl_bump_without_tls_cert_on_http_port(self) -> None:
+        text = self._squid_bump_recipe().replace(
+            "http_port 3128 ssl-bump tls-cert=/etc/squid/ca.pem "
+            "tls-key=/etc/squid/ca-key.pem generate-host-certificates=on "
+            "dynamic_cert_mem_cache_size=4MB\n",
+            "http_port 3128\n",
+        )
+        problems = validate_policy_file("squid", self.write(text))
+        self.assertTrue(any("ssl-bump tls-cert" in p for p in problems), problems)
 
     def test_squid_policy_rejects_a_deny_info_for_an_undefined_acl(self) -> None:
         """The failure mode this closes: an ACL is renamed, `deny_info` is
@@ -896,6 +951,19 @@ class RunPyUnitTest(unittest.TestCase):
         goes through the same checks the hand-written files went through."""
         rendered = render_policies()
         self.assertEqual(check_rendered_policies(rendered), [])
+
+    def test_generated_policies_with_tls_interception_validate(self) -> None:
+        """Rendering `tls_interception=True` produces text the validator
+        agrees is a complete recipe for both engines that support it — not
+        just that hand-written text carrying the same shape passes."""
+        config = PolicyConfig(allow=load_policy_config().allow, tls_interception=True)
+        rendered = render_policies(config)
+        self.assertEqual(check_rendered_policies(rendered), [])
+        pipelock_text = rendered[REPO_ROOT / "config" / "pipelock.yaml"]
+        self.assertIn("enabled: true", pipelock_text)
+        squid_text = rendered[REPO_ROOT / "config" / "squid.conf"]
+        self.assertIn("ssl_bump peek step1", squid_text)
+        self.assertIn("ssl_bump bump all", squid_text)
 
     def test_generated_allowlists_round_trip(self) -> None:
         """Every engine's rendered file reads back as exactly the config.toml

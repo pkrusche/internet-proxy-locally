@@ -281,6 +281,10 @@ class LabConfig:
     allow: tuple[str, ...]
     allow_test: tuple[str, ...]
     fixture: FixtureConfig
+    # Sourced from config.toml, the same way `allow` is — the test policy
+    # has to agree with the operational one on whether interception is on,
+    # not decide it independently.
+    tls_interception: bool = False
 
 
 def load_lab_config(path: Path | None = None) -> LabConfig:
@@ -291,7 +295,8 @@ def load_lab_config(path: Path | None = None) -> LabConfig:
             f"missing the test policy source {path} "
             "(it holds [policy.test] and the DNS fixture records)"
         )
-    allow = list(load_policy_config().allow)
+    operational = load_policy_config()
+    allow = list(operational.allow)
     with path.open("rb") as fh:
         data = tomllib.load(fh)
     reject_unknown(data, {"policy", "fixture"}, path, "top-level table(s)")
@@ -322,4 +327,6 @@ def load_lab_config(path: Path | None = None) -> LabConfig:
             "which config.toml already permits everywhere"
         )
     fixture = _fixture_config(data.get("fixture"), path, allow, allow_test)
-    return LabConfig(tuple(allow), tuple(allow_test), fixture)
+    return LabConfig(
+        tuple(allow), tuple(allow_test), fixture, operational.tls_interception
+    )

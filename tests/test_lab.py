@@ -7,6 +7,7 @@ against the same emulated runtime or the reuse is untested.
 
 from __future__ import annotations
 
+import dataclasses
 import ipaddress
 import json
 import re
@@ -455,6 +456,18 @@ class LabUnitTest(unittest.TestCase):
             test = policy_allowlist_text(engine, rendered[test_config_path(spec)])
             self.assertTrue(real <= test, f"{engine}: test policy drops {real - test}")
             self.assertTrue(test - real, f"{engine}: test policy adds nothing")
+
+    def test_rendered_test_policy_agrees_with_operational_on_tls_interception(
+        self,
+    ) -> None:
+        """`LabConfig.tls_interception` comes from config.toml, the same way
+        `allow` does — the lab lane must not decide this independently."""
+        config = dataclasses.replace(load_lab_config(), tls_interception=True)
+        rendered = render_test_policies(config)
+        self.assertEqual(check_rendered_test_policies(rendered), [])
+        spec = ServiceSpec.load("squid")
+        squid_text = rendered[test_config_path(spec)]
+        self.assertIn("ssl_bump peek step1", squid_text)
 
     def test_superset_violation_is_reported(self) -> None:
         rendered = dict(render_test_policies())

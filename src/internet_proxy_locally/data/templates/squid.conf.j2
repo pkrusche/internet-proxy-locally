@@ -16,11 +16,20 @@
 # Listener
 # ---------------------------------------------------------------------------
 
-# No ssl_bump: peeking the ClientHello crashes Squid the first time a
-# peeked connection must be force-closed, and avoiding that needs a signing
-# CA baked into the image. Findings: docs/findings.md, "Rejected: tunnel
-# peeking on Squid".
+# TLS interception is opt-in (`[policy].tls_interception` in config.toml,
+# docs/tls-interception.md). Off, this is a plain CONNECT tunnel — peeking
+# the ClientHello without a signing CA crashes Squid the first time a
+# peeked connection must be force-closed (docs/findings.md, "Rejected:
+# tunnel peeking on Squid"). On, Squid becomes the real TLS endpoint with a
+# CA-backed `ssl_bump ... bump`, a structurally different mode from the
+# rejected one.
+{% if tls_interception %}
+http_port 3128 ssl-bump tls-cert=/etc/squid/ca.pem tls-key=/etc/squid/ca-key.pem generate-host-certificates=on dynamic_cert_mem_cache_size=4MB
+sslcrtd_program /usr/lib/squid/security_file_certgen -s /var/lib/ssl_db -M 4MB
+sslcrtd_children 8
+{% else %}
 http_port 3128
+{% endif %}
 
 visible_hostname internet-proxy-locally
 httpd_suppress_version_string on
@@ -144,11 +153,24 @@ deny_info ERR_IPL_PRIVATE_IP private_ip
 deny_info ERR_IPL_PORT_NOT_ALLOWED TLS_ports
 deny_info ERR_IPL_IP_LITERAL ip_literal
 deny_info ERR_IPL_NOT_ALLOWLISTED all
+{% if tls_interception %}
+
+# ---------------------------------------------------------------------------
+# TLS interception (opt-in — see the note on http_port above)
+# ---------------------------------------------------------------------------
+#
+# `peek step1` must always be paired with `bump all`: an orphaned peek with
+# no bump is exactly the crashing shape docs/findings.md records
+# ("Rejected: tunnel peeking on Squid"), and policy/validate.py enforces
+# this pairing independently so a hand-edit cannot reintroduce it.
+acl step1 at_step SslBump1
+ssl_bump peek step1
+ssl_bump bump all
+{% endif %}
 
 # ---------------------------------------------------------------------------
 # Not configured here
 # ---------------------------------------------------------------------------
 #
-# `ssl_bump` — see the note on http_port above (docs/findings.md).
 # `cache_peer` / any parent proxy — this proxy talks to origins directly.
 # `auth_param` — v1 has one caller identity (docs/security.md).

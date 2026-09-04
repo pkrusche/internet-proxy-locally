@@ -59,6 +59,7 @@ def render_test_policies(config: LabConfig | None = None) -> dict[Path, str]:
         allow_test=config.allow_test,
         test_policy=True,
         destination=test_config_path,
+        tls_interception=config.tls_interception,
     )
     env = jinja_env()
     rendered.update(_render_fixture_hosts(env, config.fixture))

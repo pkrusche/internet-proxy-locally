@@ -10,7 +10,8 @@
 # docs/policy.md.
 #
 # MCP / A2A / fetch-API features of Pipelock are intentionally unused.
-# TLS interception stays disabled for v1 (docs/security.md, "Non-goals").
+# TLS interception is opt-in — see docs/tls-interception.md and
+# `[policy].tls_interception` in config.toml.
 
 version: 1
 mode: strict

@@ -6,11 +6,15 @@ config/<engine>.{yaml,conf} and the `.test` variants, so the three
 engines cannot express different policies — the thing docs/policy.md used
 to ask a human to keep true by editing three files.
 
-Nothing security-critical is parameterized: the deny floors, the rule
-order, `cache deny all` and `tls_interception: false` are literal text in
-the templates. The generator only ever fills in domains, and its output
-is put through the same `validate_policy_file()` the hand-written files
-went through — before it is allowed to touch the disk.
+Almost nothing security-critical is parameterized: the deny floors, the
+rule order and `cache deny all` are literal text in the templates. The one
+exception is `tls_interception`, and even that is not a knob with a range
+— it is a single on/off gate between two fixed, literal recipes (plain
+`http_port`/no `ssl_bump` vs. the full CA-backed bump recipe for Squid; the
+same shape for Pipelock), each reviewed as a whole. The generator fills in
+domains and that one gate, and its output is put through the same
+`validate_policy_file()` the hand-written files went through — before it
+is allowed to touch the disk.
 """
 
 from __future__ import annotations
@@ -106,6 +110,7 @@ def render_engine_policies(
     allow_test: tuple[str, ...] | list[str],
     test_policy: bool,
     destination: Callable[[ServiceSpec], Path],
+    tls_interception: bool = False,
 ) -> dict[Path, str]:
     """Render every engine's config from one allowlist pair.
 
@@ -129,6 +134,7 @@ def render_engine_policies(
             allow_wild=PolicyConfig.wild(allow),
             allow_test_exact=PolicyConfig.exact(allow_test),
             allow_test_wild=PolicyConfig.wild(allow_test),
+            tls_interception=tls_interception,
         )
     return rendered
 
@@ -146,6 +152,7 @@ def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
         allow_test=[],
         test_policy=False,
         destination=config_destination,
+        tls_interception=config.tls_interception,
     )
 
 

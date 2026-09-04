@@ -236,6 +236,55 @@ def check_squid_error_pages(text: str, path: Path) -> list[str]:
     return problems
 
 
+def _validate_squid_tls_interception(text: str, path: Path) -> list[str]:
+    """Allow either state, forbid every partial one.
+
+    If no `ssl_bump` directive is present at all, interception is off and
+    there is nothing to check. If any is, the whole recipe must be there —
+    a config carrying `ssl_bump peek step1` with no matching `bump all` is
+    exactly the shape that crashed Squid (docs/findings.md, "Rejected:
+    tunnel peeking on Squid"), so that specific pairing is called out by
+    name rather than folded into a generic "recipe incomplete" message.
+    """
+    problems: list[str] = []
+    if re.search(r"^\s*ssl_bump\s", text, re.MULTILINE) is None:
+        return problems
+    has_peek = re.search(r"^\s*ssl_bump\s+peek\s+step1\b", text, re.MULTILINE)
+    has_bump = re.search(r"^\s*ssl_bump\s+bump\s+all\b", text, re.MULTILINE)
+    _require(
+        bool(has_peek) and bool(has_bump),
+        path,
+        "`ssl_bump peek step1` and `ssl_bump bump all` must both be present — "
+        "peek without bump is the configuration that crashed Squid "
+        '(see docs/findings.md, "Rejected: tunnel peeking on Squid")',
+        problems,
+    )
+    _require(
+        re.search(
+            r"^\s*http_port\s+\S+\s+ssl-bump\b.*\btls-cert=\S+", text, re.MULTILINE
+        )
+        is not None,
+        path,
+        "`ssl_bump` is present but `http_port ... ssl-bump tls-cert=...` is not — "
+        "bumping needs a signing CA on the listener",
+        problems,
+    )
+    _require(
+        "generate-host-certificates=on" in text,
+        path,
+        "`ssl_bump` is present but `generate-host-certificates=on` is not — "
+        "without it Squid silently stops bumping while the config appears to enforce",
+        problems,
+    )
+    _require(
+        re.search(r"^\s*sslcrtd_program\s", text, re.MULTILINE) is not None,
+        path,
+        "`ssl_bump` is present but no `sslcrtd_program` is configured",
+        problems,
+    )
+    return problems
+
+
 def validate_policy_file(engine: str, path: Path) -> list[str]:
     """Return a list of human-readable policy problems (empty = OK)."""
     return validate_policy_text(engine, path.read_text(), path)
@@ -280,12 +329,22 @@ def validate_policy_text(engine: str, text: str, path: Path) -> list[str]:
             problems,
         )
         ti = doc.get("tls_interception") or {}
-        _require(
-            ti.get("enabled") is False,
-            path,
-            "tls_interception.enabled must be false in v1",
-            problems,
-        )
+        enabled = ti.get("enabled")
+        if enabled is True:
+            _require(
+                bool(ti.get("ca_cert")) and bool(ti.get("ca_key")),
+                path,
+                "tls_interception.enabled is true but ca_cert/ca_key are not "
+                "both set — TLS interception needs a signing CA",
+                problems,
+            )
+        else:
+            _require(
+                enabled is False,
+                path,
+                "tls_interception.enabled must be a boolean (true or false)",
+                problems,
+            )
         _require(
             bool(doc.get("api_allowlist")),
             path,
@@ -364,12 +423,7 @@ def validate_policy_text(engine: str, text: str, path: Path) -> list[str]:
                 f"the `{acl}` ACL must deny {cidr}",
                 problems,
             )
-        _require(
-            re.search(r"^\s*ssl_bump\s+.*\bbump\b", text, re.MULTILINE) is None,
-            path,
-            "`ssl_bump ... bump` is forbidden (no TLS interception in v1)",
-            problems,
-        )
+        problems += _validate_squid_tls_interception(text, path)
         _require(
             re.search(r"^\s*cache\s+deny\s+all\b", text, re.MULTILINE) is not None,
             path,

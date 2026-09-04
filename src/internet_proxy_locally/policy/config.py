@@ -33,6 +33,10 @@ class PolicyConfig:
     """
 
     allow: tuple[str, ...]
+    # Opt-in, off by default. See docs/tls-interception.md — turning this on
+    # makes pipelock/squid the real TLS endpoint for allowlisted HTTPS
+    # destinations instead of an opaque CONNECT tunnel.
+    tls_interception: bool = False
 
     # Static: Squid needs the two forms split into a `dstdomain` ACL and a
     # `dstdom_regex` one, and ipl-lab has to split its own entries the same
@@ -117,7 +121,7 @@ def load_policy_config(path: Path | None = None) -> PolicyConfig:
         raise Fail(f"{path}: missing the [policy] table")
     reject_unknown(
         policy,
-        {"allow"},
+        {"allow", "tls_interception"},
         path,
         "key(s) in [policy]",
         hint="\nThe test allowlist belongs in data/lab/fixtures.toml (docs/lab.md)."
@@ -130,4 +134,7 @@ def load_policy_config(path: Path | None = None) -> PolicyConfig:
             f"{path}: policy.allow must not be empty "
             "(default deny needs explicit allows)"
         )
-    return PolicyConfig(tuple(allow))
+    tls_interception = policy.get("tls_interception", False)
+    if not isinstance(tls_interception, bool):
+        raise Fail(f"{path}: policy.tls_interception must be a boolean")
+    return PolicyConfig(tuple(allow), tls_interception)

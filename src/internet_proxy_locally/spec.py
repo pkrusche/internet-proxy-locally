@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from internet_proxy_locally import paths
+from internet_proxy_locally import ca, paths
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.images import (
     DNSFIXTURE_IMAGE,
@@ -46,6 +46,14 @@ class ServiceSpec:
     # equivalent) and the DNS fixture's `[fixture]` facts.
     extra_config_file: str = ""
     extra_config_mount: str = ""
+    # Whether this engine can be started with TLS interception on, and
+    # where the CA material mounts in its container if so. Only pipelock
+    # and squid set these — smokescreen/dnsfixture keep the defaults, which
+    # is what makes `lifecycle.start_engine()`'s fail-closed check refuse
+    # smokescreen with no smokescreen-specific code anywhere.
+    supports_tls_interception: bool = False
+    ca_cert_mount: str = ""
+    ca_key_mount: str = ""
 
     @classmethod
     def load(cls, engine: str) -> ServiceSpec:
@@ -80,6 +88,21 @@ class ServiceSpec:
             pairs.append((path, self.extra_config_mount))
         return pairs
 
+    def ca_mounts(self) -> list[tuple[Path, str]]:
+        """Read-only bind mounts for the CA cert+key, or none if unsupported.
+
+        Separate from `mounts()` deliberately: that method resolves
+        workspace-relative, checked-in paths, and CA material is neither —
+        it is generated, lives under `paths.ca_dir()`, outside
+        `workspace_root()`.
+        """
+        if not self.supports_tls_interception:
+            return []
+        return [
+            (ca.ca_cert_path(), self.ca_cert_mount),
+            (ca.ca_key_path(), self.ca_key_mount),
+        ]
+
 
 SERVICES = {
     "pipelock": ServiceSpec(
@@ -89,6 +112,9 @@ SERVICES = {
         internal_port=8888,
         config_file="config/pipelock.yaml",
         config_mount="/config/pipelock.yaml",
+        supports_tls_interception=True,
+        ca_cert_mount="/config/ca.pem",
+        ca_key_mount="/config/ca-key.pem",
     ),
     "smokescreen": ServiceSpec(
         engine="smokescreen",
@@ -108,6 +134,9 @@ SERVICES = {
         internal_port=3128,
         config_file="config/squid.conf",
         config_mount="/etc/squid/squid.conf",
+        supports_tls_interception=True,
+        ca_cert_mount="/etc/squid/ca.pem",
+        ca_key_mount="/etc/squid/ca-key.pem",
     ),
     # NOT an engine, and never part of an operational run — `ENGINES` does
     # not contain it and only the lab lane loads it. It answers allowlisted

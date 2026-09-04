@@ -7,9 +7,11 @@
 # reports drift without writing.
 #
 # The rules the allowlist sits on top of — default deny, the IP-layer SSRF
-# floors, no TLS interception — are NOT configurable here. They live in the
-# templates as literal text and are checked independently by
-# `validate_policy_file()` in policy/validate.py. See docs/policy.md.
+# floors — are NOT configurable here. They live in the templates as literal
+# text and are checked independently by `validate_policy_file()` in
+# policy/validate.py. See docs/policy.md. The one exception is
+# `tls_interception` below: opt-in TLS interception for pipelock/squid,
+# off by default. See docs/tls-interception.md before turning it on.
 #
 # The adversarial test policy and its DNS fixture live in data/lab/fixtures.toml
 # and never touch this file (docs/lab.md).
@@ -36,3 +38,10 @@ allow = [
     # npm packages
     "registry.npmjs.org",
 ]
+
+# Opt-in TLS interception for pipelock/squid — off by default. Turning this
+# on makes the engine the real TLS endpoint for allowlisted HTTPS
+# destinations instead of an opaque CONNECT tunnel; read
+# docs/tls-interception.md before flipping it, and run `ipl ca init` first
+# (`up` refuses to start with this on and no CA generated).
+tls_interception = false
