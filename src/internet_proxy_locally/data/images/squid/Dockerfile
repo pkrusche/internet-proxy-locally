@@ -13,6 +13,14 @@
 # ever removes the pinned version from the repository, the build fails at
 # `apk add` rather than silently installing something else.
 #
+# `SQUID_IMAGE`'s tag carries a `-buildN` suffix after the apk version
+# (currently `-build1`, added for the ssl_bump cert-DB init below): a local
+# build revision, not a new upstream apk release, bumped whenever this
+# Dockerfile's build context changes without the apk pin itself moving —
+# `prepare_image()` skips a build when the tag is already present, so
+# reusing the old tag after such a change would leave a stale image
+# silently missing whatever the edit added.
+#
 # Alpine is multi-arch (amd64/arm64), and its squid is built
 # `--with-openssl`.
 
@@ -24,6 +32,14 @@ RUN apk add --no-cache ca-certificates "squid=6.12-r0"
 # policy over /etc/squid/squid.conf — but removing it means a mount failure
 # cannot silently fall back to a permissive stock configuration.
 RUN rm -f /etc/squid/squid.conf
+
+# The ssl_bump cert-DB, needed only when `[policy].tls_interception` is on
+# (docs/tls-interception.md). Unconditional and cheap: it lets this one
+# image serve both tls_interception states, so there is no tag fork for
+# that reason. `security_file_certgen`'s path (`/usr/lib/squid/`) was
+# confirmed against this Alpine package's `apk info -L squid`.
+RUN /usr/lib/squid/security_file_certgen -c -s /var/lib/ssl_db -M 4MB \
+    && chown -R squid:squid /var/lib/ssl_db
 
 # Cause-specific denial pages referenced by `deny_info` in config/squid.conf.
 COPY errors/ /usr/share/squid/errors/en/

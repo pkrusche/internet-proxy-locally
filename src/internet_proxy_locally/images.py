@@ -26,8 +26,10 @@ from internet_proxy_locally.backend import Backend
 PIPELOCK_IMAGE = "internet-proxy-locally/pipelock:3.3.0"
 # Built from a source commit — tagged with the first 12 characters of it.
 SMOKESCREEN_IMAGE = "internet-proxy-locally/smokescreen:131fba29ce1e"
-# Built around a pinned distribution package — tagged with its version.
-SQUID_IMAGE = "internet-proxy-locally/squid:6.12-r0"
+# Built around a pinned distribution package — tagged with its version,
+# plus a `-buildN` local build revision (see the Dockerfile's own comment)
+# bumped whenever the build context changes without the apk pin moving.
+SQUID_IMAGE = "internet-proxy-locally/squid:6.12-r0-build1"
 DNSFIXTURE_IMAGE = "internet-proxy-locally/dnsfixture:2.91-r1"
 
 # Service name -> tag. The name is also the directory under data/images/

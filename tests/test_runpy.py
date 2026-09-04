@@ -1330,7 +1330,13 @@ class RunPyUnitTest(unittest.TestCase):
         Dockerfile edited without bumping it would leave the old image
         running. This is that mistake, as a red test."""
         squid = dockerfile("squid").read_text()
-        self.assertIn(f'"squid={IMAGES["squid"].rpartition(":")[2]}"', squid)
+        # The squid tag carries a `-buildN` local build revision after the
+        # apk version (see the Dockerfile's own comment) — strip it before
+        # comparing, so a bump of just that suffix still passes this check.
+        squid_tag = IMAGES["squid"].rpartition(":")[2]
+        apk_pin_match = re.match(r"^([\w.]+-r\d+)", squid_tag)
+        assert apk_pin_match is not None, f"no apk-version prefix in {squid_tag!r}"
+        self.assertIn(f'"squid={apk_pin_match.group(1)}"', squid)
 
         fixture = dockerfile(DNS_FIXTURE).read_text()
         self.assertIn(f'"dnsmasq={IMAGES[DNS_FIXTURE].rpartition(":")[2]}"', fixture)
