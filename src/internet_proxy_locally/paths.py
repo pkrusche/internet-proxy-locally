@@ -122,3 +122,14 @@ def results_dir() -> Path:
 
 def findings_file() -> Path:
     return workspace_root() / "docs" / "findings.md"
+
+
+def ca_dir() -> Path:
+    """The TLS-interception signing CA: generated, host-specific, gitignored.
+
+    Unlike `config_dir()` and `lab_config_dir()`, nothing here is rendered
+    from a reviewed source — it is generated once per checkout by `ipl ca
+    init` and trusted by that checkout's sandboxes specifically, which is
+    why it lives under `state/` rather than `config/` (see .gitignore).
+    """
+    return workspace_root() / "state" / "ca"

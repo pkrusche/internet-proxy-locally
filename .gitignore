@@ -15,3 +15,9 @@ dist/
 # src/internet_proxy_locally/report.py, so a checkout without them cannot
 # re-derive or check the published comparison — only believe it.
 .DS_Store
+
+# state/ca/ is the mirror image of results/ above: the CA private key is
+# generated once per checkout and trusted by that checkout's sandboxes
+# specifically. Unlike config/*, it is never reviewed in a diff —
+# committing it would make a private key a shared secret.
+state/
