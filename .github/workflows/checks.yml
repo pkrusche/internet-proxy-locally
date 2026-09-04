@@ -8,6 +8,10 @@
 # Nothing here starts a container or touches the network, so it is the fast
 # gate; the container-backed suites (`ipl-verify`, `ipl-lab`) are not run
 # from CI because they need a real container runtime.
+#
+# The `tests` job runs the unittest suite (`tests/`), which per CLAUDE.md
+# also needs no network or container runtime, so it belongs in this same
+# fast gate.
 name: checks
 
 on:
@@ -62,3 +66,17 @@ jobs:
       # unresolved-import errors instead of checking anything.
       - name: ty check
         run: uv run --frozen ty check
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+
+      # No --only-group here either: the suite imports the package itself,
+      # so it needs jinja2 and pyyaml installed the same way `ty check` does.
+      - name: run tests
+        run: uv run --frozen python -m unittest discover -s tests -t .
