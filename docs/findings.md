@@ -274,8 +274,10 @@ is why `validate_policy_file()` checks, for Squid specifically: the required
 ranges (`REQUIRED_SQUID_DENY_RANGES`), that every floor and `deny ip_literal`
 precedes the first `http_access allow`, that the file ends in `http_access
 deny all` and never contains `http_access allow all`, that `cache deny all`
-survives, that no `ssl_bump ... bump` appears, and that each of the five
-`deny_info` page-to-ACL pairs is intact and names a page that exists in
+survives, that `ssl_bump` is either absent or the complete opt-in
+interception recipe (docs/tls-interception.md) and never a partial one,
+and that each of the five `deny_info` page-to-ACL pairs is intact and
+names a page that exists in
 `data/images/squid/errors`. Squid says nothing about a `deny_info` whose ACL no
 longer exists — the page never fires and the denial falls back to the stock
 page — so renaming `private_ip` without updating its page would turn every
@@ -446,8 +448,23 @@ results, worst first:
    succeeded, which breaks the contract that a denial is visible to the
    caller.
 
-So Squid ships without `ssl_bump`. The reasoning is repeated at the top of
-`data/templates/squid.conf.j2` so nobody re-enables it from first principles.
+So Squid ships without `ssl_bump` **by default**. The reasoning above is
+repeated at the top of `data/templates/squid.conf.j2` so nobody re-enables
+it from first principles.
+
+**Addendum, opt-in TLS interception (docs/tls-interception.md):** the
+three failures above are all specific to `peek` + `splice` *without* a
+signing CA — the configuration that was actually built and measured here.
+Full `ssl_bump ... bump` *with* a real CA is a structurally different
+mode: Squid becomes the real TLS endpoint, decrypts, evaluates
+`http_access` against the actual request, and answers a real HTTP 4xx
+instead of aborting an opaque tunnel — which is exactly what closes
+failure 1 (there is now a signing certificate to reach for) and failure 3
+(policy runs before the client is told anything succeeded). This mode
+ships as opt-in (`[policy].tls_interception = true`), off by default, with
+`policy/validate.py` requiring the complete recipe — `ssl_bump peek step1`
+paired with `ssl_bump bump all`, never one without the other — so a
+hand-edit cannot reintroduce the crashing shape documented above.
 
 ## Operational numbers
 

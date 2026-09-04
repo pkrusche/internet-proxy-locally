@@ -13,7 +13,9 @@ that client can connect:
   answers);
 * no CONNECT tunnel abuse **where the engine supports detecting it** — SNI
   ↔ CONNECT target mismatch (domain fronting) and non-TLS bytes inside a
-  tunnel. Pipelock does; Smokescreen and Squid do not.
+  tunnel. Pipelock does unconditionally; Squid does too when
+  `tls_interception` is on ([tls-interception.md](tls-interception.md));
+  Smokescreen never does.
 
 Two of those are engine-dependent, which is why the engine choice is a
 security decision and not a preference. **Smokescreen is measured as
@@ -28,10 +30,16 @@ an engine other than the default.
 
 ## What it does not defend against
 
-* **Exfiltration to an allowed HTTPS destination.** Without TLS
-  interception the proxy cannot see encrypted request bodies. If
+* **Exfiltration to an allowed HTTPS destination — unless TLS interception
+  is on.** By default the proxy cannot see encrypted request bodies. If
   `github.com` is allowed, data can be pushed to any reachable GitHub
-  repository. This service controls destinations only.
+  repository; this service controls destinations only. Turning on
+  `tls_interception` for Pipelock or Squid
+  ([tls-interception.md](tls-interception.md)) closes this specific gap
+  for those engines, at the cost of the engine custodying a private key
+  and every consuming sandbox needing that CA in its trust store — read
+  that page before relying on it. Smokescreen cannot do this at all; the
+  gap is unconditional there.
 * Anything reachable without traversing the proxy. Preventing direct egress
   is `project-sandbox`'s iptables responsibility — and
   `ipl-verify sandbox` records that, as installed here, it does not
@@ -40,13 +48,14 @@ an engine other than the default.
 
 ## Non-goals
 
-Deliberately out of scope, so that the surface stays small enough to
-reason about: TLS interception, managing a private CA, inspecting HTTPS
-bodies. Interception would add a local CA lifecycle and private-key
-custody, trust-store changes in every agent image, and cert-pinning
-breakage; a later experiment may revisit it specifically for exfiltration
-control. It is also why `ssl_bump` stays out of the Squid configuration
-([findings.md](findings.md), "Rejected: tunnel peeking on Squid").
+TLS interception is opt-in and off by default, not out of scope — see
+[tls-interception.md](tls-interception.md) for what turning it on changes,
+the CA lifecycle `ipl ca` owns, and why Smokescreen is excluded from it
+permanently rather than temporarily. What stays a non-goal regardless of
+that setting: a CA or trust-store change reaching into `project-sandbox`
+automatically (the export is manual, by design — the same way exporting
+`HTTP_PROXY` already is), and inspecting or transforming response bodies
+beyond what an engine does on its own MITM path.
 
 Also out of scope: replacing Agentgateway, proxying MCP or AI-provider
 credentials, transparent networking, redirecting arbitrary TCP, Docker
@@ -72,9 +81,17 @@ different policies. v1 has one.
   a specific code, which is what lets one check cover every engine
   (Pipelock and Squid deny with `403`, Smokescreen with `407`).
 * Open modes are rejected by validation: `action: open`,
-  `--unsafe-allow-private-ranges`, `tls_interception.enabled: true`,
-  non-`strict` Pipelock modes, `http_access allow all` and
-  `ssl_bump ... bump` for Squid.
+  `--unsafe-allow-private-ranges`, non-`strict` Pipelock modes, and
+  `http_access allow all` for Squid. `tls_interception` may be `true` on
+  Pipelock/Squid, but only paired with both `ca_cert`/`ca_key` (Pipelock)
+  or the complete `ssl_bump` recipe (Squid) — every partial state is
+  rejected, which is what stops a hand-edit from reintroducing the
+  crashing `peek`-without-`bump` shape
+  ([tls-interception.md](tls-interception.md)).
+* `up` refuses to start an engine with `tls_interception = true` and no CA
+  generated yet, and the CA's private key is written `0600` at creation
+  time (never `chmod`ed after), so there is no window where it is
+  world-readable.
 * A destination written as a bare address is refused by Squid before the
   allowlist is consulted, because Squid would otherwise retry the miss as a
   reverse lookup and match whatever name the address's PTR record claims —
@@ -153,6 +170,10 @@ release ever fails it, the binding must not be widened to compensate.
 ## Logging
 
 Engine logs are the audit trail (`ipl logs`). They record request
-targets, verdicts and denial reasons — hostnames, not payloads. No request
-bodies are captured, because none are decrypted. `forwarded_for delete` in
-the Squid configuration keeps the client address internal.
+targets, verdicts and denial reasons — hostnames, not payloads. With
+`tls_interception` off (the default), no request bodies are captured
+because none are decrypted; with it on, the engine sees the decrypted
+request and may log more of it — see
+[tls-interception.md](tls-interception.md) for what changes.
+`forwarded_for delete` in the Squid configuration keeps the client address
+internal.

@@ -75,13 +75,21 @@ differ in *how* a rule is enforced rather than whether it is,
 
 ## What is generated and what is not
 
-Only domains are generated. Everything else in the three engine configs —
-Squid's deny floors and their order, `cache deny all`, `deny_info`,
-Pipelock's `sni_verification` / `sni_require_tls`, `tls_interception:
-false`, Smokescreen's `action: enforce` — is literal text in
+Domains, and one on/off switch, are generated. Everything else in the
+three engine configs — Squid's deny floors and their order,
+`cache deny all`, `deny_info`, Pipelock's `sni_verification` /
+`sni_require_tls`, Smokescreen's `action: enforce` — is literal text in
 `data/templates/*.j2`, unparameterized and unreachable from `config.toml`.
 Changing a rule means editing a template and reviewing that diff, which is
 the same review it needed before.
+
+The one switch is `[policy].tls_interception` (default `false`): opt-in
+TLS interception for Pipelock and Squid, off by default — see
+[tls-interception.md](tls-interception.md) before turning it on. It is
+still not a parameter in the sense the allowlist is: the generator picks
+between exactly two fixed, literal recipes per engine rather than filling
+in a value, and `policy/validate.py` accepts either whole recipe and
+rejects every partial one.
 
 One file is neither generated nor templated: `config/smokescreen.conf.yaml`
 holds `allow_missing_role: true`, the Smokescreen *daemon* setting (as

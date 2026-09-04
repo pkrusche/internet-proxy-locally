@@ -64,6 +64,7 @@ different policies. Edit `config.toml`, run `ipl up`, commit both.
 | `ipl restart` | explicit teardown then up |
 | `ipl down` | remove containers owned by this repository |
 | `ipl policy` | render `config/*` from `config.toml` (`--check` for drift) |
+| `ipl ca init/status/export/rotate` | manage the opt-in TLS-interception CA ([docs/tls-interception.md](docs/tls-interception.md)) |
 
 `--engine pipelock|smokescreen|squid` and `--backend docker|container`
 override the defaults; `ipl --help` is the full reference.
@@ -94,9 +95,11 @@ behind it is not part of the contract.
 ## Which engine, and why
 
 **Pipelock is the default: it is the only engine that enforces inside the
-CONNECT tunnel.** Squid is the alternative when the policy itself has to be
-auditable — its SSRF floors are ordinary `dst` ACLs in a file you can read,
-which `ipl setup` then checks rather than trusts.
+CONNECT tunnel by default** (Squid can too, opt-in — see
+[docs/tls-interception.md](docs/tls-interception.md)). Squid is the
+alternative when the policy itself has to be auditable — its SSRF floors
+are ordinary `dst` ACLs in a file you can read, which `ipl setup` then
+checks rather than trusts.
 
 Every engine, every check and every number behind that is in
 [docs/findings.md](docs/findings.md), where the tables are generated from
@@ -113,15 +116,21 @@ in a year.
 | [policy.md](docs/policy.md) | the allowlist, the rules, how to change them |
 | [security.md](docs/security.md) | threat model, fail-closed properties, non-goals, what it does *not* defend against |
 | [lab.md](docs/lab.md) | the test policy, the DNS fixture, and how to reproduce the comparison |
+| [tls-interception.md](docs/tls-interception.md) | opt-in TLS interception: the `ipl ca` lifecycle, per-engine notes, why Smokescreen is excluded |
 
 Open work is tracked in [TODO.md](TODO.md).
 
 ## Important limitation
 
-Without TLS interception (deliberately out of scope — see
-[docs/security.md](docs/security.md)), destination filtering limits **where**
-an agent can connect but cannot inspect encrypted request bodies. Data can
-still be pushed to an already-allowlisted HTTPS service.
+By default, destination filtering limits **where** an agent can connect
+but cannot inspect encrypted request bodies: data can still be pushed to
+an already-allowlisted HTTPS service. Pipelock and Squid can close this
+specific gap with opt-in TLS interception — off by default, and a real
+change to the threat model when turned on (private-key custody, trust
+distribution to every consuming sandbox) — see
+[docs/tls-interception.md](docs/tls-interception.md) before enabling it.
+Smokescreen cannot do this at all; see
+[docs/security.md](docs/security.md).
 
 Separately: `project-sandbox` does **not** currently route sandboxes through
 this proxy. It sets no `HTTP_PROXY` and filters egress with its own
