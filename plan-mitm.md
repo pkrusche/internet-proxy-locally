@@ -110,11 +110,14 @@ supports_tls_interception: bool = False
 ca_cert_mount: str = ""
 ca_key_mount: str = ""
 
+
 def ca_mounts(self) -> list[tuple[Path, str]]:
     if not self.supports_tls_interception:
         return []
-    return [(ca.ca_cert_path(), self.ca_cert_mount),
-            (ca.ca_key_path(), self.ca_key_mount)]
+    return [
+        (ca.ca_cert_path(), self.ca_cert_mount),
+        (ca.ca_key_path(), self.ca_key_mount),
+    ]
 ```
 
 Set on the `pipelock` and `squid` entries in `SERVICES` only:

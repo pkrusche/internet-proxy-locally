@@ -16,6 +16,47 @@ local run and a CI run are the same binary. Upgrading either is a deliberate
 `uv lock --upgrade-package ruff` (or `ty`), never something a fresh checkout
 does on its own. `.github/workflows/checks.yml` runs the first three rows.
 
+### When `uv run` cannot find an interpreter
+
+In a container sandbox, every command in the table above fails before it
+starts, with:
+
+```
+error: Failed to query Python interpreter
+  Caused by: failed to canonicalize path `/opt/venv/bin/python3`: Permission denied
+```
+
+Two things are true there and in no normal checkout, and either one
+identifies the environment:
+
+- `UV_PROJECT_ENVIRONMENT=/opt/venv` is set (with `UV_OFFLINE=1` and
+  `UV_CACHE_DIR=/opt/uv-cache`), and that venv's interpreter symlink points
+  into `/root/.local/share/uv/python/...`, which the `agent` user cannot
+  read. The venv is unusable, not merely unbuilt.
+- `.venv/` in the checkout, if present, was built on a macOS host — its
+  `pyvenv.cfg` `home` is under `/opt/local/Library/Frameworks/`, dangling
+  here.
+
+Neither is worth repairing in place. Build a throwaway project environment
+somewhere writable, from the system interpreter and the offline cache:
+
+```sh
+export UV_PROJECT_ENVIRONMENT=/tmp/ipl-venv        # anywhere writable
+uv sync --frozen --python /usr/local/bin/python3.11
+export PATH="$UV_PROJECT_ENVIRONMENT/bin:$PATH"
+ruff check . && ruff format --check . && ty check
+python -m unittest discover -s tests -t .
+```
+
+`uv sync` resolves this entirely from `/opt/uv-cache` — `UV_OFFLINE=1` is
+already set and no network is needed. Call the tools directly once that
+`PATH` is exported; `uv run` would go back to `/opt/venv` and fail again.
+
+The interpreter is 3.11 rather than the 3.13 in `.python-version`, which
+`requires-python = ">=3.11"` permits. That is a real difference from CI and
+worth remembering when a result is version-sensitive — a 3.12+-only syntax
+or stdlib addition would pass CI and fail here.
+
 ## Versioning: jj, not git
 
 This repo is worked with [jujutsu](https://jj-vcs.github.io/jj/); `.jj` is the

@@ -18,6 +18,13 @@ mode: strict
 enforce: true
 
 api_allowlist:
+  - api.anthropic.com
+  - claude.ai
+  - code.claude.com
+  - platform.claude.com
+  - api.openai.com
+  - auth.openai.com
+  - chatgpt.com
   - github.com
   - "*.github.com"
   - "*.githubusercontent.com"
