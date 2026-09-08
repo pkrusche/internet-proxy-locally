@@ -15,7 +15,7 @@ class ConnectSniMismatchTest(unittest.TestCase):
         _, port = support.start_mock(self, mode="strict")
         client = transport.ProxyClient("127.0.0.1", port)
         outcome, detail = connect_sni_mismatch.test_sni_mismatch(client)
-        self.assertEqual(outcome, "denied", detail)
+        self.assertEqual(outcome, "error", detail)
 
     def test_allowed_when_the_engine_does_not_inspect_the_tunnel(self) -> None:
         _, port = support.start_mock(self, mode="lenient")

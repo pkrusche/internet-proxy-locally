@@ -74,7 +74,7 @@ def run_policy_command(
     *,
     rendered: dict[Path, str],
     check: Callable[[dict[Path, str]], list[str]],
-    sync: Callable[[], list[Path]],
+    sync: Callable[[dict[Path, str]], list[Path]],
     source: str,
     label: str,
     cli: str,
@@ -92,7 +92,7 @@ def run_policy_command(
     fail_on(check(rendered), "configuration validation failed")
 
     if not check_only:
-        report_synced(sync(), source)
+        report_synced(sync(rendered), source)
         print(label)
         return 0
 

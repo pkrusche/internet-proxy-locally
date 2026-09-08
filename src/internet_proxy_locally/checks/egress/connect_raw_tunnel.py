@@ -16,7 +16,9 @@ def test_raw_tunnel(client: ProxyClient) -> tuple[str, str]:
     ).encode()
     data, detail = client.raw_in_tunnel(f"{ALLOWED_HTTPS_HOST}:443", payload)
     if not data:
-        return "denied", detail
+        if detail.startswith("CONNECT denied:"):
+            return "denied", detail
+        return "error", f"inconclusive after an established tunnel: {detail}"
     return "allowed", detail
 
 

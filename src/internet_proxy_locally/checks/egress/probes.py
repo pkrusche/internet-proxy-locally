@@ -26,16 +26,20 @@ def resolve_locally(host: str) -> list[str]:
 
 
 def _classify_deny_connect(client: ProxyClient, target: str) -> tuple[str, str]:
-    sock, _status, detail = client.connect(target)
+    sock, status, detail = client.connect(target)
     if sock is not None:
         sock.close()
         return "fail", f"tunnel to {target} was ESTABLISHED: {detail}"
+    if status is None:
+        return "error", f"inconclusive transport failure: {detail}"
     return "pass", f"denied: {detail}"
 
 
 def _classify_deny_http(client: ProxyClient, url: str) -> tuple[str, str]:
     resp = client.http_get(url)
-    if resp.status is not None and resp.status < 400:
+    if resp.status is None:
+        return "error", f"inconclusive transport failure: {resp.first_line}"
+    if resp.status < 400:
         return "fail", f"request succeeded ({resp.first_line})"
     body = summarize_body(resp.body)
     text = f"{resp.first_line} — {body}" if body else resp.first_line
@@ -50,6 +54,9 @@ def _deny_all(client: ProxyClient, *targets: str) -> tuple[str, str]:
     than as two results that have to be compared by eye.
     """
     outcomes = [_classify_deny_connect(client, target) for target in targets]
+    errors = [detail for outcome, detail in outcomes if outcome == "error"]
+    if errors:
+        return "error", "; ".join(errors)
     bad = [detail for outcome, detail in outcomes if outcome == "fail"]
     if bad:
         return "fail", "; ".join(bad)

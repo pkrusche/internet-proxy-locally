@@ -60,8 +60,9 @@ def verify(backend_name: str, engine: str, port: int, report: Reporter) -> None:
     fixture = fixture_spec()
     env = dict(os.environ, IPL_ENDPOINT=f"127.0.0.1:{port}")
 
-    proc = engine_up(backend_name, engine, port, test_policy=True, env=env)
+    proc = None
     try:
+        proc = engine_up(backend_name, engine, port, test_policy=True, env=env)
         report.check(
             backend.container_state(spec.container_name) == "running",
             f"{engine} is running on {backend_name}",
@@ -112,7 +113,7 @@ def verify(backend_name: str, engine: str, port: int, report: Reporter) -> None:
             "outside this machine is not a fixture.",
         )
         report.check(
-            bool(address and address in proc.stdout),
+            bool(proc and address and address in proc.stdout),
             f"`up` announced the fixture at {address}",
             f"`up` printed:\n{proc.stdout.strip()}\nwhich does not name the "
             "address `inspect` reports, so the two do not agree on what the "
@@ -121,7 +122,8 @@ def verify(backend_name: str, engine: str, port: int, report: Reporter) -> None:
 
         # -- the engine actually resolves through it --------------------
         checked = run_cli(
-            ["--backend", backend_name, "check", "--full", "--json"],
+            ["--backend", backend_name, "check", "--json"],
+            cli="ipl-lab",
             env=env,
             check=False,
         )

@@ -26,11 +26,14 @@ BACKEND=""
 SKIP_SYNC=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --backend) BACKEND="$2"; shift 2 ;;
+        --backend)
+            [ $# -ge 2 ] || { echo "--backend requires docker or container" >&2; exit 2; }
+            BACKEND="$2"; shift 2 ;;
         --skip-sync) SKIP_SYNC=1; shift ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
+case "$BACKEND" in ""|docker|container) ;; *) echo "invalid backend: $BACKEND" >&2; exit 2;; esac
 
 FAILED=()
 
@@ -71,6 +74,7 @@ if [ "$SKIP_SYNC" -eq 0 ]; then
     step "uv sync" uv sync
 fi
 
+rm -rf dist
 step "uv build" uv build --out-dir dist
 
 check_wheel_data() {

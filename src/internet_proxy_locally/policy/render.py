@@ -19,7 +19,9 @@ is allowed to touch the disk.
 
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -230,7 +232,16 @@ def write_validated(
     changed: list[Path] = []
     for path, text in sorted(rendered.items()):
         if not path.is_file() or path.read_text(encoding="utf-8") != text:
-            path.write_text(text, encoding="utf-8")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(text)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp_name, path)
+            finally:
+                Path(tmp_name).unlink(missing_ok=True)
             changed.append(path)
     return changed
 

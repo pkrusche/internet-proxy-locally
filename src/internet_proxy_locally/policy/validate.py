@@ -82,13 +82,28 @@ def _mappings(node) -> list[dict]:
 REQUIRED_SQUID_DENY_RANGES = (
     ("metadata_ip", "169.254.169.254/32"),
     ("private_ip", "10.0.0.0/8"),
+    ("private_ip", "0.0.0.0/8"),
+    ("private_ip", "100.64.0.0/10"),
     ("private_ip", "127.0.0.0/8"),
     ("private_ip", "169.254.0.0/16"),
     ("private_ip", "172.16.0.0/12"),
     ("private_ip", "192.168.0.0/16"),
+    ("private_ip", "192.0.0.0/24"),
+    ("private_ip", "192.0.2.0/24"),
+    ("private_ip", "192.88.99.0/24"),
+    ("private_ip", "198.18.0.0/15"),
+    ("private_ip", "198.51.100.0/24"),
+    ("private_ip", "203.0.113.0/24"),
+    ("private_ip", "224.0.0.0/4"),
+    ("private_ip", "240.0.0.0/4"),
+    ("private_ip", "::/128"),
     ("private_ip", "::1/128"),
     ("private_ip", "fc00::/7"),
     ("private_ip", "fe80::/10"),
+    ("private_ip", "64:ff9b::/96"),
+    ("private_ip", "100::/64"),
+    ("private_ip", "2001:db8::/32"),
+    ("private_ip", "ff00::/8"),
 )
 
 
@@ -171,6 +186,13 @@ def _require(cond: bool, path: Path, message: str, problems: list[str]) -> None:
         problems.append(f"{path}: {message}")
 
 
+def _mapping(value: object, path: Path, name: str, problems: list[str]) -> dict:
+    if isinstance(value, dict):
+        return value
+    problems.append(f"{path}: {name} must be a YAML mapping")
+    return {}
+
+
 def _validate_squid_deny_info(text: str, path: Path) -> list[str]:
     """Every denial page must be wired to an ACL the file still defines.
 
@@ -248,6 +270,12 @@ def _validate_squid_tls_interception(text: str, path: Path) -> list[str]:
     """
     problems: list[str] = []
     if re.search(r"^\s*ssl_bump\s", text, re.MULTILINE) is None:
+        _require(
+            "ssl-bump" not in text,
+            path,
+            "TLS-off state must use a plain listener",
+            problems,
+        )
         return problems
     has_peek = re.search(r"^\s*ssl_bump\s+peek\s+step1\b", text, re.MULTILINE)
     has_bump = re.search(r"^\s*ssl_bump\s+bump\s+all\b", text, re.MULTILINE)
@@ -257,6 +285,20 @@ def _validate_squid_tls_interception(text: str, path: Path) -> list[str]:
         "`ssl_bump peek step1` and `ssl_bump bump all` must both be present — "
         "peek without bump is the configuration that crashed Squid "
         '(see docs/findings.md, "Rejected: tunnel peeking on Squid")',
+        problems,
+    )
+    actions = re.findall(r"^\s*ssl_bump\s+(\S+)\s+(\S+)", text, re.MULTILINE)
+    _require(
+        actions == [("peek", "step1"), ("bump", "all")],
+        path,
+        "TLS mode permits exactly `peek step1` then `bump all`",
+        problems,
+    )
+    _require(
+        "tls-cert=/etc/squid/ca.pem" in text
+        and "tls-key=/etc/squid/ca-key.pem" in text,
+        path,
+        "TLS listener must use both managed CA mount paths",
         problems,
     )
     _require(
@@ -309,7 +351,7 @@ def validate_policy_text(engine: str, text: str, path: Path) -> list[str]:
     if engine == "pipelock":
         _require(doc.get("mode") == "strict", path, "must set `mode: strict`", problems)
         _require(doc.get("enforce") is True, path, "must set `enforce: true`", problems)
-        fp = doc.get("forward_proxy") or {}
+        fp = _mapping(doc.get("forward_proxy"), path, "forward_proxy", problems)
         _require(
             fp.get("enabled") is True,
             path,
@@ -328,7 +370,7 @@ def validate_policy_text(engine: str, text: str, path: Path) -> list[str]:
             "forward_proxy.sni_require_tls must be true",
             problems,
         )
-        ti = doc.get("tls_interception") or {}
+        ti = _mapping(doc.get("tls_interception"), path, "tls_interception", problems)
         enabled = ti.get("enabled")
         if enabled is True:
             _require(
@@ -362,7 +404,7 @@ def validate_policy_text(engine: str, text: str, path: Path) -> list[str]:
             "`action: open` is forbidden (no open proxy mode)",
             problems,
         )
-        default_block = doc.get("default") or {}
+        default_block = _mapping(doc.get("default"), path, "default", problems)
         _require(
             default_block.get("action") == "enforce",
             path,
@@ -416,6 +458,30 @@ def validate_policy_text(engine: str, text: str, path: Path) -> list[str]:
                 "(http_access is first-match-wins)",
                 problems,
             )
+        connect_index = next(
+            (
+                i
+                for i, rule in enumerate(rules)
+                if rule == "http_access deny CONNECT !TLS_ports"
+            ),
+            None,
+        )
+        _require(
+            connect_index is not None and connect_index < first_allow,
+            path,
+            "`http_access deny CONNECT !TLS_ports` must appear before allows",
+            problems,
+        )
+        defined = _squid_acl_names(text) | set(SQUID_BUILTIN_ACLS)
+        for rule in rules:
+            for token in rule.split()[2:]:
+                acl = token.lstrip("!")
+                _require(
+                    acl in defined,
+                    path,
+                    f"http_access references undefined ACL `{acl}`",
+                    problems,
+                )
         for acl, cidr in REQUIRED_SQUID_DENY_RANGES:
             _require(
                 cidr in _squid_acl_values(text, acl, "dst"),

@@ -8,6 +8,7 @@ is a failure, not a success.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 import socket
@@ -18,10 +19,29 @@ from internet_proxy_locally.constants import DEFAULT_ENDPOINT
 
 
 def endpoint() -> tuple[str, int]:
-    """Host endpoint; IPL_ENDPOINT override exists for the test suite only."""
+    """Return a validated loopback endpoint.
+
+    The environment override is useful to isolate tests, but it is still an
+    input crossing the security boundary: accepting ``0.0.0.0`` here would
+    publish the proxy to the LAN.
+    """
     raw = os.environ.get("IPL_ENDPOINT", DEFAULT_ENDPOINT)
-    host, _, port = raw.rpartition(":")
-    return host, int(port)
+    host, sep, port_text = raw.rpartition(":")
+    if not sep or not host or not port_text:
+        raise ValueError(
+            f"invalid IPL_ENDPOINT {raw!r}: expected loopback-address:port"
+        )
+    host = host.removeprefix("[").removesuffix("]")
+    try:
+        address = ipaddress.ip_address(host)
+        port = int(port_text)
+    except ValueError as exc:
+        raise ValueError(f"invalid IPL_ENDPOINT {raw!r}: {exc}") from exc
+    if not address.is_loopback:
+        raise ValueError(f"invalid IPL_ENDPOINT {raw!r}: address must be loopback")
+    if not 1 <= port <= 65535:
+        raise ValueError(f"invalid IPL_ENDPOINT {raw!r}: port must be 1..65535")
+    return str(address), port
 
 
 def port_listening(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -64,8 +84,17 @@ def probe_proxy(host: str, port: int, timeout: float = 4.0) -> tuple[bool, str, 
     if not match:
         return False, f"non-HTTP response: {line!r}", True
     status = int(match.group(1))
+    # 403 is the one portable, attributable policy response configured by
+    # the shipped engines.  A 5xx commonly means DNS/origin failure and is
+    # not evidence that an allowlist was enforced.
+    if status == 403:
+        return True, f"policy denies unknown destinations ({line.strip()})", False
     if status >= 400:
-        return True, f"denies unknown destinations ({line.strip()})", False
+        return (
+            False,
+            f"non-policy error for unknown destination ({line.strip()})",
+            False,
+        )
     return (
         False,
         f"proxy allowed a non-allowlisted host ({line.strip()}) — NOT healthy",

@@ -16,7 +16,9 @@ def test_sni_mismatch(client: ProxyClient) -> tuple[str, str]:
     ok, detail = client.tls_in_tunnel(f"{ALLOWED_HTTPS_HOST}:443", ALLOWED_ALT_HOST)
     if ok:
         return "allowed", f"mismatched SNI accepted: {detail}"
-    return "denied", detail
+    if detail.startswith("CONNECT denied:"):
+        return "denied", detail
+    return "error", f"origin/TLS failure is not an attributable policy denial: {detail}"
 
 
 CHECK = Check(

@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import argparse
 import platform
+import shutil
 from pathlib import Path
 
-from internet_proxy_locally import ca
+from internet_proxy_locally import __version__, ca, paths
 from internet_proxy_locally.backend import Backend, detect_backend
 from internet_proxy_locally.cli import common
 from internet_proxy_locally.constants import (
@@ -28,6 +29,7 @@ from internet_proxy_locally.images import prepare_image
 from internet_proxy_locally.lifecycle import (
     all_specs,
     owned_containers,
+    remove_owned,
     running_engine,
 )
 from internet_proxy_locally.net import endpoint, port_listening, probe_proxy
@@ -39,6 +41,7 @@ from internet_proxy_locally.policy.render import (
     render_policies,
     report_synced,
     sync_policies,
+    write_validated,
 )
 from internet_proxy_locally.policy.validate import validate_policy_file
 from internet_proxy_locally.spec import ServiceSpec
@@ -58,7 +61,7 @@ def cmd_policy(opts: argparse.Namespace) -> int:
     return common.run_policy_command(
         rendered=render_policies(),
         check=check_rendered_policies,
-        sync=sync_policies,
+        sync=lambda rendered: write_validated(rendered, check_rendered_policies),
         source=_POLICY_SOURCE,
         label="configs: up to date with config.toml",
         cli="ipl",
@@ -128,7 +131,7 @@ def cmd_down(opts: argparse.Namespace) -> int:
     backend = detect_backend(opts.backend)
     removed = False
     for name in owned_containers():
-        if backend.remove_container(name):
+        if remove_owned(backend, name):
             print(f"removed {name}")
             removed = True
     if not removed:
@@ -137,7 +140,9 @@ def cmd_down(opts: argparse.Namespace) -> int:
 
 
 def cmd_restart(opts: argparse.Namespace) -> int:
-    cmd_down(opts)
+    # `up` already uses the validated recreate path. Keeping the existing
+    # service until rendering and validation succeed avoids an unnecessary
+    # outage when a replacement policy is invalid.
     return cmd_up(opts)
 
 
@@ -212,7 +217,7 @@ def cmd_ca_init(opts: argparse.Namespace) -> int:
 
 
 def cmd_ca_status(opts: argparse.Namespace) -> int:
-    if not ca.ca_present():
+    if not ca.ca_cert_path().exists() and not ca.ca_key_path().exists():
         print("CA: absent (run `ipl ca init`)")
         return 0
     subject, expiry = ca.ca_info()
@@ -224,7 +229,7 @@ def cmd_ca_status(opts: argparse.Namespace) -> int:
 
 def cmd_ca_export(opts: argparse.Namespace) -> int:
     """Write the public cert only — never the key — to `--out`."""
-    ca.export_ca_cert(opts.out)
+    ca.export_ca_cert(opts.out, overwrite=opts.overwrite)
     print(f"exported the CA cert (public only) to {opts.out}")
     return 0
 
@@ -241,6 +246,23 @@ def cmd_ca_rotate(opts: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_init(opts: argparse.Namespace) -> int:
+    """Create a standalone workspace without overwriting user files."""
+    root = paths.workspace_root()
+    policy = root / "config.toml"
+    if not policy.exists():
+        shutil.copyfile(paths.data_root() / "starter-config.toml", policy)
+        print(f"created {policy}")
+    daemon = root / "config" / "smokescreen.conf.yaml"
+    daemon.parent.mkdir(parents=True, exist_ok=True)
+    if not daemon.exists():
+        shutil.copyfile(paths.data_root() / "smokescreen.conf.yaml", daemon)
+        print(f"created {daemon}")
+    report_synced(sync_policies(), _POLICY_SOURCE)
+    print("workspace initialized")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -253,12 +275,19 @@ def build_parser() -> argparse.ArgumentParser:
         "(Pipelock, Smokescreen or Squid) "
         f"on http://{DEFAULT_ENDPOINT}",
     )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     common.add_global_options(
         parser,
         engine_help=f"proxy engine (default: {DEFAULT_ENGINE}; "
         "status-dependent for logs/check)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("init", help="initialize a standalone workspace").set_defaults(
+        func=cmd_init
+    )
 
     p_policy = sub.add_parser(
         "policy", help="render config/* from config.toml (setup/up do this too)"
@@ -288,7 +317,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "up", help="(re)create the proxy container and health-check it"
     ).set_defaults(func=cmd_up)
-    sub.add_parser("restart", help="explicit teardown then up").set_defaults(
+    sub.add_parser("restart", help="validate, then recreate the proxy").set_defaults(
         func=cmd_restart
     )
 
@@ -335,6 +364,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_ca_export.add_argument(
         "--out", required=True, type=Path, help="destination file for the exported cert"
+    )
+    p_ca_export.add_argument(
+        "--overwrite", action="store_true", help="replace an existing non-managed file"
     )
     p_ca_export.set_defaults(func=cmd_ca_export)
 

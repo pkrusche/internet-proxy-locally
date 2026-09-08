@@ -13,6 +13,7 @@ to preserve one.
 
 from __future__ import annotations
 
-__all__ = ["Fail"]
+__version__ = "0.1.0"
+__all__ = ["Fail", "__version__"]
 
 from internet_proxy_locally.errors import Fail

@@ -13,9 +13,9 @@ both first-class. No Docker Compose.
 
 ```bash
 uv sync                 # once: create the environment uv run uses
-ipl setup          # validate prerequisites, build the pinned images
-ipl up             # start the proxy and health-check it
-ipl check          # confirm allow/deny behavior
+uv run ipl setup        # validate prerequisites, build the pinned images
+uv run ipl up           # start the proxy and health-check it
+uv run ipl check        # confirm allow/deny behavior
 
 export HTTP_PROXY=http://127.0.0.1:18080
 export HTTPS_PROXY=http://127.0.0.1:18080
@@ -23,7 +23,9 @@ curl https://github.com          # allowlisted → works
 curl https://example.com         # not allowlisted → denied by the proxy
 ```
 
-Requires [uv](https://docs.astral.sh/uv/) and Docker or Apple `container`.
+Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and Docker or Apple
+`container`. A wheel installation can initialize an empty working directory
+with `ipl init`; it never overwrites an existing policy. Teardown is `ipl down`.
 `uv sync` installs this repository as a package and puts `ipl`, `ipl-lab`,
 `ipl-check` and `ipl-verify` in the environment; `uv run ipl ...` picks up
 the interpreter from `.python-version` and the dependencies (Jinja2,
@@ -57,11 +59,12 @@ different policies. Edit `config.toml`, run `ipl up`, commit both.
 | | |
 | --- | --- |
 | `ipl setup` | validate prerequisites, build the pinned images |
+| `ipl init` | initialize a standalone installed-package workspace |
 | `ipl up` | (re)create the container and health-check it |
 | `ipl status` | engine, backend, container state, image, live health |
 | `ipl logs` | engine logs |
 | `ipl check` | allow/deny behavior against the live proxy |
-| `ipl restart` | explicit teardown then up |
+| `ipl restart` | validate, then recreate the proxy |
 | `ipl down` | remove containers owned by this repository |
 | `ipl policy` | render `config/*` from `config.toml` (`--check` for drift) |
 | `ipl ca init/status/export/rotate` | manage the opt-in TLS-interception CA ([docs/tls-interception.md](docs/tls-interception.md)) |

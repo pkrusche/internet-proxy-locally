@@ -59,7 +59,7 @@ def _fetch_logs(backend_bin: str | None, container: str | None) -> list[str]:
         return []
     try:
         proc = subprocess.run(
-            [backend_bin, "logs", container],
+            [backend_bin, "logs", "--tail", "200", "--timestamps", container],
             capture_output=True,
             text=True,
             timeout=5,
@@ -89,6 +89,7 @@ def run_suite(
     except OSError as exc:
         raise SystemExit(f"proxy endpoint {proxy} is not reachable: {exc}")
 
+    old_fixture_source = fixture_log.FIXTURE_LOG_SOURCE
     if backend_bin and fixture_container:
         fixture_log.FIXTURE_LOG_SOURCE = lambda: _fetch_logs(
             backend_bin, fixture_container
@@ -149,6 +150,7 @@ def run_suite(
                 engine_logs=_log_delta(before_logs, after_logs),
             )
         )
+    fixture_log.FIXTURE_LOG_SOURCE = old_fixture_source
     return results
 
 

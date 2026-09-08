@@ -75,7 +75,23 @@ def allow_list(raw: object, path: Path, key: str) -> list[str]:
     for item in raw:
         if not isinstance(item, str):
             raise Fail(f"{path}: {key} must contain only strings (found {item!r})")
-        entry = item.strip()
+        entry = item.strip().lower()
+        if entry.endswith("."):
+            raise Fail(f"{path}: {key} entry `{item}` must not have a trailing dot")
+        wildcard = entry.startswith("*.")
+        name = entry[2:] if wildcard else entry
+        try:
+            name = name.encode("idna").decode("ascii")
+        except UnicodeError as exc:
+            raise Fail(
+                f"{path}: {key} entry `{item}` is not a valid allowlist form "
+                f"or IDNA name: {exc}"
+            ) from exc
+        entry = ("*." if wildcard else "") + name
+        if len(name) > 253:
+            raise Fail(
+                f"{path}: {key} entry `{item}` exceeds the 253-byte DNS name limit"
+            )
         if entry in entries:
             raise Fail(f"{path}: {key} lists `{entry}` twice")
         if not ALLOW_ENTRY.match(entry):

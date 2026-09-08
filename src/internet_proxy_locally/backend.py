@@ -18,6 +18,9 @@ from pathlib import Path
 from internet_proxy_locally.constants import BACKENDS
 from internet_proxy_locally.errors import Fail
 
+COMMAND_TIMEOUT = 30
+BUILD_TIMEOUT = 1800
+
 
 class Backend:
     """Thin wrapper over the docker / Apple `container` CLIs.
@@ -35,10 +38,19 @@ class Backend:
     # -- low-level ----------------------------------------------------------
 
     def _run(
-        self, *args: str, check: bool = True, capture: bool = True
+        self,
+        *args: str,
+        check: bool = True,
+        capture: bool = True,
+        timeout: float = COMMAND_TIMEOUT,
     ) -> subprocess.CompletedProcess:
         cmd = [self.bin, *args]
-        proc = subprocess.run(cmd, capture_output=capture, text=True, check=False)
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=capture, text=True, check=False, timeout=timeout
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise Fail(f"`{' '.join(cmd)}` timed out after {timeout:g}s") from exc
         if check and proc.returncode != 0:
             detail = (proc.stderr or proc.stdout or "").strip()
             raise Fail(f"`{' '.join(cmd)}` failed:\n{detail}")
@@ -58,11 +70,23 @@ class Backend:
         """
         proc = self._run(*args, check=False)
         if proc.returncode != 0:
-            return {}
+            detail = (proc.stderr or proc.stdout or "").strip()
+            # Both supported CLIs use an empty diagnostic in some versions
+            # for a genuinely absent object.
+            missing = (
+                not detail
+                or "no such" in detail.lower()
+                or "not found" in detail.lower()
+            )
+            if missing:
+                return {}
+            raise Fail(
+                f"runtime inspect failed for {' '.join(args)}: {detail or 'unknown error'}"
+            )
         try:
             info = json.loads(proc.stdout)
         except json.JSONDecodeError:
-            return {}
+            raise Fail(f"runtime returned malformed JSON for {' '.join(args)}")
         entry = (info[0] if isinstance(info, list) and info else info) or {}
         return entry if isinstance(entry, dict) else {}
 
@@ -163,15 +187,28 @@ class Backend:
                         continue
         return bindings
 
+    def container_labels(self, name: str) -> dict[str, str]:
+        entry = self._inspect_entry("inspect", name)
+        candidates = [
+            (entry.get("Config") or {}).get("Labels"),
+            (entry.get("configuration") or {}).get("labels"),
+        ]
+        for value in candidates:
+            if isinstance(value, dict):
+                return {str(k): str(v) for k, v in value.items()}
+        return {}
+
     def remove_container(self, name: str) -> bool:
         """Remove a container if present; returns True if something was removed."""
         if self.container_state(name) == "absent":
             return False
         if self.name == "docker":
-            self._run("rm", "-f", name, check=False)
+            self._run("rm", "-f", name)
         else:
-            self._run("stop", name, check=False)
-            self._run("rm", name, check=False)
+            self._run("stop", name)
+            self._run("rm", name)
+        if self.container_state(name) != "absent":
+            raise Fail(f"runtime reported success but container {name} still exists")
         return True
 
     def run_detached(
@@ -187,8 +224,11 @@ class Backend:
         # than a host/port pair plus a flag saying to ignore them.
         publish: tuple[str, int] | None = None,
         dns: str = "",
+        labels: dict[str, str] | None = None,
     ) -> None:
         cmd: list[str] = ["run", "--detach", "--name", name]
+        for key, value in sorted((labels or {}).items()):
+            cmd += ["--label", f"{key}={value}"]
         if publish is not None:
             publish_host, publish_port = publish
             cmd += ["--publish", f"{publish_host}:{publish_port}:{internal_port}"]
@@ -214,7 +254,7 @@ class Backend:
         return subprocess.run(cmd, check=False).returncode
 
     def tail_logs(self, name: str, lines: int = 40) -> str:
-        proc = self._run("logs", name, check=False)
+        proc = self._run("logs", "--tail", str(lines), name, check=False)
         out = ((proc.stdout or "") + (proc.stderr or "")).strip().splitlines()
         return "\n".join(out[-lines:])
 
@@ -262,6 +302,7 @@ class Backend:
             str(dockerfile),
             str(context),
             capture=False,
+            timeout=BUILD_TIMEOUT,
         )
 
 

@@ -18,12 +18,25 @@
 name = "internet-proxy-locally"
 version = "0.1.0"
 description = "Local containerized Internet filtering proxy for coding-agent sandboxes"
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
     "jinja2>=3.1",
     "pyyaml>=6.0.3",
     "cryptography>=42",
 ]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+]
+
+[project.urls]
+Documentation = "https://github.com/internet-proxy-locally/internet-proxy-locally#readme"
+Source = "https://github.com/internet-proxy-locally/internet-proxy-locally"
+Issues = "https://github.com/internet-proxy-locally/internet-proxy-locally/issues"
 
 # `ipl` is the operational lane and `ipl-lab` the measurement one; the
 # split between them is described in the package docstring. `ipl-check` is
@@ -46,6 +59,25 @@ build-backend = "hatchling.build"
 # check that it still does.
 [tool.hatch.build.targets.wheel]
 packages = ["src/internet_proxy_locally"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src/internet_proxy_locally/**",
+    "/tests/**",
+    "/scripts/**",
+    "/docs/**",
+    "/lab/**",
+    "/config/**",
+    "/config.toml",
+    "/README.md",
+    "/SECURITY.md",
+    "/CONTRIBUTING.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/uv.lock",
+]
+exclude = ["**/__pycache__/**", "**/*.pyc", "/state/**", "/results/**"]
 
 # Lint and format, run in CI by .github/workflows/lint.yml and locally by
 # `uv run ruff check .` / `uv run ruff format .`. No [tool.ruff] section: the

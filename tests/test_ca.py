@@ -93,10 +93,11 @@ class CaTest(unittest.TestCase):
         ca.generate_ca()
         self.assertEqual(ca.ca_key_path().parent.stat().st_mode & 0o777, 0o700)
 
-    def test_export_reports_an_unwritable_destination_as_a_fail(self) -> None:
+    def test_export_creates_a_missing_destination_parent(self) -> None:
         ca.generate_ca()
-        with self.assertRaises(Fail):
-            ca.export_ca_cert(self.tmp / "no-such-dir" / "ca.pem")
+        destination = self.tmp / "no-such-dir" / "ca.pem"
+        ca.export_ca_cert(destination)
+        self.assertEqual(destination.read_bytes(), ca.ca_cert_path().read_bytes())
 
     def test_export_copies_cert_bytes_only(self) -> None:
         ca.generate_ca()

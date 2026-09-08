@@ -16,6 +16,7 @@ from internet_proxy_locally import net
 from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.constants import DNS_FIXTURE, HEALTH_WAIT_SECONDS
 from internet_proxy_locally.errors import Fail
+from internet_proxy_locally.lifecycle import ownership_labels, remove_owned
 from internet_proxy_locally.spec import ServiceSpec
 
 
@@ -47,12 +48,13 @@ def start_dns_fixture(backend: Backend) -> str:
             "`ipl-lab check` needs it to serve the mixed-answer records "
             "(docs/lab.md)."
         )
-    backend.remove_container(spec.container_name)
+    remove_owned(backend, spec.container_name)
     backend.run_detached(
         name=spec.container_name,
         image=image,
         internal_port=spec.internal_port,
         mounts=spec.mounts(),
+        labels=ownership_labels("lab-fixture"),
     )
 
     def addressed():
@@ -66,7 +68,14 @@ def start_dns_fixture(backend: Backend) -> str:
     if address:
         return address
     logs = backend.tail_logs(spec.container_name)
+    try:
+        remove_owned(backend, spec.container_name)
+    except Fail as cleanup:
+        raise Fail(
+            f"the DNS fixture did not report an address; cleanup failed: {cleanup}\n"
+            f"--- bounded logs ---\n{logs}"
+        ) from cleanup
     raise Fail(
         f"the DNS fixture container did not report an address\n"
-        f"--- last container logs ---\n{logs}"
+        f"--- bounded logs ---\n{logs}"
     )

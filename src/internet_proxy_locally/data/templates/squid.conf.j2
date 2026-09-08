@@ -138,8 +138,12 @@ acl allowlist_wild dstdom_regex -i {{ domain | squid_wild }}
 {% endfor %}
 {% endif %}
 
+{% if allow_exact or allow_test_exact %}
 http_access allow allowlist_exact
+{% endif %}
+{% if allow_wild or allow_test_wild %}
 http_access allow allowlist_wild
+{% endif %}
 
 # ---------------------------------------------------------------------------
 # Default deny

@@ -9,6 +9,7 @@ test is an engine the test does not describe.
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -45,6 +46,32 @@ def owned_containers(include_fixture: bool = True) -> list[str]:
     if include_fixture:
         names.append(ServiceSpec.load(DNS_FIXTURE).container_name)
     return names
+
+
+def ownership_labels(role: str = "operational") -> dict[str, str]:
+    root = str(Path.cwd().resolve()).encode()
+    return {
+        "io.internet-proxy-locally.managed": "true",
+        "io.internet-proxy-locally.workspace": hashlib.sha256(root).hexdigest()[:16],
+        "io.internet-proxy-locally.role": role,
+    }
+
+
+def remove_owned(backend: Backend, name: str) -> bool:
+    state = backend.container_state(name)
+    if state == "absent":
+        return False
+    labels = backend.container_labels(name)
+    expected = ownership_labels()
+    if (
+        labels.get("io.internet-proxy-locally.managed") != "true"
+        or labels.get("io.internet-proxy-locally.workspace")
+        != expected["io.internet-proxy-locally.workspace"]
+    ):
+        raise Fail(
+            f"refusing to remove foreign container {name}: ownership labels differ"
+        )
+    return backend.remove_container(name)
 
 
 def running_engine(backend: Backend) -> str | None:
@@ -92,10 +119,7 @@ def start_engine(
                 f"{engine} does not support TLS interception "
                 "(pipelock and squid do; set tls_interception = false or switch engine)"
             )
-        if not ca.ca_present():
-            raise Fail(
-                "tls_interception is enabled but no CA exists — run `ipl ca init`"
-            )
+        ca.validate_ca()
         mounts += spec.ca_mounts()
 
     # Recreate: remove every container owned by this repository first —
@@ -103,7 +127,7 @@ def start_engine(
     # The DNS fixture goes too, even from the operational lane: a stale one
     # must never be left running alongside a real policy.
     for name in owned_containers(include_fixture=not keep_fixture):
-        if backend.remove_container(name):
+        if remove_owned(backend, name):
             print(f"removed existing container {name}")
 
     if port_listening(host, port):
@@ -120,6 +144,7 @@ def start_engine(
         mounts=mounts,
         publish=(host, port),
         dns=dns,
+        labels=ownership_labels("lab" if keep_fixture else "operational"),
     )
 
     def settled():
@@ -138,12 +163,22 @@ def start_engine(
         False,
         "timed out waiting for the proxy to listen",
     )
+    expected_binding = (host, port, spec.internal_port)
+    if healthy and expected_binding not in backend.published_ports(spec.container_name):
+        healthy = False
+        detail = f"runtime did not honor loopback publication {expected_binding}"
     if not healthy:
         logs = backend.tail_logs(spec.container_name)
+        try:
+            remove_owned(backend, spec.container_name)
+        except Fail as cleanup:
+            raise Fail(
+                f"post-start health check failed: {detail}; cleanup also failed: {cleanup}\n"
+                f"--- bounded container logs ---\n{logs}"
+            ) from cleanup
         raise Fail(
-            f"post-start health check failed: {detail}\n"
-            f"--- last container logs ---\n{logs}\n"
-            f"(the container is left in place for debugging; `ipl down` removes it)"
+            f"post-start health check failed: {detail}; created container removed\n"
+            f"--- bounded container logs ---\n{logs}"
         )
     print(f"healthy: {detail}")
 

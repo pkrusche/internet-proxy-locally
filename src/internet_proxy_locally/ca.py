@@ -10,7 +10,11 @@ docs/tls-interception.md, the same way exporting `HTTP_PROXY` already is.
 from __future__ import annotations
 
 import datetime
+import fcntl
 import os
+import stat
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 from cryptography import x509
@@ -34,7 +38,80 @@ def ca_key_path() -> Path:
 
 
 def ca_present() -> bool:
-    return ca_cert_path().is_file() and ca_key_path().is_file()
+    try:
+        validate_ca()
+    except Fail:
+        return False
+    return True
+
+
+def _lock_path() -> Path:
+    return paths.ca_dir().parent / "ca.lock"
+
+
+@contextmanager
+def _ca_lock(*, exclusive: bool):
+    parent = paths.ca_dir().parent
+    parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(_lock_path(), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def _safe_private_dir(path: Path) -> None:
+    if path.is_symlink():
+        raise Fail(f"unsafe CA directory: {path} is a symbolic link")
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    mode = stat.S_IMODE(path.stat().st_mode)
+    if path.stat().st_uid != os.getuid() or mode & 0o077:
+        raise Fail(
+            f"unsafe CA directory {path}: must be owned by this user and mode 0700"
+        )
+
+
+def validate_ca() -> tuple[x509.Certificate, object]:
+    """Parse and validate the complete managed CA pair, failing closed."""
+    cert_path, key_path = ca_cert_path(), ca_key_path()
+    present = (cert_path.exists(), key_path.exists())
+    if present != (True, True):
+        if any(present):
+            raise Fail(
+                "partial CA state: restore the missing file or run `ipl ca rotate`"
+            )
+        raise Fail("no CA exists yet — run `ipl ca init`")
+    for path in (cert_path, key_path):
+        if path.is_symlink() or not path.is_file():
+            raise Fail(f"unsafe managed CA path: {path} must be a regular file")
+        if path.stat().st_uid != os.getuid():
+            raise Fail(f"unsafe managed CA path: {path} is owned by another user")
+    if stat.S_IMODE(key_path.stat().st_mode) & 0o077:
+        raise Fail(f"unsafe CA key permissions on {key_path}: expected 0600")
+    try:
+        cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
+        key = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
+    except (ValueError, OSError) as exc:
+        raise Fail(f"malformed CA material: {exc}") from exc
+    if cert.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    ) != key.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    ):
+        raise Fail("CA certificate and private key do not match")
+    now = datetime.datetime.now(datetime.UTC)
+    if not (cert.not_valid_before_utc <= now < cert.not_valid_after_utc):
+        raise Fail("CA certificate is not currently valid")
+    try:
+        basic = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+        usage = cert.extensions.get_extension_for_class(x509.KeyUsage).value
+    except x509.ExtensionNotFound as exc:
+        raise Fail("CA certificate is missing required CA extensions") from exc
+    if not basic.ca or not usage.key_cert_sign:
+        raise Fail("certificate is not authorized to sign certificates")
+    return cert, key
 
 
 def generate_ca(force: bool = False) -> None:
@@ -46,8 +123,22 @@ def generate_ca(force: bool = False) -> None:
     trusts the old cert (every sandbox that installed it into its trust
     store).
     """
-    if ca_present() and not force:
-        return
+    with _ca_lock(exclusive=True):
+        cert_exists, key_exists = ca_cert_path().exists(), ca_key_path().exists()
+        if cert_exists or key_exists:
+            if cert_exists != key_exists:
+                raise Fail(
+                    "partial CA state: restore the pair or deliberately run `ipl ca rotate`"
+                )
+            if not force:
+                validate_ca()
+                return
+
+        _generate_ca_locked()
+
+
+def _generate_ca_locked() -> None:
+    """Generate and transactionally replace a pair while holding the lock."""
 
     key = ec.generate_private_key(ec.SECP256R1())
     subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, CA_SUBJECT)])
@@ -91,7 +182,7 @@ def generate_ca(force: bool = False) -> None:
     # 0700: docs/tls-interception.md tells the reader to treat state/ as a
     # private-key store, and the default 0755 would not be one. The key's own
     # 0600 is the protection; this is the second lock on the same door.
-    ca_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _safe_private_dir(ca_dir)
 
     key_bytes = key.private_bytes(
         encoding=serialization.Encoding.PEM,
@@ -106,40 +197,75 @@ def generate_ca(force: bool = False) -> None:
     # would otherwise keep whatever permissions that file already had — the
     # rotate-after-compromise runbook writing a fresh key into a
     # world-readable file, silently.
-    ca_key_path().unlink(missing_ok=True)
-    fd = os.open(ca_key_path(), os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    staged = Path(tempfile.mkdtemp(prefix=".ca-generation-", dir=ca_dir))
     try:
-        os.write(fd, key_bytes)
+        key_tmp, cert_tmp = staged / "ca-key.pem", staged / "ca.pem"
+        fd = os.open(
+            key_tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600
+        )
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(key_bytes)
+            fh.flush()
+            os.fsync(fh.fileno())
+        cert_tmp.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+        os.chmod(cert_tmp, 0o644)
+        # Readers take the shared operation lock. Preserve the prior pair so
+        # either failed replace can be rolled back before releasing it.
+        old_cert = ca_cert_path().read_bytes() if ca_cert_path().exists() else None
+        old_key = ca_key_path().read_bytes() if ca_key_path().exists() else None
+        try:
+            os.replace(key_tmp, ca_key_path())
+            os.replace(cert_tmp, ca_cert_path())
+        except OSError:
+            if old_key is not None:
+                ca_key_path().write_bytes(old_key)
+                os.chmod(ca_key_path(), 0o600)
+            if old_cert is not None:
+                ca_cert_path().write_bytes(old_cert)
+                os.chmod(ca_cert_path(), 0o644)
+            raise
+        validate_ca()
     finally:
-        os.close(fd)
-
-    ca_cert_path().write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+        for item in staged.iterdir():
+            item.unlink(missing_ok=True)
+        staged.rmdir()
 
 
 def ca_info() -> tuple[str, datetime.datetime]:
     """The CA cert's subject and expiry, for `ipl ca status`."""
-    if not ca_present():
-        raise Fail("no CA exists yet — run `ipl ca init`")
-    try:
-        cert = x509.load_pem_x509_certificate(ca_cert_path().read_bytes())
-    except ValueError as exc:
-        # `ipl ca status` is the command someone runs *because* something
-        # looks wrong; an unreadable cert is the answer, not a traceback.
-        raise Fail(
-            f"{ca_cert_path()} is not a readable PEM certificate ({exc}) — "
-            "run `ipl ca rotate` to replace it"
-        ) from exc
+    with _ca_lock(exclusive=False):
+        cert, _key = validate_ca()
     subject = cert.subject.rfc4514_string()
     return subject, cert.not_valid_after_utc
 
 
-def export_ca_cert(destination: Path) -> None:
+def export_ca_cert(destination: Path, *, overwrite: bool = False) -> None:
     """Copy the CA's public cert only — never the key — to `destination`."""
-    if not ca_present():
-        raise Fail("no CA exists yet — run `ipl ca init`")
-    try:
-        destination.write_bytes(ca_cert_path().read_bytes())
-    except OSError as exc:
-        # `--out` is a path a person typed; a missing parent directory or an
-        # unwritable one is their problem to fix, not a traceback.
-        raise Fail(f"cannot write the exported cert to {destination}: {exc}") from exc
+    with _ca_lock(exclusive=False):
+        cert, _key = validate_ca()
+        try:
+            resolved = destination.resolve(strict=False)
+            managed = {
+                ca_cert_path().resolve(),
+                ca_key_path().resolve(),
+                _lock_path().resolve(),
+            }
+            if resolved in managed:
+                raise Fail("export destination identifies managed CA state")
+            if destination.exists() and not overwrite:
+                raise Fail(
+                    f"refusing to overwrite existing file {destination}; "
+                    "pass --overwrite"
+                )
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW
+            flags |= os.O_TRUNC if overwrite else os.O_EXCL
+            fd = os.open(destination, flags, 0o644)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(cert.public_bytes(serialization.Encoding.PEM))
+                fh.flush()
+                os.fsync(fh.fileno())
+        except OSError as exc:
+            raise Fail(
+                f"cannot write the exported cert to {destination}: {exc}"
+            ) from exc

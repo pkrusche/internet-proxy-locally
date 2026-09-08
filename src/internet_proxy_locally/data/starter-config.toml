@@ -1,0 +1,4 @@
+[policy]
+# Exact hosts and wildcard subdomains. Wildcards exclude their apex.
+allow = ["github.com", "*.github.com"]
+tls_interception = false

@@ -44,6 +44,11 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--full", action="store_true")
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="release gate: fail on skips, errors, missing required rows, or failures",
+    )
+    parser.add_argument(
         "--diff",
         nargs=2,
         metavar=("RESULTS_A", "RESULTS_B"),
@@ -80,4 +85,5 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         print_text(results, opts.engine)
-    return 1 if any(r.outcome in ("fail", "error") for r in results) else 0
+    bad = {"fail", "error"} | ({"skip"} if opts.strict else set())
+    return 1 if any(r.outcome in bad for r in results) else 0

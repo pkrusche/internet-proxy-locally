@@ -30,13 +30,14 @@ an engine other than the default.
 
 ## What it does not defend against
 
-* **Exfiltration to an allowed HTTPS destination — unless TLS interception
-  is on.** By default the proxy cannot see encrypted request bodies. If
+* **Exfiltration to an allowed destination.** By default the proxy cannot see
+  encrypted request bodies. Even with interception, the shipped policy does
+  not prohibit uploads or restrict an allowed service to a particular account. If
   `github.com` is allowed, data can be pushed to any reachable GitHub
   repository; this service controls destinations only. Turning on
   `tls_interception` for Pipelock or Squid
-  ([tls-interception.md](tls-interception.md)) closes this specific gap
-  for those engines, at the cost of the engine custodying a private key
+  ([tls-interception.md](tls-interception.md)) enables inspection but does not
+  itself close this gap, and requires the engine to custody a private key
   and every consuming sandbox needing that CA in its trust store — read
   that page before relying on it. Smokescreen cannot do this at all; the
   gap is unconditional there.
@@ -77,9 +78,8 @@ different policies. v1 has one.
 * `up` refuses the endpoint when an unknown process occupies it.
 * The post-start health check requires the proxy to *deny* a
   non-allowlisted probe host; a proxy that answers 2xx/3xx for it is
-  treated as broken, not healthy. It grades on `status >= 400` rather than
-  a specific code, which is what lets one check cover every engine
-  (Pipelock and Squid deny with `403`, Smokescreen with `407`).
+  treated as broken, not healthy. Health requires an attributable policy
+  denial; a DNS/origin 5xx is inconclusive and fails startup.
 * Open modes are rejected by validation: `action: open`,
   `--unsafe-allow-private-ranges`, non-`strict` Pipelock modes, and
   `http_access allow all` for Squid. `tls_interception` may be `true` on
@@ -169,11 +169,12 @@ release ever fails it, the binding must not be widened to compensate.
 
 ## Logging
 
-Engine logs are the audit trail (`ipl logs`). They record request
-targets, verdicts and denial reasons — hostnames, not payloads. With
-`tls_interception` off (the default), no request bodies are captured
-because none are decrypted; with it on, the engine sees the decrypted
-request and may log more of it — see
+Engine logs are the audit trail (`ipl logs`). Depending on engine and mode they
+can contain full URLs and query strings, targets, verdicts, and denial reasons.
+Plain HTTP is visible with interception off. The shipped configuration does not
+deliberately log bodies/headers, but makes no general redaction guarantee.
+Runtime retention is operator-controlled; treat logs as sensitive. With
+interception on, the engine sees decrypted requests — see
 [tls-interception.md](tls-interception.md) for what changes.
 `forwarded_for delete` in the Squid configuration keeps the client address
 internal.

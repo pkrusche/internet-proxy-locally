@@ -102,15 +102,15 @@ class EgressSuiteTest(unittest.TestCase):
         # pipelock is just a representative engine name here — grading no
         # longer varies by engine, only by what the mock actually did.
         results = self.run_suite("pipelock", "strict", full=True)
-        # Strict mock rejects mismatched SNI and raw bytes => pass.
+        # A close alone cannot attribute policy without an origin trap.
         self.assertEqual(
             results["connect-sni-mismatch"].outcome,
-            "pass",
+            "error",
             results["connect-sni-mismatch"].detail,
         )
         self.assertEqual(
             results["connect-raw-tunnel"].outcome,
-            "pass",
+            "error",
             results["connect-raw-tunnel"].detail,
         )
         # Fixture-dependent tests skip: *.nip.io is not in the mock allowlist.

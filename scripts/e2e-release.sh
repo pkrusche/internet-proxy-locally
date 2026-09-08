@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Live release gate for checks unavailable in a runtime-free sandbox.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+backend="${1:-docker}"
+case "$backend" in docker|container) ;; *) echo "usage: $0 [docker|container]" >&2; exit 2;; esac
+command -v "$backend" >/dev/null || { echo "$backend is not installed" >&2; exit 1; }
+
+sentinel="UNTRACKED-RELEASE-SENTINEL"
+trap 'rm -f "$sentinel"' EXIT
+printf 'must not ship\n' > "$sentinel"
+rm -rf dist
+uv build --out-dir dist
+wheel=(dist/*.whl); sdist=(dist/*.tar.gz)
+[ "${#wheel[@]}" -eq 1 ] && [ "${#sdist[@]}" -eq 1 ]
+scripts/check-artifacts.py "${wheel[0]}" "${sdist[0]}"
+! tar -tzf "${sdist[0]}" | grep -F "$sentinel"
+! unzip -l "${wheel[0]}" | grep -F "$sentinel"
+
+tmp="$(mktemp -d)"; trap 'rm -f "$sentinel"; rm -rf "$tmp"' EXIT
+python3 -m venv "$tmp/venv"
+"$tmp/venv/bin/pip" install "${wheel[0]}"
+cd "$tmp"
+"$tmp/venv/bin/ipl" init
+"$tmp/venv/bin/ipl" --version
+"$tmp/venv/bin/ipl-lab" --help >/dev/null
+"$tmp/venv/bin/ipl-check" --help >/dev/null
+"$tmp/venv/bin/ipl-verify" --help >/dev/null
+cd -
+
+for engine in pipelock smokescreen squid; do
+  uv run ipl-verify backend --backend "$backend" --engine "$engine" --port 18089
+done
+uv run ipl-verify loopback --backend "$backend" --port 18089
+uv run ipl-verify resilience --backend "$backend" --port 18089
+echo "Run TLS fixture/rotation cases per docs/tls-interception.md; both modes are required."

@@ -145,7 +145,7 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
             "reused the address it had already validated rather than following "
             "the new answer"
         )
-    return RawOutcome("pass", detail, attempts=attempts)
+    return RawOutcome("error" if not rebound else "pass", detail, attempts=attempts)
 
 
 CHECK = Check(

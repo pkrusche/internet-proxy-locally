@@ -68,7 +68,10 @@ case "$cmd" in
   inspect)
     f="$FAKE_STATE/container-$1"
     if [ -f "$f" ]; then
-      printf '[{"State": {"Status": "%s"}, "NetworkSettings": {"IPAddress": "172.17.0.9"}}]\n' "$(cat "$f")"
+      meta="$FAKE_STATE/meta-$1"
+      if [ -f "$meta" ]; then cat "$meta"; else
+        printf '[{"State": {"Status": "%s"}, "NetworkSettings": {"IPAddress": "172.17.0.9"}}]\n' "$(cat "$f")"
+      fi
     else
       exit 1
     fi
@@ -98,16 +101,27 @@ case "$cmd" in
       p="$FAKE_STATE/pid-$a"
       if [ -f "$p" ]; then kill "$(cat "$p")" 2>/dev/null; rm -f "$p"; fi
       rm -f "$FAKE_STATE/container-$a"
+      rm -f "$FAKE_STATE/meta-$a"
     done
     ;;
   run)
-    name=""; prev=""; published=""
+    name=""; prev=""; published=""; label_managed=""; label_workspace=""
     for a in "$@"; do
       if [ "$prev" = "--name" ]; then name="$a"; fi
       if [ "$a" = "--publish" ]; then published=1; fi
+      if [ "$prev" = "--publish" ]; then publication="$a"; fi
+      if [ "$prev" = "--label" ]; then
+        case "$a" in io.internet-proxy-locally.managed=*) label_managed="${a#*=}";; io.internet-proxy-locally.workspace=*) label_workspace="${a#*=}";; esac
+      fi
       prev="$a"
     done
     echo running > "$FAKE_STATE/container-$name"
+    if [ -n "$published" ]; then
+      host="${publication%%:*}"; rest="${publication#*:}"; hostport="${rest%%:*}"; containerport="${rest##*:}"
+      printf '[{"State":{"Status":"running"},"Config":{"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s"}},"NetworkSettings":{"IPAddress":"172.17.0.9"},"HostConfig":{"PortBindings":{"%s/tcp":[{"HostIp":"%s","HostPort":"%s"}]}}}]\n' "$label_managed" "$label_workspace" "$containerport" "$host" "$hostport" > "$FAKE_STATE/meta-$name"
+    else
+      printf '[{"State":{"Status":"running"},"Config":{"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s"}},"NetworkSettings":{"IPAddress":"172.17.0.9"}}]\n' "$label_managed" "$label_workspace" > "$FAKE_STATE/meta-$name"
+    fi
     # Only the engine publishes a port; the DNS fixture must not also try
     # to bind the test endpoint.
     if [ -n "${FAKE_PROXY_SPAWN:-}" ] && [ -n "$published" ]; then

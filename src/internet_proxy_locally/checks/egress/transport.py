@@ -9,11 +9,13 @@ from __future__ import annotations
 import re
 import socket
 import ssl
+import time
 from dataclasses import dataclass
 
 from .tls import annotate_tls_bytes
 
 TIMEOUT = 8.0
+MAX_HEADER_BYTES = 64 * 1024
 
 
 @dataclass
@@ -136,12 +138,40 @@ class ProxyClient:
 
     def _recv_headers(self, sock: socket.socket) -> bytes:
         data = b""
+        deadline = time.monotonic() + self.timeout
         while b"\r\n\r\n" not in data:
-            chunk = sock.recv(4096)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("timed out reading proxy response headers")
+            sock.settimeout(remaining)
+            chunk = sock.recv(min(4096, MAX_HEADER_BYTES + 1 - len(data)))
             if not chunk:
                 break
             data += chunk
+            if len(data) > MAX_HEADER_BYTES:
+                raise OSError(f"proxy response headers exceed {MAX_HEADER_BYTES} bytes")
         return data
+
+    def verified_https_get(
+        self, target: str, path: str = "/", *, ca_file: str | None = None
+    ) -> HttpResponse:
+        """CONNECT, verify peer identity/trust, then perform an HTTPS GET."""
+        sock, _status, first = self.connect(target)
+        if sock is None:
+            return HttpResponse(None, {}, "", f"CONNECT denied: {first}")
+        host = target.rsplit(":", 1)[0].strip("[]")
+        ctx = ssl.create_default_context(cafile=ca_file)
+        try:
+            with ctx.wrap_socket(sock, server_hostname=host) as tls:
+                tls.sendall(
+                    f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode()
+                )
+                data = self._recv_some(tls)
+        except (ssl.SSLError, OSError) as exc:
+            return HttpResponse(None, {}, "", f"verified TLS/GET failed: {exc}")
+        status = self._status_of(data)
+        first_line = data.split(b"\r\n", 1)[0].decode("latin-1", "replace")
+        return HttpResponse(status, _parse_headers(data), _parse_body(data), first_line)
 
     def _recv_some(self, sock: socket.socket, limit: int = 8192) -> bytes:
         data = b""

@@ -11,11 +11,11 @@ from tests.egress import support
 
 @support.requires_openssl
 class ConnectRawTunnelTest(unittest.TestCase):
-    def test_denied_when_the_engine_enforces_inside_the_tunnel(self) -> None:
+    def test_empty_close_is_inconclusive_without_origin_observation(self) -> None:
         _, port = support.start_mock(self, mode="strict")
         client = transport.ProxyClient("127.0.0.1", port)
         outcome, detail = connect_raw_tunnel.test_raw_tunnel(client)
-        self.assertEqual(outcome, "denied", detail)
+        self.assertEqual(outcome, "error", detail)
 
     def test_allowed_when_the_engine_forwards_the_bytes(self) -> None:
         _, port = support.start_mock(self, mode="lenient")

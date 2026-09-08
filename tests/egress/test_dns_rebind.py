@@ -78,14 +78,13 @@ class DnsRebindTest(unittest.TestCase):
         )
         self.assertNotIn("did not exercise", raw.detail)
 
-    def test_pass_says_so_when_no_rebind_was_offered(self) -> None:
+    def test_unexercised_rebind_is_inconclusive(self) -> None:
         """One lookup per name means the engine pinned the first answer and
-        was never handed the private one. Still a pass — nothing reached
-        the trap — but the detail must not imply a rebind was survived."""
+        was never handed the private one, so no verdict is possible."""
         client = self.client(allow=True)
         fixture_log.FIXTURE_LOG_SOURCE = lambda: self.transcript(1)
         raw = dns_rebind.test_dns_rebind(client)
-        self.assertEqual(raw.outcome, "pass", raw.detail)
+        self.assertEqual(raw.outcome, "error", raw.detail)
         self.assertIn("did not exercise", raw.detail)
 
     def test_skips_when_the_fixture_saw_nothing(self) -> None:

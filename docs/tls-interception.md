@@ -19,10 +19,10 @@ under a policy that claims otherwise.
   interception off, [security.md](security.md) states plainly that this
   service cannot see encrypted request bodies — an allowed destination can
   still receive anything the client sends it. With interception on, the
-  engine decrypts, evaluates the real HTTP request, and can log or refuse
-  on the actual method/path/headers of that request rather than trusting
-  the destination alone. That is the entire reason to turn it on: closing
-  the "exfiltration to an allowed HTTPS destination" gap.
+  engine decrypts and can evaluate the real HTTP request. The shipped policy
+  defines no upload/content restriction, so an allowed service can still
+  receive data, including through attacker-controlled accounts on shared
+  hosting. Interception enables content policy; it is not one by itself.
 * **The host now custodies a private key.** `ipl ca init` generates a
   signing CA and writes its private key to `state/ca/ca-key.pem`,
   `0600`, outside the checkout's reviewed files (`.gitignore`d — see
@@ -70,8 +70,9 @@ If you suspect the private key has been read by anything untrusted
 (a compromised sandbox, a leaked backup of `state/`, a workstation you no
 longer trust):
 
-1. `ipl ca rotate` — generates a new CA and overwrites the old cert and
-   key in place. The old private key is gone; anything that only had the
+1. Stop the engine, then run `ipl ca rotate`. The validated pair is replaced
+   transactionally. A running process or old connection may retain old key
+   material, so neither may be relied on after rotation. Anything that only had the
    old *public* cert cannot forge anything with it, but anything that had
    the old *private* key could keep doing so until every consumer moves to
    the new cert.
@@ -80,7 +81,9 @@ longer trust):
    those sandboxes will fail every intercepted HTTPS connection (the
    engine now presents leaf certs signed by a CA they no longer trust) —
    which is a safe failure mode, not a silent one.
-3. If the compromise was of a running sandbox rather than the host, also
+3. Restart the engine, verify a new connection chains to the exported new CA,
+   and then remove old trust. A stale-trust client must fail.
+4. If the compromise was of a running sandbox rather than the host, also
    treat that sandbox as compromised independently of anything here:
    rotating the CA closes the "impersonate future connections" exposure,
    not whatever got the key out in the first place.
@@ -142,11 +145,9 @@ and `ssl_bump bump all` must be present together. An orphaned `peek` with
 no `bump` is exactly the historical crash shape, called out by name in the
 validator's own failure message.
 
-As a side effect, bumping gives Squid real SNI ↔ CONNECT-target mismatch
-detection — a capability [security.md](security.md) previously listed as
-Pipelock-only. With interception on, `ipl-lab check`'s
-`connect-sni-mismatch` check (in the `full` group) now catches on Squid
-what it previously could not.
+Squid's SNI ↔ CONNECT-target behavior must be established by the live suite,
+not inferred from `ssl_bump`. The `connect-sni-mismatch` row records the
+observed behavior in each mode.
 
 The image's cert database (`/var/lib/ssl_db`, via
 `security_file_certgen -c`) is initialized unconditionally at build time —
@@ -165,7 +166,7 @@ claims otherwise.
 
 ## Verifying interception end to end
 
-Not scripted by this repo — a manual check once a CA and an engine are up:
+Run `scripts/e2e-release.sh` on each supported runtime. A focused manual check is:
 
 ```bash
 ipl ca export --out ca.pem
