@@ -92,9 +92,9 @@ class ServiceSpec:
         """Read-only bind mounts for the CA cert+key, or none if unsupported.
 
         Separate from `mounts()` deliberately: that method resolves
-        workspace-relative, checked-in paths, and CA material is neither —
-        it is generated, lives under `paths.ca_dir()`, outside
-        `workspace_root()`.
+        checked-in, reviewed-in-a-diff paths named by this spec, and CA
+        material is neither — it is generated, gitignored, and named by
+        `ca.py` under `paths.ca_dir()`.
         """
         if not self.supports_tls_interception:
             return []
