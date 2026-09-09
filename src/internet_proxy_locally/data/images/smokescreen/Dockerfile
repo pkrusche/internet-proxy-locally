@@ -7,12 +7,14 @@
 # literal in this file — both base images and the 40-character commit SHA —
 # and the unit suite asserts they stay pinned and stay in step with
 # `SMOKESCREEN_IMAGE` in images.py, whose tag is the first 12 characters of
-# that SHA.
+# that SHA plus a -buildN suffix for changes to the image itself.
 #
 # Upgrading: resolve the new commit on a networked machine
 # (`git ls-remote https://github.com/stripe/smokescreen HEAD`), put the full
 # SHA in the checkout below, bump `SMOKESCREEN_IMAGE` to its first 12
-# characters, commit, then `ipl --engine smokescreen setup`.
+# characters, commit, then `ipl --engine smokescreen setup`. Bump the
+# -buildN suffix when changing this Dockerfile without changing the SHA,
+# so setup does not reuse an older image with different launch defaults.
 #
 # Both stages are multi-arch (amd64/arm64).
 

@@ -689,6 +689,65 @@ class RunPyUnitTest(unittest.TestCase):
         self.assertTrue(healthy)
         self.assertFalse(retryable)
 
+    def test_probe_recognizes_smokescreen_policy_denial(self) -> None:
+        for host in ("ipl-health-probe.invalid", "ipl-health-probe.invalid:80"):
+            with self.subTest(host=host):
+                reason = (
+                    f"Egress proxying is denied to host '{host}': "
+                    "default rule policy used."
+                )
+
+                def handler(conn: socket.socket, reason: str = reason) -> None:
+                    import time
+
+                    conn.recv(4096)
+                    conn.sendall(b"HTTP/1.1 407 Proxy Authentication Required\r\n")
+                    # Headers can arrive in a later TCP read than the status.
+                    time.sleep(0.02)
+                    conn.sendall(
+                        f"x-smokescreen-error: {reason}\r\n"
+                        "Content-Length: 0\r\n\r\n".encode()
+                    )
+
+                port = self._serve_once(handler)
+                healthy, detail, retryable = probe_proxy("127.0.0.1", port)
+                self.assertTrue(healthy, detail)
+                self.assertFalse(retryable)
+
+    def test_probe_rejects_non_policy_errors(self) -> None:
+        policy_reason = (
+            "Egress proxying is denied to host 'ipl-health-probe.invalid': "
+            "default rule policy used."
+        )
+        for status, reason in (
+            (407, ""),
+            (407, "Proxy authentication required"),
+            (
+                407,
+                "Egress proxying is denied to host 'ipl-health-probe.invalid': missing role.",
+            ),
+            (407, policy_reason.replace("ipl-health-probe.invalid", "other.invalid")),
+            (502, "Failed to resolve remote hostname: no such host"),
+            (502, policy_reason),
+        ):
+            with self.subTest(status=status, reason=reason):
+
+                def handler(
+                    conn: socket.socket, status: int = status, reason: str = reason
+                ) -> None:
+                    conn.recv(4096)
+                    conn.sendall(
+                        f"HTTP/1.1 {status} Error\r\n"
+                        f"X-Smokescreen-Error: {reason}\r\n"
+                        "Content-Length: 0\r\n\r\n".encode()
+                    )
+
+                port = self._serve_once(handler)
+                healthy, detail, retryable = probe_proxy("127.0.0.1", port)
+                self.assertFalse(healthy)
+                self.assertFalse(retryable)
+                self.assertIn("non-policy error", detail)
+
     def test_every_declared_entry_point_resolves(self) -> None:
         """The docs say `uv run ipl ...`, so every name they say has to exist.
 
@@ -999,10 +1058,28 @@ class RunPyUnitTest(unittest.TestCase):
         sha = re.search(r"checkout --detach ([0-9a-f]{40})", smokescreen)
         self.assertIsNotNone(sha, "no pinned commit in the smokescreen Dockerfile")
         assert sha is not None
-        self.assertEqual(IMAGES["smokescreen"].rpartition(":")[2], sha.group(1)[:12])
+        self.assertEqual(
+            IMAGES["smokescreen"].rpartition(":")[2], sha.group(1)[:12] + "-build1"
+        )
 
         pipelock = dockerfile("pipelock").read_text()
         self.assertIn(f"# pipelock {IMAGES['pipelock'].rpartition(':')[2]}", pipelock)
+
+    def test_smokescreen_setup_rebuilds_when_only_pre_cmd_image_exists(self) -> None:
+        from unittest.mock import Mock
+
+        from internet_proxy_locally.images import prepare_image
+
+        backend = Mock(spec=Backend)
+        backend.image_present.side_effect = lambda tag: (
+            tag == "internet-proxy-locally/smokescreen:131fba29ce1e"
+        )
+        prepare_image(backend, "smokescreen")
+        backend.build.assert_called_once_with(
+            tag=IMAGES["smokescreen"],
+            dockerfile=dockerfile("smokescreen"),
+            context=dockerfile("smokescreen").parent,
+        )
 
     def test_no_dockerfile_disables_private_range_blocking(self) -> None:
         """The launch arguments moved from the service specs into CMD, and

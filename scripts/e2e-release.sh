@@ -19,10 +19,9 @@ scripts/check-artifacts.py "${wheel[0]}" "${sdist[0]}"
 ! unzip -l "${wheel[0]}" | grep -F "$sentinel"
 
 tmp="$(mktemp -d)"; trap 'rm -f "$sentinel"; rm -rf "$tmp"' EXIT
-python3 -m venv "$tmp/venv"
-"$tmp/venv/bin/pip" install "${wheel[0]}"
+uv venv --python '>=3.11' "$tmp/venv"
+uv pip install --python "$tmp/venv/bin/python" "${wheel[0]}"
 cd "$tmp"
-"$tmp/venv/bin/ipl" init
 "$tmp/venv/bin/ipl" --version
 "$tmp/venv/bin/ipl-lab" --help >/dev/null
 "$tmp/venv/bin/ipl-check" --help >/dev/null

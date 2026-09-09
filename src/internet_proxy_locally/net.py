@@ -8,6 +8,7 @@ import re
 import socket
 import time
 from collections.abc import Callable
+from http.client import HTTPException, HTTPResponse
 
 from internet_proxy_locally.constants import DEFAULT_ENDPOINT
 
@@ -49,9 +50,9 @@ def port_listening(host: str, port: int, timeout: float = 1.0) -> bool:
 def probe_proxy(host: str, port: int, timeout: float = 4.0) -> tuple[bool, str, bool]:
     """Ask the proxy for a guaranteed-non-allowlisted host.
 
-    Healthy means: the proxy answers with an HTTP error (policy denial or
-    resolution failure). A 2xx/3xx would mean the proxy is not enforcing at
-    all, which we refuse to call healthy (fail closed).
+    Healthy means a 403 policy denial, or Smokescreen's 407 with an explicit
+    default-policy denial for the probe. Authentication and resolution
+    failures do not prove that the allowlist is enforced.
 
     Returns (healthy, detail, retryable). `retryable` marks a failure that
     only says the engine is not serving *yet* — no answer, or an answer that
@@ -70,16 +71,25 @@ def probe_proxy(host: str, port: int, timeout: float = 4.0) -> tuple[bool, str, 
         with socket.create_connection((host, port), timeout=timeout) as sock:
             sock.settimeout(timeout)
             sock.sendall(request.encode())
-            data = sock.recv(4096)
+            with HTTPResponse(sock) as response:
+                response.begin()
+                status = response.status
+                line = (
+                    f"HTTP/{response.version // 10}.{response.version % 10} "
+                    f"{status} {response.reason}"
+                )
+                smokescreen_denial = re.fullmatch(
+                    r"Egress proxying is denied to host "
+                    r"'ipl-health-probe\.invalid(?::80)?': default rule policy used\.",
+                    response.getheader("X-Smokescreen-Error", ""),
+                )
+    except HTTPException as exc:
+        return False, f"non-HTTP response: {exc}", True
     except OSError as exc:
         return False, f"no response from proxy: {exc}", True
-    line = data.split(b"\r\n", 1)[0].decode("latin-1", "replace") if data else ""
-    match = re.match(r"HTTP/\d\.\d\s+(\d{3})", line)
-    if not match:
-        return False, f"non-HTTP response: {line!r}", True
-    status = int(match.group(1))
-    # Only 403 proves policy denial; 5xx may be a DNS or origin failure.
-    if status == 403:
+    # Smokescreen uses 407 for ACL denials; the status alone could also be
+    # an authentication challenge. Require its explicit policy reason.
+    if status == 403 or (status == 407 and smokescreen_denial):
         return True, f"policy denies unknown destinations ({line.strip()})", False
     if status >= 400:
         return (
