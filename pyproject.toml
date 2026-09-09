@@ -6,13 +6,7 @@
 # path, and nothing is imported lazily to preserve one.
 #
 #   jinja2       renders data/templates/*.j2 into config/  (`render_policies()`)
-#   pyyaml       reads the result back to validate it (`_load_yaml()`)
 #   cryptography generates and reads the opt-in TLS-interception CA (`ca.py`)
-#
-# PyYAML is not a convenience. The regexes it replaced read the *first*
-# match of a key and stopped, so a config whose effective value was unsafe
-# — set once safely, then overridden later in the file — passed validation
-# while every real parser, the engine's included, disagreed.
 
 [project]
 name = "internet-proxy-locally"
@@ -23,7 +17,6 @@ license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
     "jinja2>=3.1",
-    "pyyaml>=6.0.3",
     "cryptography>=42",
 ]
 classifiers = [

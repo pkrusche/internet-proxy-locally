@@ -273,9 +273,7 @@ class LabConfig:
     """The test policy: the real allowlist plus the fixture-only additions.
 
     `allow` is config.toml's, unmodified. The test policy is a strict
-    superset of the operational one by construction — `allow + allow_test`
-    — and `check_rendered_policies()` re-asserts that on the rendered text
-    rather than trusting the construction.
+    superset of the operational one by construction: `allow + allow_test`.
     """
 
     allow: tuple[str, ...]

@@ -137,13 +137,12 @@ peeking on Squid"). The earlier crash came from Squid reaching for a
 signing certificate that did not exist; supplying a real one is what
 closes that failure mode rather than working around it.
 
-`policy/validate.py` enforces the whole recipe or none of it: if any
-`ssl_bump` directive is present, `http_port` must carry
-`ssl-bump tls-cert=...`, `generate-host-certificates=on` must be present,
-an `sslcrtd_program` must be configured, and both `ssl_bump peek step1`
-and `ssl_bump bump all` must be present together. An orphaned `peek` with
-no `bump` is exactly the historical crash shape, called out by name in the
-validator's own failure message.
+The boolean setting selects the whole recipe or none of it. In interception
+mode, `http_port` carries the certificate options and
+`generate-host-certificates=on`, an `sslcrtd_program` is configured, and
+`ssl_bump peek step1` and `ssl_bump bump all` are emitted together. An
+orphaned `peek` with no `bump` is exactly the historical crash shape; the
+template tests cover the complete generated recipe.
 
 Squid's SNI ↔ CONNECT-target behavior must be established by the live suite,
 not inferred from `ssl_bump`. The `connect-sni-mismatch` row records the

@@ -189,7 +189,7 @@ live output, image IDs, checksums, scanner dates, and mode-specific results.
 
 ### R14 — Define and make the installation path work
 
-**Confirmed with the built wheel installed outside the checkout:** a directory containing only valid `config.toml` fails in `write_validated()` with `FileNotFoundError` because `config/` does not exist. After creating it, rendering works, but Smokescreen still fails because `config/smokescreen.conf.yaml` is a root-only file absent from package resources. There is no initialization command or complete installed-package bootstrap recipe. README's first commands also use bare `ipl` immediately after `uv sync`, which does not by itself activate the environment.
+**Confirmed with the built wheel installed outside the checkout:** a directory containing only valid `config.toml` fails in `write_rendered()` with `FileNotFoundError` because `config/` does not exist. After creating it, rendering works, but Smokescreen still fails because `config/smokescreen.conf.yaml` is a root-only file absent from package resources. There is no initialization command or complete installed-package bootstrap recipe. README's first commands also use bare `ipl` immediately after `uv sync`, which does not by itself activate the environment.
 
 - [x] Decide whether v0.1 supports a repository checkout only or a standalone installed CLI. State that decision early in README and package metadata.
 - [x] For standalone support, add an idempotent initialization path with reviewed starter policy, required output directories, and the Smokescreen daemon config as packaged data/template. Keep user configuration in the workspace and avoid silently overwriting it.

@@ -1,8 +1,8 @@
 """Tests for `ca.py` — the TLS-interception CA lifecycle.
 
-Pure filesystem, no container/subprocess — the same isolation
-`policy/validate.py`'s tests get. `IPL_ROOT` is pointed at a temporary
-directory so `paths.ca_dir()` never touches the real checkout's `state/`.
+Pure filesystem, no container/subprocess. `IPL_ROOT` is pointed at a
+temporary directory so `paths.ca_dir()` never touches the real checkout's
+`state/`.
 """
 
 from __future__ import annotations

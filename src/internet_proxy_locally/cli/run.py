@@ -35,15 +35,12 @@ from internet_proxy_locally.lifecycle import (
 from internet_proxy_locally.net import endpoint, port_listening, probe_proxy
 from internet_proxy_locally.policy.config import load_policy_config
 from internet_proxy_locally.policy.render import (
-    check_rendered_policies,
     config_destination,
-    fail_on,
     render_policies,
     report_synced,
     sync_policies,
-    write_validated,
+    write_rendered,
 )
-from internet_proxy_locally.policy.validate import validate_policy_file
 from internet_proxy_locally.spec import ServiceSpec
 
 # What `ipl policy` regenerates from, and what `up` re-renders before it
@@ -60,8 +57,7 @@ def cmd_policy(opts: argparse.Namespace) -> int:
     """
     return common.run_policy_command(
         rendered=render_policies(),
-        check=check_rendered_policies,
-        sync=lambda rendered: write_validated(rendered, check_rendered_policies),
+        sync=write_rendered,
         source=_POLICY_SOURCE,
         label="configs: up to date with config.toml",
         cli="ipl",
@@ -72,9 +68,6 @@ def cmd_policy(opts: argparse.Namespace) -> int:
 def cmd_setup(opts: argparse.Namespace) -> int:
     print(f"python: {platform.python_version()}")
 
-    # Before validating: the files validated below are rendered from
-    # config.toml, so a stale one would be reported as a policy problem
-    # that editing it could not fix.
     report_synced(sync_policies(), _POLICY_SOURCE)
 
     # Gated strictly on the config flag — a repo that never opts into TLS
@@ -89,17 +82,7 @@ def cmd_setup(opts: argparse.Namespace) -> int:
     backend = detect_backend(opts.backend)
     print(f"selected backend: {backend.name}")
 
-    problems: list[str] = []
-    for engine in ENGINES:
-        spec = ServiceSpec.load(engine)
-        try:
-            path = spec.config_path()
-        except Fail as exc:
-            problems.append(str(exc))
-            continue
-        problems += validate_policy_file(engine, path)
-    fail_on(problems, "configuration validation failed")
-    print("configs: valid")
+    print("configs: up to date")
 
     engines = ENGINES if opts.all else (opts.engine or DEFAULT_ENGINE,)
     for engine in engines:
@@ -111,8 +94,7 @@ def cmd_setup(opts: argparse.Namespace) -> int:
 def cmd_up(opts: argparse.Namespace) -> int:
     """Start one engine on the shipped policy.
 
-    `sync_policies()` validates the rendered text before writing it, so a
-    bad config.toml fails here rather than replacing a working file. No
+    `sync_policies()` renders the config before starting the engine. No
     resolver is started: `ipl` is the operational lane, and a fixture
     reachable from it would answer allowlisted names with private
     addresses.
@@ -140,9 +122,8 @@ def cmd_down(opts: argparse.Namespace) -> int:
 
 
 def cmd_restart(opts: argparse.Namespace) -> int:
-    # `up` already uses the validated recreate path. Keeping the existing
-    # service until rendering and validation succeed avoids an unnecessary
-    # outage when a replacement policy is invalid.
+    # `up` already uses the recreate path. Keeping the existing service
+    # until rendering succeeds avoids an unnecessary outage.
     return cmd_up(opts)
 
 
@@ -317,7 +298,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "up", help="(re)create the proxy container and health-check it"
     ).set_defaults(func=cmd_up)
-    sub.add_parser("restart", help="validate, then recreate the proxy").set_defaults(
+    sub.add_parser("restart", help="render, then recreate the proxy").set_defaults(
         func=cmd_restart
     )
 

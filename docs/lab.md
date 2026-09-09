@@ -36,10 +36,9 @@ environment `ipl policy` uses, into `lab/config/`:
 `ipl-lab policy --check` reports drift as a diff without writing.
 
 The test policy is a **strict superset** of the operational one by
-construction, and `check_rendered_test_policies()` re-asserts that on the
-rendered text rather than trusting the construction: a `.test` run that
-measured a *narrower* policy than the one that ships would produce verdicts
-that do not transfer.
+construction. The rendering tests assert that every operational and test
+entry reaches every engine config: a `.test` run that measured a *narrower*
+policy than the one that ships would produce verdicts that do not transfer.
 
 Why the extra domains exist: `*.nip.io` and `*.sslip.io` resolve to
 caller-chosen addresses, and the fixture zones resolve to whatever the

@@ -7,11 +7,10 @@ templates in `data/templates/`, and carry a "GENERATED FILE — do not edit"
 banner saying so.
 
 `setup`, `up` and `restart` regenerate them first, so the policy a
-container runs is always the one `config.toml` states. The generated text
-is put through `validate_policy_file()` *before* it is written, so a bad
-`config.toml` fails without replacing a working config. `ipl policy
---check` reports drift as a diff and exits 1 without writing — the check to
-run in review.
+container runs is always the one `config.toml` states. `config.toml` is
+parsed and validated before rendering, so a bad source fails without
+replacing a working config. `ipl policy --check` reports drift as a diff
+and exits 1 without writing — the check to run in review.
 
 The adversarial test policy is a separate file in a separate lane
 (`data/lab/fixtures.toml`, [lab.md](lab.md)); `ipl` never reads it.
@@ -88,8 +87,7 @@ TLS interception for Pipelock and Squid, off by default — see
 [tls-interception.md](tls-interception.md) before turning it on. It is
 still not a parameter in the sense the allowlist is: the generator picks
 between exactly two fixed, literal recipes per engine rather than filling
-in a value, and `policy/validate.py` accepts either whole recipe and
-rejects every partial one.
+in a value. The template tests cover both recipes.
 
 One file is neither generated nor templated: `config/smokescreen.conf.yaml`
 holds `allow_missing_role: true`, the Smokescreen *daemon* setting (as

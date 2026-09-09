@@ -1,8 +1,7 @@
 """The TLS-interception signing CA: generate, check, export.
 
-Filesystem-only, no `Backend`/container dependency — matching how
-`policy/validate.py` and `policy/config.py` stay pure and therefore
-trivially unit-testable. Nothing here touches `project-sandbox`: getting
+Filesystem-only, no `Backend`/container dependency, so it stays trivially
+unit-testable. Nothing here touches `project-sandbox`: getting
 the cert into a sandbox's trust store is a manual step documented in
 docs/tls-interception.md, the same way exporting `HTTP_PROXY` already is.
 """

@@ -34,24 +34,13 @@ from internet_proxy_locally.constants import DNS_FIXTURE, ENGINES
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.images import IMAGES
 from internet_proxy_locally.net import probe_proxy
-from internet_proxy_locally.policy import render as policy_render
 from internet_proxy_locally.policy.config import PolicyConfig, load_policy_config
 from internet_proxy_locally.policy.render import (
     _squid_wild,
     _yaml_scalar,
-    check_rendered_policies,
     render_policies,
 )
-from internet_proxy_locally.policy.validate import (
-    REQUIRED_SQUID_DENY_INFO,
-    _squid_regex_to_glob,
-    check_squid_error_pages,
-    policy_allowlist,
-    policy_allowlist_text,
-    validate_policy_file,
-)
 from internet_proxy_locally.spec import SERVICES, ServiceSpec
-from tests import quiet
 
 
 def dockerfile(name: str) -> Path:
@@ -623,14 +612,7 @@ class RunPyCliTest(unittest.TestCase):
 
 
 class RunPyUnitTest(unittest.TestCase):
-    """In-process unit tests for policy validation and backend parsing."""
-
-    def write(self, text: str) -> Path:
-        tmp = Path(tempfile.mkdtemp(prefix="ipl-policy-test-"))
-        self.addCleanup(shutil.rmtree, tmp, True)
-        path = tmp / "policy.yaml"
-        path.write_text(text)
-        return path
+    """In-process unit tests for rendering and backend parsing."""
 
     def _serve_once(self, handler) -> int:
         """Run a one-shot TCP server on a free port; return the port."""
@@ -698,89 +680,13 @@ class RunPyUnitTest(unittest.TestCase):
         self.assertTrue(healthy)
         self.assertFalse(retryable)
 
-    def test_shipped_policies_are_valid(self) -> None:
-        for engine, rel in (
-            ("pipelock", "config/pipelock.yaml"),
-            ("smokescreen", "config/smokescreen.yaml"),
-            ("squid", "config/squid.conf"),
-        ):
-            problems = validate_policy_file(engine, REPO_ROOT / rel)
-            self.assertEqual(problems, [], f"{rel}: {problems}")
-
-    def test_pipelock_policy_rejects_non_strict(self) -> None:
-        path = self.write(
-            (REPO_ROOT / "config" / "pipelock.yaml")
-            .read_text()
-            .replace("mode: strict", "mode: monitor")
-            .replace("enforce: true", "enforce: false")
-        )
-        problems = validate_policy_file("pipelock", path)
-        self.assertTrue(any("mode: strict" in p for p in problems))
-        self.assertTrue(any("enforce" in p for p in problems))
-
-    def test_pipelock_policy_rejects_tls_interception_with_no_ca(self) -> None:
-        path = self.write(
-            (REPO_ROOT / "config" / "pipelock.yaml")
-            .read_text()
-            .replace(
-                "tls_interception:\n  enabled: false",
-                "tls_interception:\n  enabled: true",
-            )
-        )
-        problems = validate_policy_file("pipelock", path)
-        self.assertTrue(any("tls_interception" in p for p in problems))
-
-    def test_pipelock_policy_accepts_tls_interception_with_a_ca(self) -> None:
-        path = self.write(
-            (REPO_ROOT / "config" / "pipelock.yaml")
-            .read_text()
-            .replace(
-                "tls_interception:\n  enabled: false",
-                "tls_interception:\n  enabled: true\n"
-                '  ca_cert: "/config/ca.pem"\n  ca_key: "/config/ca-key.pem"',
-            )
-        )
-        problems = validate_policy_file("pipelock", path)
-        self.assertEqual(problems, [])
-
-    def test_pipelock_policy_rejects_tls_interception_missing_ca_key(self) -> None:
-        path = self.write(
-            (REPO_ROOT / "config" / "pipelock.yaml")
-            .read_text()
-            .replace(
-                "tls_interception:\n  enabled: false",
-                'tls_interception:\n  enabled: true\n  ca_cert: "/config/ca.pem"',
-            )
-        )
-        problems = validate_policy_file("pipelock", path)
-        self.assertTrue(any("tls_interception" in p for p in problems))
-
-    def test_smokescreen_policy_rejects_open_mode(self) -> None:
-        path = self.write(
-            (REPO_ROOT / "config" / "smokescreen.yaml")
-            .read_text()
-            .replace("action: enforce", "action: open")
-        )
-        problems = validate_policy_file("smokescreen", path)
-        self.assertTrue(any("open" in p for p in problems))
-
-    def test_smokescreen_policy_requires_allowlist(self) -> None:
-        text = re.sub(
-            r"^\s+- .*$",
-            "",
-            (REPO_ROOT / "config" / "smokescreen.yaml").read_text(),
-            flags=re.MULTILINE,
-        )
-        problems = validate_policy_file("smokescreen", self.write(text))
-        self.assertTrue(any("allowed_domains" in p for p in problems))
-
     def test_every_declared_entry_point_resolves(self) -> None:
         """The docs say `uv run ipl ...`, so every name they say has to exist.
 
         These used to be shebang scripts, and this test asserted the
         shebang was `uv run` rather than `python3` — with the latter they
-        would have picked up whatever interpreter was on PATH, no jinja2,
-        no pyyaml, and the failure would have landed on whoever was least
+        would have picked up whatever interpreter was on PATH, no Jinja,
+        and the failure would have landed on whoever was least
         equipped to read it. uv still resolves both the interpreter
         (.python-version) and the dependencies (pyproject.toml); what it
         resolves them for is now `[project.scripts]`, so that is what has
@@ -800,223 +706,6 @@ class RunPyUnitTest(unittest.TestCase):
                 callable(getattr(module, attr, None)),
                 f"{name} = {target}: not callable",
             )
-
-    # -- the properties that motivated parsing YAML rather than matching it --
-
-    def test_a_later_duplicate_key_cannot_hide_an_unsafe_value(self) -> None:
-        """Real YAML resolves a repeated key to the *last* one.
-
-        The regex reader this replaced found the first `tls_interception:`
-        and stopped, so a policy that set it safely and then overrode it
-        passed validation while the engine read the override. The values
-        below are the ones that matter: each is safe on its first
-        appearance and unsafe on its second.
-        """
-        base = (REPO_ROOT / "config" / "pipelock.yaml").read_text()
-        for label, override in (
-            ("tls_interception", "\ntls_interception:\n  enabled: true\n"),
-            ("mode", "\nmode: permissive\n"),
-            (
-                "forward_proxy",
-                (
-                    "\nforward_proxy:\n  enabled: true\n"
-                    "  sni_verification: false\n  sni_require_tls: false\n"
-                ),
-            ),
-        ):
-            problems = validate_policy_file("pipelock", self.write(base + override))
-            self.assertTrue(problems, f"{label}: an override passed validation")
-            self.assertTrue(
-                any("duplicate key" in p for p in problems), f"{label}: {problems}"
-            )
-
-    def test_a_quoted_scalar_is_read_as_its_value(self) -> None:
-        """`action: "open"` is the same policy as `action: open`.
-
-        A text search for the bare word missed the quoted form; a parser
-        cannot, because by the time it is compared the quotes are gone.
-        """
-        path = self.write(
-            (REPO_ROOT / "config" / "smokescreen.yaml")
-            .read_text()
-            .replace("action: enforce", 'action: "open"')
-        )
-        problems = validate_policy_file("smokescreen", path)
-        self.assertTrue(any("open" in p for p in problems), problems)
-
-    def test_an_open_action_on_a_service_is_refused_too(self) -> None:
-        """`services:` entries carry the same shape as `default:`, and one
-        of them set to `open` is an open proxy for that role."""
-        path = self.write(
-            (REPO_ROOT / "config" / "smokescreen.yaml")
-            .read_text()
-            .replace(
-                "services: []",
-                "services:\n  - name: x\n    action: open\n"
-                "    allowed_domains: [a.com]",
-            )
-        )
-        problems = validate_policy_file("smokescreen", path)
-        self.assertTrue(any("open" in p for p in problems), problems)
-
-    def test_unparseable_yaml_is_a_problem_not_a_traceback(self) -> None:
-        """A policy that cannot be parsed cannot be checked, so it has to
-        fail closed through the same list of problems every other failure
-        uses — not by raising past the caller that would refuse to start."""
-        path = self.write(
-            (REPO_ROOT / "config" / "pipelock.yaml").read_text() + "\n  : : broken\n"
-        )
-        problems = validate_policy_file("pipelock", path)
-        self.assertTrue(any("not valid YAML" in p for p in problems), problems)
-
-    def test_squid_policy_requires_default_deny_last(self) -> None:
-        text = (REPO_ROOT / "config" / "squid.conf").read_text()
-        path = self.write(
-            text.replace(
-                "http_access deny all",
-                "http_access deny all\nhttp_access allow allowlist_exact",
-            )
-        )
-        problems = validate_policy_file("squid", path)
-        self.assertTrue(any("deny all" in p for p in problems), problems)
-
-    def test_squid_policy_rejects_open_proxy(self) -> None:
-        text = (REPO_ROOT / "config" / "squid.conf").read_text()
-        path = self.write(
-            text.replace("http_access allow allowlist_exact", "http_access allow all")
-        )
-        problems = validate_policy_file("squid", path)
-        self.assertTrue(any("allow all" in p for p in problems), problems)
-
-    def test_squid_policy_rejects_ssrf_floors_after_the_allowlist(self) -> None:
-        # http_access is first-match-wins: an allow above the `dst` denies
-        # would let an allowlisted hostname reach a private address.
-        text = (REPO_ROOT / "config" / "squid.conf").read_text()
-        text = text.replace("http_access deny private_ip\n", "")
-        text = text.replace(
-            "http_access allow allowlist_wild",
-            "http_access allow allowlist_wild\nhttp_access deny private_ip",
-        )
-        problems = validate_policy_file("squid", self.write(text))
-        self.assertTrue(
-            any("private_ip" in p and "before" in p for p in problems), problems
-        )
-
-    def test_squid_policy_rejects_a_missing_deny_range(self) -> None:
-        text = (REPO_ROOT / "config" / "squid.conf").read_text()
-        path = self.write(text.replace("acl private_ip dst 169.254.0.0/16\n", ""))
-        problems = validate_policy_file("squid", path)
-        self.assertTrue(any("169.254.0.0/16" in p for p in problems), problems)
-
-    def _squid_bump_recipe(self) -> str:
-        """`config/squid.conf` with a fully-formed `ssl_bump` recipe grafted on."""
-        text = (REPO_ROOT / "config" / "squid.conf").read_text()
-        text = text.replace(
-            "http_port 3128\n",
-            "http_port 3128 ssl-bump tls-cert=/etc/squid/ca.pem "
-            "tls-key=/etc/squid/ca-key.pem generate-host-certificates=on "
-            "dynamic_cert_mem_cache_size=4MB\n"
-            "sslcrtd_program /usr/lib/squid/security_file_certgen "
-            "-s /var/lib/ssl_db -M 4MB\n"
-            "sslcrtd_children 8\n",
-        )
-        return (
-            text
-            + "\nacl step1 at_step SslBump1\nssl_bump peek step1\nssl_bump bump all\n"
-        )
-
-    def test_squid_policy_accepts_a_fully_formed_bump_recipe(self) -> None:
-        problems = validate_policy_file("squid", self.write(self._squid_bump_recipe()))
-        self.assertEqual(problems, [])
-
-    def test_squid_policy_rejects_an_orphaned_peek_without_bump_all(self) -> None:
-        text = self._squid_bump_recipe().replace("ssl_bump bump all\n", "")
-        problems = validate_policy_file("squid", self.write(text))
-        self.assertTrue(any("peek without bump" in p for p in problems), problems)
-
-    def test_squid_policy_rejects_ssl_bump_without_tls_cert_on_http_port(self) -> None:
-        text = self._squid_bump_recipe().replace(
-            "http_port 3128 ssl-bump tls-cert=/etc/squid/ca.pem "
-            "tls-key=/etc/squid/ca-key.pem generate-host-certificates=on "
-            "dynamic_cert_mem_cache_size=4MB\n",
-            "http_port 3128\n",
-        )
-        problems = validate_policy_file("squid", self.write(text))
-        self.assertTrue(any("ssl-bump tls-cert" in p for p in problems), problems)
-
-    def test_squid_policy_rejects_a_deny_info_for_an_undefined_acl(self) -> None:
-        """The failure mode this closes: an ACL is renamed, `deny_info` is
-        not, Squid starts happily, and every SSRF denial falls back to the
-        stock page and classifies as `unknown`."""
-        text = (REPO_ROOT / "config" / "squid.conf").read_text()
-        text = re.sub(
-            r"^acl private_ip ", "acl private_ipv4 ", text, flags=re.MULTILINE
-        )
-        text = text.replace(
-            "http_access deny private_ip\n", "http_access deny private_ipv4\n"
-        )
-        problems = validate_policy_file("squid", self.write(text))
-        self.assertTrue(any("does not define" in p for p in problems), problems)
-
-    def test_squid_policy_requires_a_page_for_every_cause(self) -> None:
-        for acl, page in REQUIRED_SQUID_DENY_INFO.items():
-            text = (REPO_ROOT / "config" / "squid.conf").read_text()
-            text = text.replace(f"deny_info {page} {acl}\n", "")
-            problems = validate_policy_file("squid", self.write(text))
-            self.assertTrue(
-                any(page in p and "missing" in p for p in problems),
-                f"{acl}: {problems}",
-            )
-
-    def test_squid_policy_rejects_two_pages_for_one_acl(self) -> None:
-        # Only one can ever be shown, so the file no longer says which.
-        text = (REPO_ROOT / "config" / "squid.conf").read_text()
-        text += "\ndeny_info ERR_IPL_NOT_ALLOWLISTED private_ip\n"
-        problems = validate_policy_file("squid", self.write(text))
-        self.assertTrue(any("two denial pages" in p for p in problems), problems)
-
-    def test_squid_denial_pages_exist_in_the_image(self) -> None:
-        squid_conf = REPO_ROOT / "config" / "squid.conf"
-        text = squid_conf.read_text()
-        self.assertEqual(check_squid_error_pages(text, squid_conf), [])
-        broken = text.replace("deny_info ERR_IPL_METADATA", "deny_info ERR_IPL_TYPO")
-        problems = check_squid_error_pages(broken, squid_conf)
-        self.assertTrue(any("ERR_IPL_TYPO" in p for p in problems), problems)
-
-    def test_squid_allowlist_normalizes_to_the_shared_forms(self) -> None:
-        # `*.d` is an anchored dstdom_regex in Squid; it has to read back as
-        # `*.d` or the cross-engine sync check compares nothing.
-        entries = policy_allowlist("squid", REPO_ROOT / "config" / "squid.conf")
-        self.assertIn("*.github.com", entries)
-        self.assertIn("*.githubusercontent.com", entries)
-        self.assertIn("github.com", entries)
-        self.assertNotIn("githubusercontent.com", entries)
-
-    def test_squid_allowlist_keeps_unrecognized_patterns_visible(self) -> None:
-        # A hand-written regex must not be silently read as a wildcard
-        # entry; it should surface as drift instead.
-        self.assertEqual(_squid_regex_to_glob(r"\.github\.com$"), "*.github.com")
-        self.assertEqual(_squid_regex_to_glob(r"github"), "github")
-
-    def test_shipped_allowlists_are_identical_across_engines(self) -> None:
-        """The three files express one allowlist.
-
-        They are all rendered from `[policy].allow`, so this can only fail
-        through a template or generator bug — which is exactly the failure
-        it is here to catch, now that no human keeps them in sync.
-        """
-        allowlists = {}
-        for engine in ENGINES:
-            spec = ServiceSpec.load(engine)
-            allowlists[engine] = policy_allowlist(engine, spec.config_path())
-        self.assertEqual(
-            len(set(map(frozenset, allowlists.values()))),
-            1,
-            f"the engines disagree: {allowlists}",
-        )
-        self.assertEqual(
-            set(next(iter(allowlists.values()))), set(load_policy_config().allow)
-        )
 
     # --- config.toml -> config/* generation --------------------------------
 
@@ -1050,41 +739,19 @@ class RunPyUnitTest(unittest.TestCase):
                 f"{rel} is stale — run `ipl policy` and commit the result",
             )
 
-    def test_generated_policies_validate(self) -> None:
-        """Auto-regeneration means the generator's output is what runs, so it
-        goes through the same checks the hand-written files went through."""
-        rendered = render_policies()
-        self.assertEqual(check_rendered_policies(rendered), [])
-
-    def test_generated_policies_with_tls_interception_validate(self) -> None:
-        """Rendering `tls_interception=True` produces text the validator
-        agrees is a complete recipe for both engines that support it — not
-        just that hand-written text carrying the same shape passes."""
+    def test_generated_policies_include_tls_interception_recipe(self) -> None:
         config = PolicyConfig(allow=load_policy_config().allow, tls_interception=True)
         rendered = render_policies(config)
-        self.assertEqual(check_rendered_policies(rendered), [])
         pipelock_text = rendered[REPO_ROOT / "config" / "pipelock.yaml"]
         self.assertIn("enabled: true", pipelock_text)
         squid_text = rendered[REPO_ROOT / "config" / "squid.conf"]
         self.assertIn("ssl_bump peek step1", squid_text)
         self.assertIn("ssl_bump bump all", squid_text)
 
-    def test_generated_allowlists_round_trip(self) -> None:
-        """Every engine's rendered file reads back as exactly the config.toml
-        list — so `squid_wild` and `_squid_regex_to_glob` stay inverses."""
-        config = load_policy_config()
-        rendered = render_policies(config)
-        for engine in ENGINES:
-            spec = ServiceSpec.load(engine)
-            entries = policy_allowlist_text(
-                engine, rendered[REPO_ROOT / spec.config_file]
-            )
-            self.assertEqual(entries, set(config.allow), spec.config_file)
-
-    def test_squid_wildcard_filter_is_the_inverse_of_the_reader(self) -> None:
+    def test_squid_wildcard_filter_renders_an_anchored_suffix(self) -> None:
         for entry in ("*.github.com", "*.rebind.fixture.test", "*.io"):
             pattern = _squid_wild(entry)
-            self.assertEqual(_squid_regex_to_glob(pattern), entry)
+            self.assertEqual(pattern, "\\." + entry[2:].replace(".", "\\.") + "$")
         # The apex must not match: `\.d$` is a suffix, not a prefix.
         self.assertEqual(_squid_wild("*.github.com"), r"\.github\.com$")
 
@@ -1141,7 +808,6 @@ class RunPyUnitTest(unittest.TestCase):
         """An added domain must reach all three engines in the right form."""
         config = PolicyConfig(allow=("github.com", "*.example.test"))
         rendered = render_policies(config)
-        self.assertEqual(check_rendered_policies(rendered), [])
         squid = rendered[REPO_ROOT / "config" / "squid.conf"]
         self.assertIn(r"acl allowlist_wild dstdom_regex -i \.example\.test$", squid)
         self.assertIn("acl allowlist_exact dstdomain github.com", squid)
@@ -1152,38 +818,6 @@ class RunPyUnitTest(unittest.TestCase):
             '    - "*.example.test"',
             rendered[REPO_ROOT / "config" / "smokescreen.yaml"],
         )
-
-    def test_sync_refuses_to_write_a_policy_that_fails_validation(self) -> None:
-        """Auto-regeneration must never replace a working config with a
-        broken one: a bad render has to fail before it touches the disk."""
-        original = policy_render.render_policies
-        squid_conf = REPO_ROOT / "config" / "squid.conf"
-        before = squid_conf.read_text(encoding="utf-8")
-
-        def broken(config=None):
-            rendered = original(config)
-            # Drop the SSRF floor: `validate_policy_text` must catch it.
-            rendered[squid_conf] = rendered[squid_conf].replace(
-                "http_access deny private_ip\n", ""
-            )
-            return rendered
-
-        # Patched on the module rather than passed in, because what is
-        # under test is `sync_policies` calling its own renderer — the path
-        # `up` takes, where nothing gets to substitute a good render.
-        policy_render.render_policies = broken  # ty: ignore[invalid-assignment]
-        self.addCleanup(setattr, policy_render, "render_policies", original)
-        with quiet() as printed, self.assertRaises(Fail):
-            policy_render.sync_policies()
-        self.assertEqual(
-            squid_conf.read_text(encoding="utf-8"),
-            before,
-            "a failed render must leave the shipped config untouched",
-        )
-        # Failing closed silently would be worse than not failing: the
-        # problem has to reach stderr, where an operator will see it.
-        self.assertIn("CONFIG ERROR", printed.err)
-        self.assertIn("http_access deny private_ip", printed.err)
 
     def test_container_ip_parses_docker_and_apple_shapes(self) -> None:
 

@@ -28,8 +28,8 @@ Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and Docker or Apple
 with `ipl init`; it never overwrites an existing policy. Teardown is `ipl down`.
 `uv sync` installs this repository as a package and puts `ipl`, `ipl-lab`,
 `ipl-check` and `ipl-verify` in the environment; `uv run ipl ...` picks up
-the interpreter from `.python-version` and the dependencies (Jinja2,
-PyYAML) from `pyproject.toml`. There is no bare-interpreter path to keep
+the interpreter from `.python-version` and the dependencies from
+`pyproject.toml`. There is no bare-interpreter path to keep
 working, so nothing is imported lazily to preserve one.
 
 The Python lives in `src/internet_proxy_locally/`, and the templates and
@@ -64,7 +64,7 @@ different policies. Edit `config.toml`, run `ipl up`, commit both.
 | `ipl status` | engine, backend, container state, image, live health |
 | `ipl logs` | engine logs |
 | `ipl check` | allow/deny behavior against the live proxy |
-| `ipl restart` | validate, then recreate the proxy |
+| `ipl restart` | render, then recreate the proxy |
 | `ipl down` | remove containers owned by this repository |
 | `ipl policy` | render `config/*` from `config.toml` (`--check` for drift) |
 | `ipl ca init/status/export/rotate` | manage the opt-in TLS-interception CA ([docs/tls-interception.md](docs/tls-interception.md)) |

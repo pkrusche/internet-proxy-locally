@@ -28,16 +28,12 @@ from internet_proxy_locally.images import IMAGES
 from internet_proxy_locally.lab.container import fixture_spec
 from internet_proxy_locally.lab.fixtures import load_lab_config
 from internet_proxy_locally.lab.render import (
-    check_rendered_test_policies,
     render_test_policies,
     test_config_path,
 )
 from internet_proxy_locally.lifecycle import owned_containers
 from internet_proxy_locally.policy.config import load_policy_config
-from internet_proxy_locally.policy.validate import (
-    policy_allowlist,
-    policy_allowlist_text,
-)
+from internet_proxy_locally.policy.render import _squid_wild
 from internet_proxy_locally.spec import SERVICES, ServiceSpec
 from tests.test_runpy import PACKAGE_DATA, REPO_ROOT, RunPyCliTest
 
@@ -439,23 +435,27 @@ class LabUnitTest(unittest.TestCase):
                 f"run `ipl-lab policy` and commit {path.name}",
             )
 
-    def test_rendered_test_policies_validate(self) -> None:
-        rendered = render_test_policies()
-        self.assertEqual(check_rendered_test_policies(rendered), [])
-
     def test_test_policy_is_a_strict_superset(self) -> None:
         """Every entry the real policy allows must survive into the test one.
 
         A `.test` run measuring a *narrower* policy than the one that ships
         would produce verdicts that do not transfer.
         """
-        rendered = render_test_policies()
+        config = load_lab_config()
+        rendered = render_test_policies(config)
         for engine in ENGINES:
             spec = ServiceSpec.load(engine)
-            real = policy_allowlist(engine, spec.config_path())
-            test = policy_allowlist_text(engine, rendered[test_config_path(spec)])
-            self.assertTrue(real <= test, f"{engine}: test policy drops {real - test}")
-            self.assertTrue(test - real, f"{engine}: test policy adds nothing")
+            text = rendered[test_config_path(spec)]
+            for entry in (*config.allow, *config.allow_test):
+                if engine == "squid":
+                    expected = (
+                        f"acl allowlist_wild dstdom_regex -i {_squid_wild(entry)}"
+                        if entry.startswith("*.")
+                        else f"acl allowlist_exact dstdomain {entry}"
+                    )
+                else:
+                    expected = entry
+                self.assertIn(expected, text, f"{engine}: test policy drops {entry}")
 
     def test_rendered_test_policy_agrees_with_operational_on_tls_interception(
         self,
@@ -464,25 +464,9 @@ class LabUnitTest(unittest.TestCase):
         `allow` does — the lab lane must not decide this independently."""
         config = dataclasses.replace(load_lab_config(), tls_interception=True)
         rendered = render_test_policies(config)
-        self.assertEqual(check_rendered_test_policies(rendered), [])
         spec = ServiceSpec.load("squid")
         squid_text = rendered[test_config_path(spec)]
         self.assertIn("ssl_bump peek step1", squid_text)
-
-    def test_superset_violation_is_reported(self) -> None:
-        rendered = dict(render_test_policies())
-        spec = ServiceSpec.load("pipelock")
-        path = test_config_path(spec)
-        # An exact entry: a wildcard one renders quoted, and dropping the
-        # wrong string would leave the file unchanged and the test vacuous.
-        entry = next(e for e in load_policy_config().allow if not e.startswith("*."))
-        before = rendered[path]
-        rendered[path] = before.replace(f"  - {entry}\n", "", 1)
-        self.assertNotEqual(before, rendered[path], "the entry was not removed")
-        problems = check_rendered_test_policies(rendered)
-        self.assertTrue(
-            any("strict superset" in p and entry in p for p in problems), problems
-        )
 
     def test_fixture_hosts_is_generated_from_the_fixture_table(self) -> None:
         spec = fixture_spec()

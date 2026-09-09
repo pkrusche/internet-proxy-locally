@@ -23,12 +23,11 @@ from internet_proxy_locally.images import prepare_image
 from internet_proxy_locally.lab.container import fixture_spec, start_dns_fixture
 from internet_proxy_locally.lab.fixtures import load_lab_config
 from internet_proxy_locally.lab.render import (
-    check_rendered_test_policies,
     render_test_policies,
     sync_test_policies,
     test_config_path,
 )
-from internet_proxy_locally.policy.render import report_synced, write_validated
+from internet_proxy_locally.policy.render import report_synced, write_rendered
 
 # What `ipl-lab policy` regenerates from, and the line it prints when it
 # has nothing to do. Both lanes render from config.toml; this one adds
@@ -41,8 +40,7 @@ def cmd_policy(opts: argparse.Namespace) -> int:
     """`ipl policy` for the lab lane. Same body, different source."""
     return common.run_policy_command(
         rendered=render_test_policies(),
-        check=check_rendered_test_policies,
-        sync=lambda rendered: write_validated(rendered, check_rendered_test_policies),
+        sync=write_rendered,
         source=_POLICY_SOURCE,
         label=_POLICY_LABEL,
         cli="ipl-lab",

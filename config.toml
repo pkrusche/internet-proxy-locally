@@ -8,8 +8,8 @@
 #
 # The rules the allowlist sits on top of — default deny, the IP-layer SSRF
 # floors — are NOT configurable here. They live in the templates as literal
-# text and are checked independently by `validate_policy_file()` in
-# policy/validate.py. See docs/policy.md. The one exception is
+# text and are covered by the policy and end-to-end tests. See docs/policy.md.
+# The one exception is
 # `tls_interception` below: opt-in TLS interception for pipelock/squid,
 # off by default. See docs/tls-interception.md before turning it on.
 #

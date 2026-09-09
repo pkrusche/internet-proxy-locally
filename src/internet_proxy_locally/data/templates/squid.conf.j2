@@ -165,8 +165,7 @@ deny_info ERR_IPL_NOT_ALLOWLISTED all
 #
 # `peek step1` must always be paired with `bump all`: an orphaned peek with
 # no bump is exactly the crashing shape docs/findings.md records
-# ("Rejected: tunnel peeking on Squid"), and policy/validate.py enforces
-# this pairing independently so a hand-edit cannot reintroduce it.
+# ("Rejected: tunnel peeking on Squid"). Keep this fixed recipe together.
 acl step1 at_step SslBump1
 ssl_bump peek step1
 ssl_bump bump all

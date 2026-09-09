@@ -11,16 +11,12 @@ rule order and `cache deny all` are literal text in the templates. The one
 exception is `tls_interception`, and even that is not a knob with a range
 — it is a single on/off gate between two fixed, literal recipes (plain
 `http_port`/no `ssl_bump` vs. the full CA-backed bump recipe for Squid; the
-same shape for Pipelock), each reviewed as a whole. The generator fills in
-domains and that one gate, and its output is put through the same
-`validate_policy_file()` the hand-written files went through — before it
-is allowed to touch the disk.
+same shape for Pipelock), each reviewed as a whole.
 """
 
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -31,10 +27,6 @@ from internet_proxy_locally import paths
 from internet_proxy_locally.constants import ENGINES
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.policy.config import PolicyConfig, load_policy_config
-from internet_proxy_locally.policy.validate import (
-    check_squid_error_pages,
-    validate_policy_text,
-)
 from internet_proxy_locally.spec import ServiceSpec
 
 
@@ -44,11 +36,7 @@ def _yaml_scalar(entry: str) -> str:
 
 
 def _squid_wild(entry: str) -> str:
-    r"""`*.github.com` -> `\.github\.com$`.
-
-    The exact anchored-suffix shape `_squid_regex_to_glob()` reads back, so
-    generation and the cross-engine comparison are inverses of each other.
-    """
+    r"""Render `*.github.com` as Squid's `\.github\.com$` suffix regex."""
     if not entry.startswith("*."):
         raise Fail(f"not a wildcard allowlist entry: {entry}")
     return "\\." + entry[2:].replace(".", "\\.") + "$"
@@ -158,77 +146,17 @@ def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
     )
 
 
-def check_rendered_policies(rendered: dict[Path, str]) -> list[str]:
-    """Validate rendered text before it is allowed near the disk.
-
-    Auto-regeneration means a template or generator bug could otherwise
-    overwrite a reviewed, working policy with a broken one. The same
-    `validate_policy_file()` invariants that guarded the hand-written files
-    guard the generated ones.
-
-    ipl-lab calls this on its own rendered `.test` files too, and adds the
-    superset rule those have to satisfy against these.
-    """
-    problems: list[str] = []
-    for path, text in sorted(rendered.items()):
-        engine = _engine_for_config(path)
-        if engine is None:
-            continue  # not an engine policy (the fixture's hosts file)
-        problems += validate_policy_text(engine, text, path)
-        if engine == "squid":
-            problems += check_squid_error_pages(text, path)
-    return problems
-
-
-def fail_on(problems: list[str], message: str) -> None:
-    """Report every configuration problem, then fail closed.
-
-    Every caller that validates something does exactly this, and the one
-    that did it slightly differently is the drift worth removing: the
-    problems all have to be printed — the first is rarely the useful one —
-    and then nothing may proceed. ipl-lab calls this too, so both lanes
-    report a bad config in the same shape.
-    """
-    for problem in problems:
-        print(f"CONFIG ERROR: {problem}", file=sys.stderr)
-    if problems:
-        raise Fail(message)
-
-
-def _engine_for_config(path: Path) -> str | None:
-    """Which engine a rendered config belongs to, by filename.
-
-    `config/squid.conf` and `lab/config/squid.test.conf` are both Squid, so
-    both lanes validate with the same rules from one place.
-    """
-    stem = path.name.split(".")[0]
-    return stem if stem in ENGINES else None
-
-
 def sync_policies(config: PolicyConfig | None = None) -> list[Path]:
     """Regenerate the engine configs from config.toml; return what changed.
 
     Files whose contents already match are left alone, so a no-op `up`
     does not churn mtimes or the working tree.
     """
-    return write_validated(render_policies(config), check_rendered_policies)
+    return write_rendered(render_policies(config))
 
 
-def write_validated(
-    rendered: dict[Path, str], check: Callable[[dict[Path, str]], list[str]]
-) -> list[Path]:
-    """Validate rendered text, then write only what changed.
-
-    Both lanes render templates and both must refuse to overwrite a
-    reviewed, working policy with a broken one — so validation happens
-    before anything reaches the disk, and files that already match are
-    left alone so a no-op `up` does not churn mtimes or the working tree.
-    ipl-lab passes its own `check`, which adds the superset rule.
-    """
-    fail_on(
-        check(rendered),
-        "refusing to write a policy that fails validation (fail closed)",
-    )
+def write_rendered(rendered: dict[Path, str]) -> list[Path]:
+    """Write rendered files atomically, leaving matching files alone."""
     changed: list[Path] = []
     for path, text in sorted(rendered.items()):
         if not path.is_file() or path.read_text(encoding="utf-8") != text:

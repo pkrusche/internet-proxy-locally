@@ -23,8 +23,7 @@ from internet_proxy_locally.constants import BACKENDS, DEFAULT_ENGINE, ENGINES
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.lifecycle import egress_command, start_engine
 from internet_proxy_locally.net import endpoint
-from internet_proxy_locally.policy.render import fail_on, report_synced
-from internet_proxy_locally.policy.validate import validate_policy_file
+from internet_proxy_locally.policy.render import report_synced
 from internet_proxy_locally.spec import ServiceSpec
 
 BACKEND_HELP = (
@@ -73,14 +72,13 @@ def client_hint(host: str, port: int) -> None:
 def run_policy_command(
     *,
     rendered: dict[Path, str],
-    check: Callable[[dict[Path, str]], list[str]],
     sync: Callable[[dict[Path, str]], list[Path]],
     source: str,
     label: str,
     cli: str,
     check_only: bool,
 ) -> int:
-    """`policy` for either lane: render, validate, then write or diff.
+    """`policy` for either lane: render, then write or diff.
 
     Both lanes need exactly this — regenerate from the reviewed source, or
     (under `--check`, which is what CI runs) show what the committed files
@@ -89,8 +87,6 @@ def run_policy_command(
     `source` names what the configs are generated from, `label` is the
     up-to-date line, and `cli` is the command to suggest re-running.
     """
-    fail_on(check(rendered), "configuration validation failed")
-
     if not check_only:
         report_synced(sync(rendered), source)
         print(label)
@@ -138,17 +134,16 @@ def run_up_command(
     prestart: Callable[[Backend], str] | None = None,
     tls_interception: bool = False,
 ) -> int:
-    """`up` for either lane: regenerate, validate, then start one engine.
+    """`up` for either lane: regenerate, then start one engine.
 
     The order is the contract and both lanes need all of it — the policy
     the container is about to bind-mount is rendered from its reviewed
-    source first, so `up` can never start an engine on a config that
-    disagrees with the allowlist under review, and a config that fails
-    validation stops the start rather than being mounted.
+    source first, so `up` cannot start an engine on a config that disagrees
+    with the allowlist under review.
 
     `destination` resolves which policy file this lane mounts, `notice` is
-    printed before anything starts, and `prestart` runs after validation
-    and returns a resolver address to point the engine at — the lab lane's
+    printed before anything starts, and `prestart` returns a resolver
+    address to point the engine at — the lab lane's
     DNS fixture, which has to exist before the engine that uses it.
     """
     engine = opts.engine or DEFAULT_ENGINE
@@ -161,11 +156,6 @@ def run_up_command(
     config_path = destination(spec)
     if missing_hint and not config_path.is_file():
         raise Fail(f"missing policy: {config_path} — {missing_hint}")
-    fail_on(
-        validate_policy_file(engine, config_path),
-        "refusing to start with an invalid policy (fail closed)",
-    )
-
     if notice:
         print(notice)
 

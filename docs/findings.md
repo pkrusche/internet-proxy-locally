@@ -125,8 +125,8 @@ classifies as `unknown`. `deny_info` plus five one-line templates in
 `data/images/squid/errors` make each denial state its cause, which is what fills
 the bracketed column in the matrix. The exact strings are pinned in
 `tests/egress/test_denial.py::ClassifyDenialRealWordingTest`, and
-`validate_policy_file()` refuses a Squid config whose `deny_info` lines have
-come loose from the ACLs they name.
+the generated Squid config keeps the `deny_info` mappings beside the ACLs
+they name. The live lab checks verify that each denial stays attributable.
 
 ## The differences that matter
 
@@ -269,16 +269,12 @@ on the literal, so its IPv6 rows are the only ones exercising IPv6 SSRF
 defence outside the sslip.io fixture.
 
 This is not "Squid is stricter" — the enforcement outcome is identical on
-all three. What differs is that Squid's floors are ours to get right, which
-is why `validate_policy_file()` checks, for Squid specifically: the required
-ranges (`REQUIRED_SQUID_DENY_RANGES`), that every floor and `deny ip_literal`
-precedes the first `http_access allow`, that the file ends in `http_access
-deny all` and never contains `http_access allow all`, that `cache deny all`
-survives, that `ssl_bump` is either absent or the complete opt-in
-interception recipe (docs/tls-interception.md) and never a partial one,
-and that each of the five `deny_info` page-to-ACL pairs is intact and
-names a page that exists in
-`data/images/squid/errors`. Squid says nothing about a `deny_info` whose ACL no
+all three. What differs is that Squid's floors are ours to maintain.
+They are fixed together in `data/templates/squid.conf.j2`: the required
+ranges, their position before the first allow, the final default deny,
+`cache deny all`, the complete opt-in interception recipe, and the five
+`deny_info` mappings. The policy and live lab tests cover the generated
+configuration and its behavior. Squid says nothing about a `deny_info` whose ACL no
 longer exists — the page never fires and the denial falls back to the stock
 page — so renaming `private_ip` without updating its page would turn every
 SSRF denial into `unknown` while leaving a config that starts, validates and
@@ -346,9 +342,9 @@ evaluation stops and no PTR query is made.
 denied. It was verified to fail against the unfixed config and pass against
 the fixed one. Two things make it worth its own row: `direct-ip-connect`
 passed throughout the bug's lifetime, because it uses an address with no PTR
-claim — the existing suite could not see this. And `validate_policy_file()`
-now requires `http_access deny ip_literal` ahead of the allowlist, so
-deleting the rule fails `up` rather than silently reopening the hole.
+claim — the existing suite could not see this. The fixed Squid template
+places `http_access deny ip_literal` ahead of the allowlist, and the graded
+check catches regressions in the behavior.
 
 ### 6. Pipelock follows redirects; the other two do not
 
@@ -462,9 +458,8 @@ instead of aborting an opaque tunnel — which is exactly what closes
 failure 1 (there is now a signing certificate to reach for) and failure 3
 (policy runs before the client is told anything succeeded). This mode
 ships as opt-in (`[policy].tls_interception = true`), off by default, with
-`policy/validate.py` requiring the complete recipe — `ssl_bump peek step1`
-paired with `ssl_bump bump all`, never one without the other — so a
-hand-edit cannot reintroduce the crashing shape documented above.
+one template branch emitting the complete recipe — `ssl_bump peek step1`
+paired with `ssl_bump bump all`, never one without the other.
 
 ## Operational numbers
 

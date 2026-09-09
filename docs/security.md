@@ -69,7 +69,8 @@ different policies. v1 has one.
 
 ## Fail-closed properties
 
-* `up` refuses to start with an invalid or non-strict policy file.
+* `up` regenerates policy files from validated `config.toml` before start,
+  so a hand edit cannot change the policy it runs.
 * `up` refuses to start on an image that has not been built.
 * Every image is pinned in its own Dockerfile — an explicit base tag or
   manifest digest, an exact apk version, a full commit SHA. The unit suite
@@ -80,14 +81,11 @@ different policies. v1 has one.
   non-allowlisted probe host; a proxy that answers 2xx/3xx for it is
   treated as broken, not healthy. Health requires an attributable policy
   denial; a DNS/origin 5xx is inconclusive and fails startup.
-* Open modes are rejected by validation: `action: open`,
-  `--unsafe-allow-private-ranges`, non-`strict` Pipelock modes, and
-  `http_access allow all` for Squid. `tls_interception` may be `true` on
-  Pipelock/Squid, but only paired with both `ca_cert`/`ca_key` (Pipelock)
-  or the complete `ssl_bump` recipe (Squid) — every partial state is
-  rejected, which is what stops a hand-edit from reintroducing the
-  crashing `peek`-without-`bump` shape
-  ([tls-interception.md](tls-interception.md)).
+* Open modes and private-range escape hatches are absent from the fixed
+  templates. Pipelock is rendered in strict mode, Smokescreen in enforce
+  mode, and Squid ends in default deny. `tls_interception = true` selects
+  complete CA-backed recipes for Pipelock and Squid; partial states are not
+  generated ([tls-interception.md](tls-interception.md)).
 * `up` refuses to start an engine with `tls_interception = true` and no CA
   generated yet, and the CA's private key is written `0600` at creation
   time (never `chmod`ed after), so there is no window where it is

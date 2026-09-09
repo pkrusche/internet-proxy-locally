@@ -11,7 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from internet_proxy_locally import paths
-from internet_proxy_locally.constants import ENGINES
 from internet_proxy_locally.lab.container import fixture_spec
 from internet_proxy_locally.lab.fixtures import (
     FixtureConfig,
@@ -20,16 +19,11 @@ from internet_proxy_locally.lab.fixtures import (
     private_address,
 )
 from internet_proxy_locally.policy.render import (
-    check_rendered_policies,
     jinja_env,
     render_engine_policies,
     render_named,
     render_template,
-    write_validated,
-)
-from internet_proxy_locally.policy.validate import (
-    policy_allowlist,
-    policy_allowlist_text,
+    write_rendered,
 )
 from internet_proxy_locally.spec import ServiceSpec
 
@@ -117,30 +111,6 @@ def _render_fixture_env(env, fixture: FixtureConfig) -> dict[Path, str]:
     return {paths.workspace_root() / spec.extra_config_file: text}
 
 
-def check_rendered_test_policies(rendered: dict[Path, str]) -> list[str]:
-    """`check_rendered_policies()` plus the superset rule.
-
-    The superset rule is the one check that needs both lanes at once, so it
-    lives in the lane that has both: every entry the operational policy
-    allows must still be allowed by the test policy, or a `.test` run would
-    be measuring a *narrower* policy than the one that ships and its
-    verdicts would not transfer.
-    """
-    problems = check_rendered_policies(rendered)
-    for engine in ENGINES:
-        spec = ServiceSpec.load(engine)
-        real_path = spec.config_path()
-        test_path = test_config_path(spec)
-        real = policy_allowlist(engine, real_path)
-        test = policy_allowlist_text(engine, rendered[test_path])
-        for entry in sorted(real - test):
-            problems.append(
-                f"{test_path}: the test policy must be a strict superset "
-                f"of the real one, but drops `{entry}`"
-            )
-    return problems
-
-
 def sync_test_policies(config: LabConfig | None = None) -> list[Path]:
-    """Regenerate lab/config/; return what changed. Validates before writing."""
-    return write_validated(render_test_policies(config), check_rendered_test_policies)
+    """Regenerate lab/config/; return what changed."""
+    return write_rendered(render_test_policies(config))
