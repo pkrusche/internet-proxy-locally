@@ -62,10 +62,31 @@ with second granularity, and the rebind never happens.
 
 `dns-rebinding` then grades on whether anything connected to the trap. 
 
+The fixture supervisor logs DNS answers and trap connections as `IPL-FIXTURE`
+lines. Required settings come from the mounted `fixture.env`; missing settings
+stop startup to avoid measuring an unintended fixture. The PTR probe uses a
+public address claiming an allowlisted hostname. PTR lookups are recorded but
+not required: rejecting IP literals before reverse DNS is valid enforcement.
+
 ## Reproducing the comparison
 
+`ipl-check` runs `quick` allow/deny checks or the `full` suite, which adds
+DNS/SSRF fixtures and CONNECT-abuse probes. 
+
 ```bash
-ipl-lab measure                    # all three engines, then rewrite findings.md
+ipl check                          # check connectivity quickly
+ipl lab check --full               # full check / egress suite; needs lab mode
+```
+
+Grades are `pass` (expectation met), `fail` (violated), `record` (behavior
+observed without a defined verdict), `skip` (missing prerequisite), and `error`
+(check could not run). Recorded rows retain the observed allowed/denied behavior.
+
+JSON results include timing, available per-attempt evidence, response headers,
+denial causes, and engine logs. 
+
+```bash
+ipl-lab measure                    # ipl check --full for all three engines, then rewrite findings.md
 ipl-lab measure --backend docker   # or pin the backend
 ipl-lab report                     # rewrite from the committed results/
 ipl-lab report --check             # CI: exit 1 if the tables are stale
@@ -78,82 +99,4 @@ committed: without them the generated blocks of `findings.md` could not be
 re-derived, only believed.
 
 `report` rewrites only the regions of `findings.md` between
-`<!-- BEGIN GENERATED <name> -->` and `<!-- END GENERATED <name> -->`. The
-narrative around them is copied through byte for byte, and a missing or
-duplicated marker is fatal rather than silently skipped.
-
-## Operational smoke check
-
-`scripts/e2e-smoke.sh --backend docker` exercises the real `ipl` lifecycle.
-It starts the operational proxy, confirms its TCP endpoint is listening,
-runs `ipl down`, and confirms the engine container is gone. Pass `--engine`
-to select an engine. The lab needs no separate lifecycle smoke check because
-`ipl-lab check` exercises the running engine and fixture directly.
-
-## Running the unit suite
-
-```bash
-uv run python -m unittest discover -s tests -t .      # everything
-uv run python -m unittest tests.test_runpy            # one module
-uv run python -m unittest discover -s tests -t . -k rebind   # by name
-```
-
-Both `-s tests` (where to look) and `-t .` (the import root) are needed.
-The code under test resolves through the installed package rather than
-through `sys.path`, but `tests` itself still has to be importable as a
-package: without `tests/__init__.py` unittest refuses with "Start directory
-is not importable", and the modules get imported twice under two names,
-which silently runs every inherited CLI test a second time.
-
-The tests do not copy the code into a temporary directory. They copy the
-*data* — `IPL_DATA_ROOT` for the templates and image build contexts,
-`IPL_ROOT` for the workspace `up` regenerates `config/` in — so what runs
-is always the checkout's code against an isolated repository.
-
-The operational smoke check is **not** part of this suite: it needs a real
-container runtime, while the unit suite uses a fake backend and mock proxy.
-
-## Backend parity
-
-Both backends use the same `setup`, image build, `up`,
-`status`/`logs`/`check`/`down`, and DNS fixture paths. The fixture container's
-address is read from `inspect`, which Docker reports under `NetworkSettings`
-and Apple `container` under `status.networks[]` as a CIDR.
-
-## Upgrading the fixture
-
-The dnsmasq and python3 apk versions are literals in
-`data/images/dnsfixture/Dockerfile`. Edit them, bump `DNSFIXTURE_IMAGE` in
-`images.py` to the new dnsmasq version, commit, then `ipl-lab setup`.
-Engine pins work the same way (README, "Pins").
-
-What the fixture *serves* is not in the image at all: `[fixture]` in
-`config.toml` is rendered into `lab/config/dns-fixture.hosts`
-and `lab/config/fixture.env`, both bind-mounted read-only, so an edit
-there takes effect on the next `ipl-lab up` rather than on the next
-rebuild.
-
-## Checker results
-
-`ipl-check` runs `quick` allow/deny checks or the `full` suite, which adds
-DNS/SSRF fixtures and CONNECT-abuse probes. Fixture checks skip when the test
-policy or required fixture evidence is unavailable. Mixed-answer probes resolve
-inside the engine, so their `local_resolved` lists are intentionally empty.
-
-Grades are `pass` (expectation met), `fail` (violated), `record` (behavior
-observed without a defined verdict), `skip` (missing prerequisite), and `error`
-(check could not run). Recorded rows retain the observed allowed/denied behavior.
-
-JSON results include timing, available per-attempt evidence, response headers,
-denial causes, and engine logs. Schema v2 also records run conditions, including
-image, backend, policy, host, and timestamp. Diffing v1 and v2 results is supported
-with a warning. Denial causes match the engine's stated reason; echoed targets
-and generic HTTP status text are not evidence of a specific rule.
-
-The fixture supervisor logs DNS answers and trap connections as `IPL-FIXTURE`
-lines. Required settings come from the mounted `fixture.env`; missing settings
-stop startup to avoid measuring an unintended fixture. The PTR probe uses a
-public address claiming an allowlisted hostname. PTR lookups are recorded but
-not required: rejecting IP literals before reverse DNS is valid enforcement.
-
-For package layout, image updates, and tooling, see [development.md](development.md).
+`<!-- BEGIN GENERATED <name> -->` and `<!-- END GENERATED <name> -->`.

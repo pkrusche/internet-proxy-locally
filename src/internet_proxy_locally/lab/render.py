@@ -51,13 +51,7 @@ def render_test_policies(config: LabConfig | None = None) -> dict[Path, str]:
 
 
 def _render_fixture_hosts(env, fixture: FixtureConfig) -> dict[Path, str]:
-    """Render lab/config/dns-fixture.hosts from `[fixture]`.
-
-    The hosts file is not a policy — nothing in it is enforced — but it is
-    the other half of the test policy, and hand-syncing it against
-    `[policy.test].allow` is exactly what `load_lab_config()` refuses to
-    leave to care (docs/lab.md).
-    """
+    """Render lab/config/dns-fixture.hosts from `[fixture]`."""
     spec = fixture_spec()
     rows = []
     for record, addresses in fixture.records:
@@ -81,15 +75,7 @@ def _render_fixture_hosts(env, fixture: FixtureConfig) -> dict[Path, str]:
 
 
 def _render_fixture_env(env, fixture: FixtureConfig) -> dict[Path, str]:
-    """Render lab/config/fixture.env, the responder's half of `[fixture]`.
-
-    The hosts file above covers the static records; this covers the four
-    facts only `rebind.py` needs — the rebinding zone, the public answer
-    and the PTR claim. They used to reach the container as build args, so
-    an already-built image went on serving the previous values after an
-    edit to config.toml. Mounted, they are read at container start and
-    `[fixture]` stays the one source.
-    """
+    """Render lab/config/fixture.env, the responder's half of `[fixture]`."""
     spec = fixture_spec()
     text = render_named(
         env,

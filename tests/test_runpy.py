@@ -561,6 +561,27 @@ class RunPyCliTest(unittest.TestCase):
         self.assertEqual(out.read_bytes(), cert_path.read_bytes())
         self.assertNotEqual(out.read_bytes(), key_path.read_bytes())
 
+    def test_ca_rotation_requires_proxy_down(self) -> None:
+        init = self.run_cli("ca", "init")
+        self.assertEqual(init.returncode, 0, init.stderr)
+        ca_dir = self.tmp / "state" / "ca"
+        before = {
+            name: (ca_dir / name).read_bytes() for name in ("ca.pem", "ca-key.pem")
+        }
+        for engine in ("pipelock", "squid", "smokescreen"):
+            state = self.state / f"container-internet-proxy-{engine}"
+            state.write_text("running")
+            try:
+                for args in (("ca", "rotate"), ("ca", "init", "--rebuild")):
+                    with self.subTest(engine=engine, args=args):
+                        result = self.run_cli(*args)
+                        self.assertEqual(result.returncode, 1, result.stderr)
+                        self.assertIn("run `ipl down` first", result.stderr)
+                        for name, contents in before.items():
+                            self.assertEqual((ca_dir / name).read_bytes(), contents)
+            finally:
+                state.unlink()
+
     def test_ca_export_fails_with_no_ca(self) -> None:
         proc = self.run_cli("ca", "export", "--out", str(self.tmp / "out.pem"))
         self.assertEqual(proc.returncode, 1)

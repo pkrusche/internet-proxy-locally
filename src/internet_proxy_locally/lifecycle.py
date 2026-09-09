@@ -82,19 +82,7 @@ def start_engine(
     keep_fixture: bool = False,
     tls_interception: bool = False,
 ) -> None:
-    """Recreate one engine container on `config_path` and health-check it.
-
-    Shared by `ipl up` and `ipl-lab up`, which differ only in which
-    policy they mount and whether a DNS fixture is in the picture. Keeping
-    the recreate/publish/health sequence in one place is what stops the two
-    lanes from drifting into two different startup contracts.
-
-    The DNS fixture is swept along with the engines, so a stale resolver
-    can never outlive the engine pointed at it. `keep_fixture` is the one
-    exception: ipl-lab starts the fixture first — it has to, the engine
-    needs its address for `--dns` — so sweeping it here would delete the
-    resolver the engine is about to be pointed at.
-    """
+    """Recreate one engine container on `config_path` and health-check it."""
     engine = spec.engine
     host, port = endpoint()
     image = spec.image

@@ -16,11 +16,7 @@ def fixture_spec() -> ServiceSpec:
     config.toml is the source of truth for the rebinding zone,
     the PTR claim and the public address, and the container gets them the
     same way it gets the records: rendered into lab/config/ and bind-mounted
-    (`extra_config_file` here, `lab.render._render_fixture_env()`). They
-    used to be folded into `[build]` and baked in as Dockerfile ARGs, which
-    made them a property of the image rather than of the run — so an image
-    built before an edit to config.toml went on serving the old values.
-    """
+    (`extra_config_file` here, `lab.render._render_fixture_env()`)."""
     return ServiceSpec.load(DNS_FIXTURE)
 
 

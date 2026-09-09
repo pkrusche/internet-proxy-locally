@@ -12,7 +12,6 @@ FORBIDDEN = ("/.git/", "/.jj/", "/.uv_cache/", "/.venv/", "/state/", "/dist/")
 ROOT_ALLOWED = {
     "README.md",
     "SECURITY.md",
-    "CONTRIBUTING.md",
     "CHANGELOG.md",
     "LICENSE",
     "pyproject.toml",

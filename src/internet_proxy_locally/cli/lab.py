@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from internet_proxy_locally import report
 from internet_proxy_locally.backend import Backend, detect_backend
 from internet_proxy_locally.cli import common
 from internet_proxy_locally.cli import run as run_cli
@@ -96,13 +97,6 @@ def cmd_check(opts: argparse.Namespace) -> int:
     )
 
 
-def _report():
-    """Import `report` lazily — only the report commands need it."""
-    from internet_proxy_locally import report
-
-    return report
-
-
 def cmd_measure(opts: argparse.Namespace) -> int:
     """Measure every engine, then regenerate the tables in docs/findings.md.
 
@@ -110,12 +104,12 @@ def cmd_measure(opts: argparse.Namespace) -> int:
     suite as JSON into results/<engine>.json. Finishes with a `down`, so no
     engine and no fixture is left running on a test allowlist.
     """
-    return _report().measure_all(backend=opts.backend, engines=ENGINES)
+    return report.measure_all(backend=opts.backend, engines=ENGINES)
 
 
 def cmd_report(opts: argparse.Namespace) -> int:
     """Regenerate (or verify) the generated blocks in docs/findings.md."""
-    return _report().write_findings(check=opts.check)
+    return report.write_findings(check=opts.check)
 
 
 def build_parser() -> argparse.ArgumentParser:

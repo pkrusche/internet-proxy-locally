@@ -148,6 +148,8 @@ def cmd_ca_init(opts: argparse.Namespace) -> int:
     if ca.ca_present() and not opts.rebuild:
         print(f"CA already present at {ca.ca_cert_path()}")
         return 0
+    if opts.rebuild:
+        _require_proxy_down(opts)
     ca.generate_ca(force=opts.rebuild)
     print(f"generated the TLS-interception CA at {ca.ca_cert_path()}")
     return 0
@@ -171,13 +173,15 @@ def cmd_ca_export(opts: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_ca_rotate(opts: argparse.Namespace) -> int:
-    """`ca init --rebuild` under a verb that states the real consequence.
+def _require_proxy_down(opts: argparse.Namespace) -> None:
+    active = running_engine(detect_backend(opts.backend))
+    if active:
+        raise Fail(f"cannot rotate CA while {active} is running — run `ipl down` first")
 
-    Not a new mechanism: `generate_ca` is the one code path for "make a new
-    CA," and this is a thin alias so the command names what rotation
-    actually does — invalidate trust everywhere the old cert was installed.
-    """
+
+def cmd_ca_rotate(opts: argparse.Namespace) -> int:
+    """Replace the CA only after the proxy has been stopped."""
+    _require_proxy_down(opts)
     ca.generate_ca(force=True)
     print(f"rotated the TLS-interception CA at {ca.ca_cert_path()}")
     return 0

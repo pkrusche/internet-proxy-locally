@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import datetime
-import fcntl
 import os
 import stat
 import tempfile
-from contextlib import contextmanager
 from pathlib import Path
 
 from cryptography import x509
@@ -36,23 +34,6 @@ def ca_present() -> bool:
     except Fail:
         return False
     return True
-
-
-def _lock_path() -> Path:
-    return paths.ca_dir().parent / "ca.lock"
-
-
-@contextmanager
-def _ca_lock(*, exclusive: bool):
-    parent = paths.ca_dir().parent
-    parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd = os.open(_lock_path(), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
-        yield
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
 
 
 def _safe_private_dir(path: Path) -> None:
@@ -116,22 +97,15 @@ def generate_ca(force: bool = False) -> None:
     trusts the old cert (every sandbox that installed it into its trust
     store).
     """
-    with _ca_lock(exclusive=True):
-        cert_exists, key_exists = ca_cert_path().exists(), ca_key_path().exists()
-        if cert_exists or key_exists:
-            if cert_exists != key_exists:
-                raise Fail(
-                    "partial CA state: restore the pair or deliberately run `ipl ca rotate`"
-                )
-            if not force:
-                validate_ca()
-                return
-
-        _generate_ca_locked()
-
-
-def _generate_ca_locked() -> None:
-    """Generate and transactionally replace a pair while holding the lock."""
+    cert_exists, key_exists = ca_cert_path().exists(), ca_key_path().exists()
+    if cert_exists or key_exists:
+        if cert_exists != key_exists:
+            raise Fail(
+                "partial CA state: restore the pair or deliberately run `ipl ca rotate`"
+            )
+        if not force:
+            validate_ca()
+            return
 
     key = ec.generate_private_key(ec.SECP256R1())
     subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, CA_SUBJECT)])
@@ -188,8 +162,7 @@ def _generate_ca_locked() -> None:
             os.fsync(fh.fileno())
         cert_tmp.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
         os.chmod(cert_tmp, 0o644)
-        # Readers take the shared operation lock. Preserve the prior pair so
-        # either failed replace can be rolled back before releasing it.
+        # Preserve the prior pair so either failed replace can be rolled back.
         old_cert = ca_cert_path().read_bytes() if ca_cert_path().exists() else None
         old_key = ca_key_path().read_bytes() if ca_key_path().exists() else None
         try:
@@ -212,39 +185,33 @@ def _generate_ca_locked() -> None:
 
 def ca_info() -> tuple[str, datetime.datetime]:
     """The CA cert's subject and expiry, for `ipl ca status`."""
-    with _ca_lock(exclusive=False):
-        cert, _key = validate_ca()
+    cert, _key = validate_ca()
     subject = cert.subject.rfc4514_string()
     return subject, cert.not_valid_after_utc
 
 
 def export_ca_cert(destination: Path, *, overwrite: bool = False) -> None:
     """Copy the CA's public cert only — never the key — to `destination`."""
-    with _ca_lock(exclusive=False):
-        cert, _key = validate_ca()
-        try:
-            resolved = destination.resolve(strict=False)
-            managed = {
-                ca_cert_path().resolve(),
-                ca_key_path().resolve(),
-                _lock_path().resolve(),
-            }
-            if resolved in managed:
-                raise Fail("export destination identifies managed CA state")
-            if destination.exists() and not overwrite:
-                raise Fail(
-                    f"refusing to overwrite existing file {destination}; "
-                    "pass --overwrite"
-                )
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW
-            flags |= os.O_TRUNC if overwrite else os.O_EXCL
-            fd = os.open(destination, flags, 0o644)
-            with os.fdopen(fd, "wb") as fh:
-                fh.write(cert.public_bytes(serialization.Encoding.PEM))
-                fh.flush()
-                os.fsync(fh.fileno())
-        except OSError as exc:
+    cert, _key = validate_ca()
+    try:
+        resolved = destination.resolve(strict=False)
+        managed = {
+            ca_cert_path().resolve(),
+            ca_key_path().resolve(),
+        }
+        if resolved in managed:
+            raise Fail("export destination identifies managed CA state")
+        if destination.exists() and not overwrite:
             raise Fail(
-                f"cannot write the exported cert to {destination}: {exc}"
-            ) from exc
+                f"refusing to overwrite existing file {destination}; pass --overwrite"
+            )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW
+        flags |= os.O_TRUNC if overwrite else os.O_EXCL
+        fd = os.open(destination, flags, 0o644)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(cert.public_bytes(serialization.Encoding.PEM))
+            fh.flush()
+            os.fsync(fh.fileno())
+    except OSError as exc:
+        raise Fail(f"cannot write the exported cert to {destination}: {exc}") from exc

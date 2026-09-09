@@ -96,13 +96,7 @@ def counts(run: dict) -> str:
 
 
 def graded_names(runs: dict[str, dict]) -> list[str]:
-    """Checks graded `pass`/`fail` on *every* engine.
-
-    The pass counts are not comparable on their own: a row graded `record`
-    on one engine has left the pool there, so a lower count can mean either
-    weaker behavior or a different expectation. This is the pool where the
-    number means the same thing everywhere.
-    """
+    """Checks graded `pass`/`fail` on *every* engine."""
     names = []
     for name in (c.name for c in egress.TESTS):
         rows = [rows_of(run).get(name) for run in runs.values()]
@@ -114,15 +108,7 @@ def graded_names(runs: dict[str, dict]) -> list[str]:
 
 
 def behavior(row: dict) -> str:
-    """What the engine *did*, with the grade taken back out.
-
-    A grade is a comparison against an expectation, and the expectations
-    are not the same on every engine — so `PASS` on one row and `RECORD` on
-    another can describe identical behavior, and `PASS` on two rows can
-    describe opposite behavior. Reading the two apart is the difference
-    between "Smokescreen behaves differently here" and "Smokescreen is
-    graded differently here".
-    """
+    """What the engine did, with the grade taken back out."""
     if row.get("observed"):
         return row["observed"]
     if row["outcome"] in ("pass", "fail") and row["expectation"] in ("allow", "deny"):
@@ -133,13 +119,7 @@ def behavior(row: dict) -> str:
 
 
 def divergences(runs: dict[str, dict], names: list[str]) -> list[tuple[str, dict]]:
-    """Checks where the engines did not all report the same verdict.
-
-    Grouped by the rendered verdict — outcome, observed behavior and stated
-    cause together: two engines that both denied for the same stated reason
-    agree, and two that denied for different reasons do not. The cause is
-    where most of the interesting differences live.
-    """
+    """Checks where the engines did not all report the same verdict."""
     diverging: list[tuple[str, dict]] = []
     for name in names:
         groups: dict[str, list[str]] = {}
@@ -194,12 +174,7 @@ def conditions_table(runs: dict[str, dict]) -> list[str]:
 
 
 def render_sections(runs: dict[str, dict], results_dir: Path) -> dict[str, str]:
-    """The generated blocks of docs/findings.md, keyed by marker name.
-
-    Sections rather than a whole document: the measurements and the reading
-    of them belong in one file, and the only way that file can hold both is
-    if this script owns named regions of it instead of the whole thing.
-    """
+    """The generated blocks of docs/findings.md, keyed by marker name."""
     return {
         "conditions": _conditions(runs, results_dir),
         "summary": _summary(runs),

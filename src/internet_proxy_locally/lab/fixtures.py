@@ -102,13 +102,7 @@ def private_address(raw: str) -> bool:
 def _fixture_config(
     raw: object, path: Path, allow: list[str], allow_test: list[str]
 ) -> FixtureConfig:
-    """Read and validate `[fixture]`, cross-checked against the allowlists.
-
-    Everything here exists so that one edit cannot half-land: a record the
-    test policy does not allowlist would be denied by name and grade
-    nothing, and a `[policy.test]` fixture name with no record behind it
-    would resolve to NXDOMAIN and skip.
-    """
+    """Read and validate `[fixture]`, cross-checked against the allowlists."""
     if not isinstance(raw, dict):
         raise Fail(
             f"{path}: missing the [fixture] table (it holds the DNS "

@@ -3,8 +3,9 @@
 ## What this service defends against
 
 The client is assumed hostile: a coding agent (or code it wrote) running
-inside `project-sandbox` with `HTTP_PROXY`/`HTTPS_PROXY` pointed here and
-all other egress dropped by iptables. The proxy's job is to limit **where**
+inside a sandbox (such as [project-sandbox](https://github.com/pkrusche/project-sandbox)) 
+with `HTTP_PROXY`/`HTTPS_PROXY` pointed here and
+all other egress dropped by iptables. The proxy's job is to limit where
 that client can connect:
 
 * only allowlisted Internet hostnames;
@@ -17,17 +18,6 @@ that client can connect:
   `tls_interception` is on ([tls-interception.md](tls-interception.md));
   Smokescreen never does.
 
-Two of those are engine-dependent, which is why the engine choice is a
-security decision and not a preference. **Smokescreen is measured as
-non-compliant on mixed DNS answers**: given a name resolving to both a
-public and a private address it connects to the public one rather than
-refusing the name. It does not connect to the private address, so this is a
-weaker guarantee rather than an open door — but the suite grades every
-engine against the same `deny` expectation, so this row fails on
-Smokescreen like any other deny check would. Both points are measured in
-[findings.md](findings.md) (§1, §2), which is what to read before choosing
-an engine other than the default.
-
 ## What it does not defend against
 
 * **Exfiltration to an allowed destination.** By default the proxy cannot see
@@ -35,36 +25,12 @@ an engine other than the default.
   not prohibit uploads or restrict an allowed service to a particular account. If
   `github.com` is allowed, data can be pushed to any reachable GitHub
   repository; this service controls destinations only. Turning on
-  `tls_interception` for Pipelock or Squid
-  ([tls-interception.md](tls-interception.md)) enables inspection but does not
+  `tls_interception` ([tls-interception.md](tls-interception.md)) enables inspection but does not
   itself close this gap, and requires the engine to custody a private key
-  and every consuming sandbox needing that CA in its trust store — read
-  that page before relying on it. Smokescreen cannot do this at all; the
-  gap is unconditional there.
+  and every connected sandbox needing that CA in its trust store
 * Anything reachable without traversing the proxy. Preventing direct egress
-  is `project-sandbox`'s iptables responsibility. The installed sandbox does
-  not currently route through this proxy.
+  is the responsibility of the sandbox.
 * Malicious content in allowed responses.
-
-## Non-goals
-
-TLS interception is opt-in and off by default, not out of scope — see
-[tls-interception.md](tls-interception.md) for what turning it on changes,
-the CA lifecycle `ipl ca` owns, and why Smokescreen is excluded from it
-permanently rather than temporarily. What stays a non-goal regardless of
-that setting: a CA or trust-store change reaching into `project-sandbox`
-automatically (the export is manual, by design — the same way exporting
-`HTTP_PROXY` already is), and inspecting or transforming response bodies
-beyond what an engine does on its own MITM path.
-
-Also out of scope: replacing Agentgateway, proxying MCP or AI-provider
-credentials, transparent networking, redirecting arbitrary TCP, Docker
-Compose, one proxy container per sandbox, shared per-project container
-networks, fleet management, exposing the proxy to the LAN, and accepting
-dynamic domain changes from `project-sandbox`.
-
-Client authentication is deferred until multiple caller identities need
-different policies. v1 has one.
 
 ## Fail-closed properties
 
@@ -91,10 +57,7 @@ different policies. v1 has one.
   world-readable.
 * A destination written as a bare address is refused by Squid before the
   allowlist is consulted, because Squid would otherwise retry the miss as a
-  reverse lookup and match whatever name the address's PTR record claims —
-  a bypass measured and then closed ([findings.md](findings.md) §5).
-  `ptr-allowlist` guards the behavior, and the deny rule is fixed in the
-  Squid template.
+  reverse lookup and match whatever name the address's PTR record claims.
 * For Squid, where the SSRF floors are configuration rather than engine
   code, the fixed template places the required deny ranges above the
   allowlist — `http_access` is first-match-wins, so rule order *is* the
@@ -102,16 +65,6 @@ different policies. v1 has one.
 * If the proxy container dies, nothing listens on `127.0.0.1:18080` — the
   sandbox loses Internet rather than gaining unfiltered access. There is no
   automatic restart policy; restarts are explicit.
-
-  **Measured 2026-08-28** on all three engines: with two request streams
-  running continuously — one for an
-  allowlisted host, one for a denied host — the container was removed
-  mid-load and then restarted. The endpoint stopped accepting the moment
-  the engine died, the allowed stream broke and recovered, and across the
-  whole run **not one request for the denied host ever succeeded**. That
-  last point is the property: the danger in a crash or a restart is not the
-  outage, it is a half-started engine accepting connections before its
-  policy is loaded, and that window was never observed.
 
 ## The adversarial suite
 
@@ -124,12 +77,7 @@ ipl check     # ordinary allow/deny behavior, against the live proxy
 ipl-lab up && ipl-lab check    # the full adversarial suite (docs/lab.md)
 ```
 
-The full group covers private IPv4/IPv6, metadata, DNS-resolved private
-targets, mixed public+private answer sets, DNS rebinding, reverse-DNS
-allowlist bypass, SNI mismatch, raw bytes inside a CONNECT tunnel, IP-form
-CONNECT, and a concurrency sanity check. Nothing skips: every row is graded
-or deliberately recorded. It needs the test policy and the DNS fixture,
-which is why it lives in the other lane — [lab.md](lab.md).
+See [lab.md](lab.md).
 
 Each result carries, where relevant: a best-effort denial-cause
 classification (`hostname-not-allowlisted`, `private-ip`, `metadata`,
@@ -151,25 +99,15 @@ in the taxonomy rather than what the set actually contained.
 
 Measured results: [findings.md](findings.md).
 
-## Endpoint exposure
+## Endpoint exposure and logging
 
-The container publishes `127.0.0.1:18080` only. That is a convenience
-boundary, not the security boundary: the policy remains enforced even for
-traffic reaching the engine's internal address from another local container.
-
-That binding is one `--publish 127.0.0.1:…` argument. During startup, `ipl`
-reads the published binding back from the runtime and refuses a result that
-does not match the configured loopback endpoint. The operational smoke check
-also confirms the endpoint accepts a TCP connection ([lab.md](lab.md)).
-
-## Logging
+The container publishes `127.0.0.1:18080` only. 
 
 Engine logs are the audit trail (`ipl logs`). Depending on engine and mode they
 can contain full URLs and query strings, targets, verdicts, and denial reasons.
 Plain HTTP is visible with interception off. The shipped configuration does not
 deliberately log bodies/headers, but makes no general redaction guarantee.
+
 Runtime retention is operator-controlled; treat logs as sensitive. With
 interception on, the engine sees decrypted requests — see
 [tls-interception.md](tls-interception.md) for what changes.
-`forwarded_for delete` in the Squid configuration keeps the client address
-internal.

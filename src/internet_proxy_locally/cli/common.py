@@ -67,18 +67,7 @@ def run_up_command(
     prestart: Callable[[Backend], str] | None = None,
     tls_interception: bool = False,
 ) -> int:
-    """`up` for either lane: regenerate, then start one engine.
-
-    The order is the contract and both lanes need all of it — the policy
-    the container is about to bind-mount is rendered from its reviewed
-    source first, so `up` cannot start an engine on a config that disagrees
-    with the allowlist under review.
-
-    `destination` resolves which policy file this lane mounts, `notice` is
-    printed before anything starts, and `prestart` returns a resolver
-    address to point the engine at — the lab lane's
-    DNS fixture, which has to exist before the engine that uses it.
-    """
+    """`up` for either lane: regenerate, then start one engine."""
     engine = opts.engine or DEFAULT_ENGINE
     spec = ServiceSpec.load(engine)
     backend = detect_backend(opts.backend)

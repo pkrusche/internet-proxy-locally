@@ -53,14 +53,7 @@ class Backend:
         return shutil.which(self.bin) is not None
 
     def _inspect_entry(self, *args: str) -> dict:
-        """The one object an `inspect` returns, or `{}` when there is none.
-
-        Every reader below wants the same thing out of `inspect`: run it,
-        tolerate a non-zero exit (the thing does not exist), parse JSON,
-        and unwrap the single-element list both runtimes wrap it in. Doing
-        that once means the guards cannot differ between readers — they
-        did, and the copy in `container_state` was the one missing them.
-        """
+        """The one object an `inspect` returns, or `{}` when there is none."""
         proc = self._run(*args, check=False)
         if proc.returncode != 0:
             detail = (proc.stderr or proc.stdout or "").strip()
@@ -132,10 +125,6 @@ class Backend:
 
     def published_ports(self, name: str) -> list[tuple[str, int, int]]:
         """(host address, host port, container port) for each published port.
-
-        The endpoint is supposed to be loopback-only, and `--publish
-        ip:host:container` is the whole of that guarantee. Reading the
-        runtime's binding back lets startup confirm it was honored.
 
         Docker:          HostConfig.PortBindings {"8888/tcp": [{HostIp, HostPort}]}
         Apple container: configuration.publishedPorts [{hostAddress, hostPort,
