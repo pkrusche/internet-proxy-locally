@@ -86,10 +86,8 @@ jobs:
       - name: run tests
         run: uv run --frozen python -m unittest discover -s tests -t .
 
-      - name: policy and report drift
+      - name: report drift
         run: |
-          uv run --frozen ipl policy --check
-          uv run --frozen ipl-lab policy --check
           uv run --frozen ipl-lab report --check
 
   artifacts:

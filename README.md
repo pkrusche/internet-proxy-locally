@@ -51,7 +51,7 @@ allow = ["github.com", "*.github.com", "pypi.org", ...]
 `config/squid.conf`) through `data/templates/`, and `setup` / `up` / `restart`
 do that before starting anything — so the three engines cannot express
 different policies. Edit `config.toml`, run `ipl up`, commit both.
-`ipl policy --check` reports drift without writing. See
+See
 [docs/policy.md](docs/policy.md).
 
 ## Commands
@@ -66,7 +66,7 @@ different policies. Edit `config.toml`, run `ipl up`, commit both.
 | `ipl check` | allow/deny behavior against the live proxy |
 | `ipl restart` | render, then recreate the proxy |
 | `ipl down` | remove containers owned by this repository |
-| `ipl policy` | render `config/*` from `config.toml` (`--check` for drift) |
+| `ipl policy` | render `config/*` from `config.toml` |
 | `ipl ca init/status/export/rotate` | manage the opt-in TLS-interception CA ([docs/tls-interception.md](docs/tls-interception.md)) |
 
 `--engine pipelock|smokescreen|squid` and `--backend docker|container`

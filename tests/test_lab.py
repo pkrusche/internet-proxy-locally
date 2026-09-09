@@ -190,13 +190,14 @@ class LabCliTest(RunPyCliTest):
         self.assertEqual(payload["mode"], "full")
         self.assertTrue(any(r["group"] == "full" for r in payload["results"]))
 
-    def test_policy_check_reports_drift_in_the_lab_configs(self) -> None:
+    def test_up_regenerates_a_hand_edited_lab_policy(self) -> None:
+        self.build_engine()
+        self.fake_dns_fixture_image()
         target = self.tmp / "lab" / "config" / "pipelock.test.yaml"
         target.write_text(target.read_text() + "\n# hand edit\n")
-        proc = self.lab_cli("policy", "--check")
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("STALE", proc.stderr)
-        self.assertIn("hand edit", target.read_text(), "--check must not write")
+        proc = self.lab_cli("--backend", "docker", "up")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("\n# hand edit\n", target.read_text())
 
 
 class LabUnitTest(unittest.TestCase):

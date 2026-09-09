@@ -305,7 +305,6 @@ class RunPyCliTest(unittest.TestCase):
         )
         proc = self.run_cli("--backend", "docker", "up")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn("regenerated config/pipelock.yaml", proc.stdout)
         self.assertNotIn("evil.example", policy.read_text(encoding="utf-8"))
 
     def test_up_is_quiet_when_the_configs_are_current(self) -> None:
@@ -359,21 +358,12 @@ class RunPyCliTest(unittest.TestCase):
             (self.tmp / "config" / "squid.conf").read_text(encoding="utf-8"), before
         )
 
-    def test_policy_check_reports_drift_without_writing(self) -> None:
+    def test_policy_regenerates_without_a_backend(self) -> None:
         policy = self.tmp / "config" / "squid.conf"
-        policy.write_text(
-            policy.read_text(encoding="utf-8") + "\n# stray edit\n", encoding="utf-8"
-        )
-        proc = self.run_cli("policy", "--check")
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("STALE", proc.stderr)
-        self.assertIn("stray edit", proc.stdout)  # shown as a diff
-        self.assertIn("# stray edit", policy.read_text(encoding="utf-8"))
-
+        policy.write_text(policy.read_text() + "\n# stray edit\n")
         proc = self.run_cli("policy")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertNotIn("# stray edit", policy.read_text(encoding="utf-8"))
-        self.assertEqual(self.run_cli("policy", "--check").returncode, 0)
+        self.assertNotIn("# stray edit", policy.read_text())
 
     def test_up_refuses_occupied_port(self) -> None:
         self.build_engine()

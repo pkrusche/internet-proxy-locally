@@ -32,18 +32,12 @@ environment `ipl policy` uses, into `lab/config/`:
 | `lab/config/{pipelock,smokescreen}.test.yaml`, `squid.test.conf` | `config.toml` + `[policy.test]` |
 | `lab/config/dns-fixture.hosts` | `[fixture.records]` |
 
-`ipl-lab policy --check` reports drift as a diff without writing.
+`ipl-lab up` regenerates these files before starting the fixture and engine.
 
-The test policy is a **strict superset** of the operational one by
-construction. The rendering tests assert that every operational and test
-entry reaches every engine config: a `.test` run that measured a *narrower*
-policy than the one that ships would produce verdicts that do not transfer.
-
-Why the extra domains exist: `*.nip.io` and `*.sslip.io` resolve to
-caller-chosen addresses, and the fixture zones resolve to whatever the
-fixture says. Allowlisting them is the whole point — it makes a denial
-attributable to the IP-layer SSRF floors rather than to ordinary hostname
-policy. **Never put an operational domain in `[policy.test]`.**
+The test policy should be a strict superset of the operational one. 
+Extra domains: `*.nip.io` and `*.sslip.io` resolve to
+caller-chosen addresses, and the fixture zones resolve in a controlled
+manner (in an adversarial setting). 
 
 ## The fixture records
 

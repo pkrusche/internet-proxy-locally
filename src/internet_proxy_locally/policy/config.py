@@ -1,4 +1,4 @@
-"""config.toml: the allowlist, read once and validated hard."""
+"""config.toml: the allowlist, read once and validated."""
 
 from __future__ import annotations
 
@@ -18,12 +18,7 @@ ALLOW_ENTRY = re.compile(
 
 @dataclass(frozen=True)
 class PolicyConfig:
-    """The shared logical policy, read from config.toml.
-
-    The allowlist and nothing else. The adversarial test policy lives in
-    data/lab/fixtures.toml and is read by ipl-lab alone (docs/lab.md), so
-    nothing this file can express is ever a fixture.
-    """
+    """The shared logical policy, read from config.toml."""
 
     allow: tuple[str, ...]
     tls_interception: bool = False
@@ -40,15 +35,7 @@ class PolicyConfig:
 def reject_unknown(
     mapping: dict, known: set[str], path: Path, where: str, hint: str = ""
 ) -> None:
-    """Refuse any key outside `known`, naming all of them at once.
-
-    Both config sources are strict about this for the same reason: a typo
-    (`allows = [...]`) is not an error TOML can catch, and the result would
-    be a silently empty or truncated allowlist — which is an open policy.
-    Every table in both files goes through here so that none of them can be
-    the lenient one. `hint` is the sentence that names the fix where there
-    is a specific one, such as a key that moved to the other file.
-    """
+    """Refuse any key outside `known`"""
     unknown = sorted(set(mapping) - known)
     if unknown:
         raise Fail(f"{path}: unknown {where}: {', '.join(unknown)}{hint}")

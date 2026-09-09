@@ -9,8 +9,7 @@ banner saying so.
 `setup`, `up` and `restart` regenerate them first, so the policy a
 container runs is always the one `config.toml` states. `config.toml` is
 parsed and validated before rendering, so a bad source fails without
-replacing a working config. `ipl policy --check` reports drift as a diff
-and exits 1 without writing — the check to run in review.
+replacing a working config.
 
 The adversarial test policy is a separate file in a separate lane
 (`data/lab/fixtures.toml`, [lab.md](lab.md)); `ipl` never reads it.
@@ -107,9 +106,6 @@ falls through to the `default enforce` rule.
 3. Review the diff to `config/*` — that is the change that ships.
 4. Commit `config.toml` and the generated files together.
 5. `ipl check` to confirm the live proxy behaves as intended.
-
-`ipl policy --check` in CI keeps the committed configs honest: it
-exits 1 with a diff if they no longer match `config.toml`.
 
 Removing a domain is the same loop. Nothing caches policy: `up` recreates
 the container, and Squid additionally runs `cache deny all`, so a response

@@ -28,37 +28,20 @@ from internet_proxy_locally.net import endpoint, port_listening, probe_proxy
 from internet_proxy_locally.policy.config import load_policy_config
 from internet_proxy_locally.policy.render import (
     config_destination,
-    render_policies,
-    report_synced,
     sync_policies,
-    write_rendered,
 )
 from internet_proxy_locally.spec import ServiceSpec
 
-_POLICY_SOURCE = "config.toml"
-
 
 def cmd_policy(opts: argparse.Namespace) -> int:
-    """Render config.toml into the engine configs, or report the drift.
-
-    `setup` and `up` do this on their own; this exists so a config.toml
-    edit can be reviewed — and CI can assert the committed files match —
-    without a container runtime.
-    """
-    return common.run_policy_command(
-        rendered=render_policies(),
-        sync=write_rendered,
-        source=_POLICY_SOURCE,
-        label="configs: up to date with config.toml",
-        cli="ipl",
-        check_only=opts.check,
-    )
+    sync_policies()
+    return 0
 
 
 def cmd_setup(opts: argparse.Namespace) -> int:
     print(f"python: {platform.python_version()}")
 
-    report_synced(sync_policies(), _POLICY_SOURCE)
+    sync_policies()
 
     if load_policy_config().tls_interception and not ca.ca_present():
         ca.generate_ca()
@@ -90,7 +73,6 @@ def cmd_up(opts: argparse.Namespace) -> int:
     return common.run_up_command(
         opts=opts,
         sync=sync_policies,
-        source=_POLICY_SOURCE,
         destination=config_destination,
         missing_hint="run `ipl policy`",
         tls_interception=load_policy_config().tls_interception,
@@ -220,7 +202,7 @@ def cmd_init(opts: argparse.Namespace) -> int:
     if not daemon.exists():
         shutil.copyfile(paths.data_root() / "smokescreen.conf.yaml", daemon)
         print(f"created {daemon}")
-    report_synced(sync_policies(), _POLICY_SOURCE)
+    sync_policies()
     print("workspace initialized")
     return 0
 
@@ -248,11 +230,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_policy = sub.add_parser(
         "policy", help="render config/* from config.toml (setup/up do this too)"
-    )
-    p_policy.add_argument(
-        "--check",
-        action="store_true",
-        help="report drift as a diff and exit 1 instead of writing",
     )
     p_policy.set_defaults(func=cmd_policy)
 

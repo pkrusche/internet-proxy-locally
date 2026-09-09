@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 import argparse
-import difflib
 import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from internet_proxy_locally import paths
 from internet_proxy_locally.backend import Backend, detect_backend
 from internet_proxy_locally.constants import BACKENDS, DEFAULT_ENGINE, ENGINES
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.lifecycle import egress_command, start_engine
 from internet_proxy_locally.net import endpoint
-from internet_proxy_locally.policy.render import report_synced
 from internet_proxy_locally.spec import ServiceSpec
 
 BACKEND_HELP = (
@@ -61,65 +58,10 @@ def client_hint(host: str, port: int) -> None:
     )
 
 
-def run_policy_command(
-    *,
-    rendered: dict[Path, str],
-    sync: Callable[[dict[Path, str]], list[Path]],
-    source: str,
-    label: str,
-    cli: str,
-    check_only: bool,
-) -> int:
-    """`policy` for either lane: render, then write or diff.
-
-    Both lanes need exactly this — regenerate from the reviewed source, or
-    (under `--check`, which is what CI runs) show what the committed files
-    would have to become and exit non-zero.
-
-    `source` names what the configs are generated from, `label` is the
-    up-to-date line, and `cli` is the command to suggest re-running.
-    """
-    if not check_only:
-        report_synced(sync(rendered), source)
-        print(label)
-        return 0
-
-    stale = [
-        (path, body)
-        for path, body in sorted(rendered.items())
-        if not path.is_file() or path.read_text(encoding="utf-8") != body
-    ]
-    for path, body in stale:
-        rel = path.relative_to(paths.workspace_root())
-        current = (
-            path.read_text(encoding="utf-8").splitlines(keepends=True)
-            if path.is_file()
-            else []
-        )
-        sys.stdout.writelines(
-            difflib.unified_diff(
-                current,
-                body.splitlines(keepends=True),
-                fromfile=f"{rel} (on disk)",
-                tofile=f"{rel} (from {source})",
-            )
-        )
-    if stale:
-        names = ", ".join(
-            str(path.relative_to(paths.workspace_root())) for path, _ in stale
-        )
-        print(f"\nSTALE: {names}", file=sys.stderr)
-        print(f"Run `{cli} policy` to regenerate, then commit.", file=sys.stderr)
-        return 1
-    print(label)
-    return 0
-
-
 def run_up_command(
     *,
     opts: argparse.Namespace,
     sync: Callable[[], list[Path]],
-    source: str,
     destination: Callable[[ServiceSpec], Path],
     missing_hint: str = "",
     notice: str = "",
@@ -143,7 +85,7 @@ def run_up_command(
     backend = detect_backend(opts.backend)
     host, port = endpoint()
 
-    report_synced(sync(), source)
+    sync()
 
     config_path = destination(spec)
     if missing_hint and not config_path.is_file():

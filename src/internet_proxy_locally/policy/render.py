@@ -131,9 +131,3 @@ def write_rendered(rendered: dict[Path, str]) -> list[Path]:
                 Path(tmp_name).unlink(missing_ok=True)
             changed.append(path)
     return changed
-
-
-def report_synced(changed: list[Path], source: str) -> None:
-    """Name what a sync rewrote; quiet when everything was already current."""
-    for path in changed:
-        print(f"regenerated {path.relative_to(paths.workspace_root())} from {source}")

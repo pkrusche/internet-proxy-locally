@@ -13,26 +13,14 @@ from internet_proxy_locally.images import prepare_image
 from internet_proxy_locally.lab.container import fixture_spec, start_dns_fixture
 from internet_proxy_locally.lab.fixtures import load_lab_config
 from internet_proxy_locally.lab.render import (
-    render_test_policies,
     sync_test_policies,
     test_config_path,
 )
-from internet_proxy_locally.policy.render import report_synced, write_rendered
-
-_POLICY_SOURCE = "data/lab/fixtures.toml"
-_POLICY_LABEL = "lab configs: up to date with config.toml + data/lab/fixtures.toml"
 
 
 def cmd_policy(opts: argparse.Namespace) -> int:
-    """`ipl policy` for the lab lane. Same body, different source."""
-    return common.run_policy_command(
-        rendered=render_test_policies(),
-        sync=write_rendered,
-        source=_POLICY_SOURCE,
-        label=_POLICY_LABEL,
-        cli="ipl-lab",
-        check_only=opts.check,
-    )
+    sync_test_policies()
+    return 0
 
 
 def cmd_setup(opts: argparse.Namespace) -> int:
@@ -43,7 +31,7 @@ def cmd_setup(opts: argparse.Namespace) -> int:
     """
     backend = detect_backend(opts.backend)
     print(f"selected backend: {backend.name}")
-    report_synced(sync_test_policies(), _POLICY_SOURCE)
+    sync_test_policies()
     for name in (*ENGINES, DNS_FIXTURE):
         prepare_image(backend, name, rebuild=opts.rebuild)
     print("lab setup complete")
@@ -67,7 +55,6 @@ def cmd_up(opts: argparse.Namespace) -> int:
     return common.run_up_command(
         opts=opts,
         sync=sync_test_policies,
-        source=_POLICY_SOURCE,
         destination=test_config_path,
         missing_hint="run `ipl-lab policy`",
         notice="NOTE: starting with the TEST policy — an allowlist that "
@@ -151,11 +138,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_policy = sub.add_parser(
         "policy", help="render lab/config/* from data/lab/fixtures.toml"
-    )
-    p_policy.add_argument(
-        "--check",
-        action="store_true",
-        help="report drift as a diff and exit 1 instead of writing",
     )
     p_policy.set_defaults(func=cmd_policy)
 
