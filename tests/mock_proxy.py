@@ -202,7 +202,10 @@ class Handler(socketserver.BaseRequestHandler):
                         if allowed
                         else b"HTTP/1.1 403 Forbidden\r\nX-Squid-Error: ERR_ACCESS_DENIED 0\r\nContent-Length: 0\r\n\r\n"
                     )
-                    tls.sendall(response)
+                    head, separator, body = response.partition(b"\r\n\r\n")
+                    tls.sendall(head + separator)
+                    if body:
+                        tls.sendall(body)  # a separate TLS record from the headers
             except (ssl.SSLError, OSError):
                 pass
         finally:

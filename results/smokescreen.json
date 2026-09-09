@@ -8,7 +8,7 @@
   "policy": "test",
   "tls_interception": false,
   "host": "Darwin 25.6.0 arm64",
-  "generated_at": "2026-09-09T19:31:10Z",
+  "generated_at": "2026-09-09T19:36:59Z",
   "exit_code": 1,
   "results": [
     {
@@ -19,12 +19,12 @@
       "detail": "reached pypi.org (HTTP/1.1 301 Moved Permanently)",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 44.2,
+      "elapsed_ms": 27.6,
       "attempts": [],
       "headers": {
         "Accept-Ranges": "bytes",
         "Content-Length": "0",
-        "Date": "Wed, 09 Sep 2026 19:31:07 GMT",
+        "Date": "Wed, 09 Sep 2026 19:36:56 GMT",
         "Location": "https://pypi.org/",
         "Permissions-Policy": "publickey-credentials-create=(self),publickey-credentials-get=(self),accelerometer=(),ambient-light-sensor=(),autoplay=(),battery=(),camera=(),display-capture=(),document-domain=(),encrypted-media=(),execution-while-not-rendered=(),execution-while-out-of-viewport=(),fullscreen=(),gamepad=(),geolocation=(),gyroscope=(),hid=(),identity-credentials-get=(),idle-detection=(),local-fonts=(),magnetometer=(),microphone=(),midi=(),otp-credentials=(),payment=(),picture-in-picture=(),screen-wake-lock=(),serial=(),speaker-selection=(),storage-access=(),usb=(),web-share=(),xr-spatial-tracking=()",
         "Retry-After": "0",
@@ -34,13 +34,13 @@
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "deny",
         "X-Permitted-Cross-Domain-Policies": "none",
-        "X-Served-By": "cache-fra-etou8220145-FRA",
-        "X-Timer": "S1788982268.609318,VS0,VE0",
+        "X-Served-By": "cache-fra-etou8220152-FRA",
+        "X-Timer": "S1788982617.864812,VS0,VE0",
         "X-Xss-Protection": "1; mode=block",
         "Connection": "close"
       },
       "engine_logs": [
-        "{\"allow\":true,\"conn_establish_time_ms\":15,\"content_length\":0,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":5,\"enforce_would_deny\":false,\"id\":\"dagr7uot8kv0009bc2ig\",\"inbound_remote_addr\":\"192.168.64.1:53750\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"outbound_local_addr\":\"192.168.64.175:43300\",\"outbound_remote_addr\":\"151.101.192.223:80\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"http\",\"requested_host\":\"pypi.org\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.151635167Z\",\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":true,\"conn_establish_time_ms\":10,\"content_length\":0,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":4,\"enforce_would_deny\":false,\"id\":\"dagram8t8kv000etth90\",\"inbound_remote_addr\":\"192.168.64.1:54058\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"outbound_local_addr\":\"192.168.64.181:44994\",\"outbound_remote_addr\":\"151.101.192.223:80\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"http\",\"requested_host\":\"pypi.org\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.157457042Z\",\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -51,12 +51,12 @@
       "detail": "tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 28.0,
+      "elapsed_ms": 29.7,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagr7uot8kv0009bc2j0\",\"inbound_remote_addr\":\"192.168.64.1:53752\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.221334125Z\",\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":4674,\"bytes_out\":1584,\"conn_establish_time_ms\":9,\"duration\":0.014266042,\"end_time\":\"2026-09-09T19:31:07.248001125Z\",\"error\":\"\",\"id\":\"dagr7uot8kv0009bc2j0\",\"inbound_remote_addr\":\"192.168.64.1:53752\",\"last_activity\":\"2026-09-09T19:31:07.247970084Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60456\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.221334125Z\",\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":3,\"enforce_would_deny\":false,\"id\":\"dagram8t8kv000etth9g\",\"inbound_remote_addr\":\"192.168.64.1:54060\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.212507667Z\",\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":4674,\"bytes_out\":1584,\"conn_establish_time_ms\":9,\"duration\":0.015122,\"end_time\":\"2026-09-09T19:36:57.241333709Z\",\"error\":\"\",\"id\":\"dagram8t8kv000etth9g\",\"inbound_remote_addr\":\"192.168.64.1:54060\",\"last_activity\":\"2026-09-09T19:36:57.24128875Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36546\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.212507667Z\",\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -67,11 +67,11 @@
       "detail": "denied: HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host 'example.com:443': default rule policy used.",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 2.7,
+      "elapsed_ms": 2.9,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":79,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2jg\",\"inbound_remote_addr\":\"192.168.64.1:53754\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"example.com:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.277148667Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":79,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000ettha0\",\"inbound_remote_addr\":\"192.168.64.1:54062\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"example.com:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.272377459Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -86,7 +86,7 @@
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":75,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2k0\",\"inbound_remote_addr\":\"192.168.64.1:53756\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"http\",\"requested_host\":\"example.com\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.305218875Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":75,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthag\",\"inbound_remote_addr\":\"192.168.64.1:54064\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"http\",\"requested_host\":\"example.com\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.303015042Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -97,11 +97,11 @@
       "detail": "denied: HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '1.1.1.1:443': default rule policy used.",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 2.4,
+      "elapsed_ms": 2.3,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":75,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2kg\",\"inbound_remote_addr\":\"192.168.64.1:53758\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"1.1.1.1:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.331609917Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":75,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthb0\",\"inbound_remote_addr\":\"192.168.64.1:54066\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"1.1.1.1:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.330794084Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -112,11 +112,11 @@
       "detail": "denied: HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '127.0.0.1:80': default rule policy used.",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 2.4,
+      "elapsed_ms": 2.2,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":76,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2l0\",\"inbound_remote_addr\":\"192.168.64.1:53760\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"127.0.0.1:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.359136875Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":76,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthbg\",\"inbound_remote_addr\":\"192.168.64.1:54068\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"127.0.0.1:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.357221084Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -127,13 +127,13 @@
       "detail": "denied: HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '10.0.0.1:80': default rule policy used.; denied: HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '192.168.1.1:80': default rule policy used.; denied: HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '172.16.0.1:80': default rule policy used.",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 5.8,
+      "elapsed_ms": 6.0,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":75,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2lg\",\"inbound_remote_addr\":\"192.168.64.1:53762\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"10.0.0.1:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.385314084Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":78,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2m0\",\"inbound_remote_addr\":\"192.168.64.1:53764\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"192.168.1.1:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.387154667Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":77,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2mg\",\"inbound_remote_addr\":\"192.168.64.1:53766\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"172.16.0.1:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.388892167Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":75,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthc0\",\"inbound_remote_addr\":\"192.168.64.1:54070\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"10.0.0.1:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.382213792Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":78,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthcg\",\"inbound_remote_addr\":\"192.168.64.1:54072\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"192.168.1.1:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.384291959Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":77,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthd0\",\"inbound_remote_addr\":\"192.168.64.1:54074\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"172.16.0.1:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.386020417Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -144,11 +144,11 @@
       "detail": "denied: HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '169.254.1.1:80': default rule policy used.",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 2.1,
+      "elapsed_ms": 2.7,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":78,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2n0\",\"inbound_remote_addr\":\"192.168.64.1:53768\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"169.254.1.1:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.414658709Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":78,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthdg\",\"inbound_remote_addr\":\"192.168.64.1:54076\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"169.254.1.1:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.412050209Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -159,12 +159,12 @@
       "detail": "denied for CONNECT and GET (CONNECT: denied: HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '169.254.169.254:80': default rule policy used.; GET: denied: HTTP/1.1 407 Proxy Authentication Required \u2014 Egress proxying is denied to host '169.254.169.254': default rule policy used.)",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 3.9,
+      "elapsed_ms": 2.9,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":82,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2ng\",\"inbound_remote_addr\":\"192.168.64.1:53770\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"169.254.169.254:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.4396995Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":79,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2o0\",\"inbound_remote_addr\":\"192.168.64.1:53772\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"http\",\"requested_host\":\"169.254.169.254\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.441470292Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":82,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthe0\",\"inbound_remote_addr\":\"192.168.64.1:54078\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"169.254.169.254:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.438859667Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":79,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000ettheg\",\"inbound_remote_addr\":\"192.168.64.1:54080\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"http\",\"requested_host\":\"169.254.169.254\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.440140584Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -175,11 +175,11 @@
       "detail": "denied: HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '[::1]:80': Destination host cannot be determined.",
       "cause": "unparseable-destination",
       "observed": null,
-      "elapsed_ms": 2.0,
+      "elapsed_ms": 2.1,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":85,\"decision_reason\":\"Destination host cannot be determined\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":false,\"id\":\"dagr7uot8kv0009bc2og\",\"inbound_remote_addr\":\"192.168.64.1:53774\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"\",\"proxy_type\":\"connect\",\"requested_host\":\"[::1]:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.466426209Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":85,\"decision_reason\":\"Destination host cannot be determined\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":false,\"id\":\"dagram8t8kv000etthf0\",\"inbound_remote_addr\":\"192.168.64.1:54082\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"\",\"proxy_type\":\"connect\",\"requested_host\":\"[::1]:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.469696375Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -194,8 +194,8 @@
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":89,\"decision_reason\":\"Destination host cannot be determined\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":false,\"id\":\"dagr7uot8kv0009bc2p0\",\"inbound_remote_addr\":\"192.168.64.1:53776\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"\",\"proxy_type\":\"connect\",\"requested_host\":\"[fd00::1]:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.491497542Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":89,\"decision_reason\":\"Destination host cannot be determined\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":false,\"id\":\"dagr7uot8kv0009bc2pg\",\"inbound_remote_addr\":\"192.168.64.1:53778\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"\",\"proxy_type\":\"connect\",\"requested_host\":\"[fe80::1]:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.493202917Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":89,\"decision_reason\":\"Destination host cannot be determined\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":false,\"id\":\"dagram8t8kv000etthfg\",\"inbound_remote_addr\":\"192.168.64.1:54084\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"\",\"proxy_type\":\"connect\",\"requested_host\":\"[fd00::1]:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.49836375Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":89,\"decision_reason\":\"Destination host cannot be determined\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":false,\"id\":\"dagram8t8kv000etthg0\",\"inbound_remote_addr\":\"192.168.64.1:54086\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"\",\"proxy_type\":\"connect\",\"requested_host\":\"[fe80::1]:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.500068292Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -206,7 +206,7 @@
       "detail": "allowlisted hostnames resolving to private/loopback/metadata IPv4 all denied; resolved IPs recorded per attempt",
       "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 23.4,
+      "elapsed_ms": 20.0,
       "attempts": [
         {
           "n": 0,
@@ -216,7 +216,7 @@
           ],
           "outcome": "denied",
           "status": 407,
-          "elapsed_ms": 4.8,
+          "elapsed_ms": 2.5,
           "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '10.0.0.1.nip.io:80': no valid IP found among resolved addresses - 10.0.0.1 denied by rule 'Deny: Private Range'. .",
           "cause": "private-ip"
         },
@@ -228,7 +228,7 @@
           ],
           "outcome": "denied",
           "status": 407,
-          "elapsed_ms": 4.4,
+          "elapsed_ms": 4.0,
           "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '192.168.1.1.nip.io:80': no valid IP found among resolved addresses - 192.168.1.1 denied by rule 'Deny: Private Range'. .",
           "cause": "private-ip"
         },
@@ -240,7 +240,7 @@
           ],
           "outcome": "denied",
           "status": 407,
-          "elapsed_ms": 4.2,
+          "elapsed_ms": 3.9,
           "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '127.0.0.1.nip.io:80': no valid IP found among resolved addresses - 127.0.0.1 denied by rule 'Deny: Not Global Unicast'. .",
           "cause": "private-ip"
         },
@@ -252,17 +252,17 @@
           ],
           "outcome": "denied",
           "status": 407,
-          "elapsed_ms": 4.0,
+          "elapsed_ms": 4.6,
           "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '169.254.169.254.nip.io:80': no valid IP found among resolved addresses - 169.254.169.254 denied by rule 'Deny: Not Global Unicast'. .",
           "cause": "private-ip"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":150,\"decision_reason\":\"no valid IP found among resolved addresses - 10.0.0.1 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2qg\",\"inbound_remote_addr\":\"192.168.64.1:53782\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"10.0.0.1.nip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.564235459Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":156,\"decision_reason\":\"no valid IP found among resolved addresses - 192.168.1.1 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2r0\",\"inbound_remote_addr\":\"192.168.64.1:53784\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"192.168.1.1.nip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.569979917Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":157,\"decision_reason\":\"no valid IP found among resolved addresses - 127.0.0.1 denied by rule 'Deny: Not Global Unicast'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2rg\",\"inbound_remote_addr\":\"192.168.64.1:53786\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"127.0.0.1.nip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.575502292Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":169,\"decision_reason\":\"no valid IP found among resolved addresses - 169.254.169.254 denied by rule 'Deny: Not Global Unicast'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2s0\",\"inbound_remote_addr\":\"192.168.64.1:53788\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"169.254.169.254.nip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.58050225Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":150,\"decision_reason\":\"no valid IP found among resolved addresses - 10.0.0.1 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthh0\",\"inbound_remote_addr\":\"192.168.64.1:54090\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"10.0.0.1.nip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.576997209Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":156,\"decision_reason\":\"no valid IP found among resolved addresses - 192.168.1.1 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthhg\",\"inbound_remote_addr\":\"192.168.64.1:54092\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"192.168.1.1.nip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.581044042Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":157,\"decision_reason\":\"no valid IP found among resolved addresses - 127.0.0.1 denied by rule 'Deny: Not Global Unicast'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthi0\",\"inbound_remote_addr\":\"192.168.64.1:54094\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"127.0.0.1.nip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.585855Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":169,\"decision_reason\":\"no valid IP found among resolved addresses - 169.254.169.254 denied by rule 'Deny: Not Global Unicast'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthig\",\"inbound_remote_addr\":\"192.168.64.1:54096\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"169.254.169.254.nip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.590869584Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -273,7 +273,7 @@
       "detail": "allowlisted hostnames resolving to private/loopback IPv6 all denied; resolved IPs recorded per attempt",
       "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 16.5,
+      "elapsed_ms": 16.3,
       "attempts": [
         {
           "n": 0,
@@ -283,7 +283,7 @@
           ],
           "outcome": "denied",
           "status": 407,
-          "elapsed_ms": 4.8,
+          "elapsed_ms": 5.2,
           "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '0--1.sslip.io:80': no valid IP found among resolved addresses - ::1 denied by rule 'Deny: Not Global Unicast'. .",
           "cause": "private-ip"
         },
@@ -295,7 +295,7 @@
           ],
           "outcome": "denied",
           "status": 407,
-          "elapsed_ms": 4.2,
+          "elapsed_ms": 3.8,
           "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host 'fe80--1.sslip.io:80': no valid IP found among resolved addresses - fe80::1 denied by rule 'Deny: Not Global Unicast'. .",
           "cause": "private-ip"
         },
@@ -307,16 +307,16 @@
           ],
           "outcome": "denied",
           "status": 407,
-          "elapsed_ms": 4.0,
+          "elapsed_ms": 4.1,
           "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host 'fd00--1.sslip.io:80': no valid IP found among resolved addresses - fd00::1 denied by rule 'Deny: Private Range'. .",
           "cause": "private-ip"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":148,\"decision_reason\":\"no valid IP found among resolved addresses - ::1 denied by rule 'Deny: Not Global Unicast'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2sg\",\"inbound_remote_addr\":\"192.168.64.1:53790\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"0--1.sslip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.614682751Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":155,\"decision_reason\":\"no valid IP found among resolved addresses - fe80::1 denied by rule 'Deny: Not Global Unicast'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2t0\",\"inbound_remote_addr\":\"192.168.64.1:53792\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"fe80--1.sslip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.620348751Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":150,\"decision_reason\":\"no valid IP found among resolved addresses - fd00::1 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagr7uot8kv0009bc2tg\",\"inbound_remote_addr\":\"192.168.64.1:53794\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"fd00--1.sslip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.625544001Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":148,\"decision_reason\":\"no valid IP found among resolved addresses - ::1 denied by rule 'Deny: Not Global Unicast'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthj0\",\"inbound_remote_addr\":\"192.168.64.1:54098\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"0--1.sslip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.625899251Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":155,\"decision_reason\":\"no valid IP found among resolved addresses - fe80::1 denied by rule 'Deny: Not Global Unicast'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthjg\",\"inbound_remote_addr\":\"192.168.64.1:54100\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"fe80--1.sslip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.631510542Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":150,\"decision_reason\":\"no valid IP found among resolved addresses - fd00::1 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagram8t8kv000etthk0\",\"inbound_remote_addr\":\"192.168.64.1:54102\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"fd00--1.sslip.io:80\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.636078584Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -327,98 +327,98 @@
       "detail": "no connection reached the trap. 3/3 names were resolved more than once and so were handed the private address (6 lookups total); of the 3 repeat probes, 3 were denied, 0 carried HTTP traffic, and 0 were inconclusive",
       "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 1669.4,
+      "elapsed_ms": 1663.4,
       "attempts": [
         {
           "n": 0,
-          "target": "a0-7deed7.rebind.fixture.test:443",
+          "target": "a0-34e1e8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9",
-            "192.168.64.174"
+            "192.168.64.180"
           ],
           "outcome": "error",
           "status": 200,
-          "elapsed_ms": 39.3,
-          "detail": "HTTP/1.0 200 OK \u2014 inconclusive HTTP response after TLS: HTTP/1.1 505 HTTP Version Not Supported",
+          "elapsed_ms": 31.3,
+          "detail": "HTTP/1.0 200 OK \u2014 inconclusive HTTP response after TLS: HTTP/1.1 505 HTTP Version Not Supported \u2014 This server implements RFC 8484 - DNS Queries over HTTP, and requires HTTP/2 in accordance with section 5.2 of the RFC.",
           "cause": null
         },
         {
           "n": 1,
-          "target": "a1-7deed7.rebind.fixture.test:443",
+          "target": "a1-34e1e8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9",
-            "192.168.64.174"
+            "192.168.64.180"
           ],
           "outcome": "error",
           "status": 200,
-          "elapsed_ms": 32.3,
-          "detail": "HTTP/1.0 200 OK \u2014 inconclusive HTTP response after TLS: HTTP/1.1 505 HTTP Version Not Supported",
+          "elapsed_ms": 28.6,
+          "detail": "HTTP/1.0 200 OK \u2014 inconclusive HTTP response after TLS: HTTP/1.1 505 HTTP Version Not Supported \u2014 This server implements RFC 8484 - DNS Queries over HTTP, and requires HTTP/2 in accordance with section 5.2 of the RFC.",
           "cause": null
         },
         {
           "n": 2,
-          "target": "a2-7deed7.rebind.fixture.test:443",
+          "target": "a2-34e1e8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9",
-            "192.168.64.174"
+            "192.168.64.180"
           ],
           "outcome": "error",
           "status": 200,
-          "elapsed_ms": 24.2,
-          "detail": "HTTP/1.0 200 OK \u2014 inconclusive HTTP response after TLS: HTTP/1.1 505 HTTP Version Not Supported",
+          "elapsed_ms": 28.1,
+          "detail": "HTTP/1.0 200 OK \u2014 inconclusive HTTP response after TLS: HTTP/1.1 505 HTTP Version Not Supported \u2014 This server implements RFC 8484 - DNS Queries over HTTP, and requires HTTP/2 in accordance with section 5.2 of the RFC.",
           "cause": null
         },
         {
           "n": 3,
-          "target": "a0-7deed7.rebind.fixture.test:443",
+          "target": "a0-34e1e8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9",
-            "192.168.64.174"
+            "192.168.64.180"
           ],
           "outcome": "denied",
           "status": 407,
-          "elapsed_ms": 8.1,
-          "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host 'a0-7deed7.rebind.fixture.test:443': no valid IP found among resolved addresses - 192.168.64.174 denied by rule 'Deny: Private Range'. .",
+          "elapsed_ms": 9.8,
+          "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host 'a0-34e1e8.rebind.fixture.test:443': no valid IP found among resolved addresses - 192.168.64.180 denied by rule 'Deny: Private Range'. .",
           "cause": "private-ip"
         },
         {
           "n": 4,
-          "target": "a1-7deed7.rebind.fixture.test:443",
+          "target": "a1-34e1e8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9",
-            "192.168.64.174"
+            "192.168.64.180"
           ],
           "outcome": "denied",
           "status": 407,
-          "elapsed_ms": 6.6,
-          "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host 'a1-7deed7.rebind.fixture.test:443': no valid IP found among resolved addresses - 192.168.64.174 denied by rule 'Deny: Private Range'. .",
+          "elapsed_ms": 6.2,
+          "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host 'a1-34e1e8.rebind.fixture.test:443': no valid IP found among resolved addresses - 192.168.64.180 denied by rule 'Deny: Private Range'. .",
           "cause": "private-ip"
         },
         {
           "n": 5,
-          "target": "a2-7deed7.rebind.fixture.test:443",
+          "target": "a2-34e1e8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9",
-            "192.168.64.174"
+            "192.168.64.180"
           ],
           "outcome": "denied",
           "status": 407,
-          "elapsed_ms": 5.3,
-          "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host 'a2-7deed7.rebind.fixture.test:443': no valid IP found among resolved addresses - 192.168.64.174 denied by rule 'Deny: Private Range'. .",
+          "elapsed_ms": 5.4,
+          "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host 'a2-34e1e8.rebind.fixture.test:443': no valid IP found among resolved addresses - 192.168.64.180 denied by rule 'Deny: Private Range'. .",
           "cause": "private-ip"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagr7uot8kv0009bc2u0\",\"inbound_remote_addr\":\"192.168.64.1:53796\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a0-7deed7.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.670086167Z\",\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":4331,\"bytes_out\":1721,\"conn_establish_time_ms\":13,\"duration\":0.021122167,\"end_time\":\"2026-09-09T19:31:07.707313251Z\",\"error\":\"\",\"id\":\"dagr7uot8kv0009bc2u0\",\"inbound_remote_addr\":\"192.168.64.1:53796\",\"last_activity\":\"2026-09-09T19:31:07.707203001Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:59738\",\"outbound_remote_addr\":\"9.9.9.9:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a0-7deed7.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.670086167Z\",\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":false,\"id\":\"dagr7uot8kv0009bc2ug\",\"inbound_remote_addr\":\"192.168.64.1:53798\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a1-7deed7.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.709159209Z\",\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":4333,\"bytes_out\":1721,\"conn_establish_time_ms\":8,\"duration\":0.019955542,\"end_time\":\"2026-09-09T19:31:07.739411001Z\",\"error\":\"\",\"id\":\"dagr7uot8kv0009bc2ug\",\"inbound_remote_addr\":\"192.168.64.1:53798\",\"last_activity\":\"2026-09-09T19:31:07.739334001Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:59744\",\"outbound_remote_addr\":\"9.9.9.9:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a1-7deed7.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.709159209Z\",\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":false,\"id\":\"dagr7uot8kv0009bc2v0\",\"inbound_remote_addr\":\"192.168.64.1:53800\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a2-7deed7.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.741364501Z\",\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":4332,\"bytes_out\":1721,\"conn_establish_time_ms\":6,\"duration\":0.015300709,\"end_time\":\"2026-09-09T19:31:07.764622917Z\",\"error\":\"\",\"id\":\"dagr7uot8kv0009bc2v0\",\"inbound_remote_addr\":\"192.168.64.1:53800\",\"last_activity\":\"2026-09-09T19:31:07.764169834Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:59746\",\"outbound_remote_addr\":\"9.9.9.9:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a2-7deed7.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:07.741364501Z\",\"time\":\"2026-09-09T19:31:07Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":171,\"decision_reason\":\"no valid IP found among resolved addresses - 192.168.64.174 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagr7v8t8kv0009bc2vg\",\"inbound_remote_addr\":\"192.168.64.1:53802\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a0-7deed7.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.273344376Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":171,\"decision_reason\":\"no valid IP found among resolved addresses - 192.168.64.174 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagr7v8t8kv0009bc300\",\"inbound_remote_addr\":\"192.168.64.1:53804\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a1-7deed7.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.280363293Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"allow\":false,\"content_length\":171,\"decision_reason\":\"no valid IP found among resolved addresses - 192.168.64.174 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":true,\"id\":\"dagr7v8t8kv0009bc30g\",\"inbound_remote_addr\":\"192.168.64.1:53806\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a2-7deed7.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.286535585Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}"
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":3,\"enforce_would_deny\":false,\"id\":\"dagram8t8kv000etthkg\",\"inbound_remote_addr\":\"192.168.64.1:54104\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a0-34e1e8.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.680283709Z\",\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":4331,\"bytes_out\":1721,\"conn_establish_time_ms\":7,\"duration\":0.016129959,\"end_time\":\"2026-09-09T19:36:57.709076167Z\",\"error\":\"\",\"id\":\"dagram8t8kv000etthkg\",\"inbound_remote_addr\":\"192.168.64.1:54104\",\"last_activity\":\"2026-09-09T19:36:57.708876167Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:34904\",\"outbound_remote_addr\":\"9.9.9.9:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a0-34e1e8.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.680283709Z\",\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":false,\"id\":\"dagram8t8kv000etthl0\",\"inbound_remote_addr\":\"192.168.64.1:54106\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a1-34e1e8.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.711301376Z\",\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":4333,\"bytes_out\":1721,\"conn_establish_time_ms\":7,\"duration\":0.016855584,\"end_time\":\"2026-09-09T19:36:57.737534167Z\",\"error\":\"\",\"id\":\"dagram8t8kv000etthl0\",\"inbound_remote_addr\":\"192.168.64.1:54106\",\"last_activity\":\"2026-09-09T19:36:57.737350417Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:34908\",\"outbound_remote_addr\":\"9.9.9.9:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a1-34e1e8.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.711301376Z\",\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagram8t8kv000etthlg\",\"inbound_remote_addr\":\"192.168.64.1:54108\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a2-34e1e8.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.739941667Z\",\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":4333,\"bytes_out\":1721,\"conn_establish_time_ms\":8,\"duration\":0.014960417,\"end_time\":\"2026-09-09T19:36:57.765624292Z\",\"error\":\"\",\"id\":\"dagram8t8kv000etthlg\",\"inbound_remote_addr\":\"192.168.64.1:54108\",\"last_activity\":\"2026-09-09T19:36:57.765328751Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:34920\",\"outbound_remote_addr\":\"9.9.9.9:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a2-34e1e8.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:57.739941667Z\",\"time\":\"2026-09-09T19:36:57Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":171,\"decision_reason\":\"no valid IP found among resolved addresses - 192.168.64.180 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagramot8kv000etthm0\",\"inbound_remote_addr\":\"192.168.64.1:54110\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a0-34e1e8.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.276017585Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":171,\"decision_reason\":\"no valid IP found among resolved addresses - 192.168.64.180 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":true,\"id\":\"dagramot8kv000etthmg\",\"inbound_remote_addr\":\"192.168.64.1:54112\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a1-34e1e8.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.28380446Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"allow\":false,\"content_length\":171,\"decision_reason\":\"no valid IP found among resolved addresses - 192.168.64.180 denied by rule 'Deny: Private Range'. \",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":true,\"id\":\"dagramot8kv000etthn0\",\"inbound_remote_addr\":\"192.168.64.1:54114\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"a2-34e1e8.rebind.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.289628501Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -426,10 +426,10 @@
       "group": "full",
       "expectation": "deny",
       "outcome": "skip",
-      "detail": "control probe to public-only.fixture.test did not establish (HTTP/1.0 200 OK \u2014 inconclusive HTTP response after TLS: HTTP/1.1 505 HTTP Version Not Supported) \u2014 the mixed-answer fixture is not mounted, not allowlisted, or its public address is unreachable from here. Run `ipl-lab up`, which serves lab/config/dns-fixture.hosts, and re-run",
+      "detail": "control probe to public-only.fixture.test did not establish (HTTP/1.0 200 OK \u2014 inconclusive HTTP response after TLS: HTTP/1.1 505 HTTP Version Not Supported \u2014 This server implements RFC 8484 - DNS Queries over HTTP, and requires HTTP/2 in accordance with section 5.2 of the RFC.) \u2014 the mixed-answer fixture is not mounted, not allowlisted, or its public address is unreachable from here. Run `ipl-lab up`, which serves lab/config/dns-fixture.hosts, and re-run",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 37.6,
+      "elapsed_ms": 37.9,
       "attempts": [
         {
           "n": 0,
@@ -437,15 +437,15 @@
           "local_resolved": [],
           "outcome": "error",
           "status": 200,
-          "elapsed_ms": 37.6,
-          "detail": "HTTP/1.0 200 OK \u2014 inconclusive HTTP response after TLS: HTTP/1.1 505 HTTP Version Not Supported",
+          "elapsed_ms": 37.8,
+          "detail": "HTTP/1.0 200 OK \u2014 inconclusive HTTP response after TLS: HTTP/1.1 505 HTTP Version Not Supported \u2014 This server implements RFC 8484 - DNS Queries over HTTP, and requires HTTP/2 in accordance with section 5.2 of the RFC.",
           "cause": null
         }
       ],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc310\",\"inbound_remote_addr\":\"192.168.64.1:53808\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"public-only.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.365843418Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":4299,\"bytes_out\":1711,\"conn_establish_time_ms\":13,\"duration\":0.018117042,\"end_time\":\"2026-09-09T19:31:09.400663626Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc310\",\"inbound_remote_addr\":\"192.168.64.1:53808\",\"last_activity\":\"2026-09-09T19:31:09.400493126Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:59750\",\"outbound_remote_addr\":\"9.9.9.9:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"public-only.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.365843418Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}"
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etthng\",\"inbound_remote_addr\":\"192.168.64.1:54116\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"public-only.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.368931835Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":4300,\"bytes_out\":1711,\"conn_establish_time_ms\":11,\"duration\":0.020994334,\"end_time\":\"2026-09-09T19:36:59.40475421Z\",\"error\":\"\",\"id\":\"dagramot8kv000etthng\",\"inbound_remote_addr\":\"192.168.64.1:54116\",\"last_activity\":\"2026-09-09T19:36:59.404279376Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:34932\",\"outbound_remote_addr\":\"9.9.9.9:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"public-only.fixture.test:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.368931835Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -464,14 +464,14 @@
           "local_resolved": [],
           "outcome": "denied",
           "status": 407,
-          "elapsed_ms": 2.6,
+          "elapsed_ms": 2.8,
           "detail": "HTTP/1.1 407 Request rejected by proxy \u2014 Egress proxying is denied to host '1.0.0.1:443': default rule policy used.",
           "cause": "hostname-not-allowlisted"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":false,\"content_length\":75,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagr7v8t8kv0009bc31g\",\"inbound_remote_addr\":\"192.168.64.1:53810\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"1.0.0.1:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.454192085Z\",\"status_code\":407,\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}"
+        "{\"allow\":false,\"content_length\":75,\"decision_reason\":\"default rule policy used\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":true,\"id\":\"dagramot8kv000ettho0\",\"inbound_remote_addr\":\"192.168.64.1:54118\",\"level\":\"warning\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"1.0.0.1:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.458258626Z\",\"status_code\":407,\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -482,12 +482,12 @@
       "detail": "mismatched SNI accepted: tunnel established, TLSv1.3 handshake OK (SNI=files.pythonhosted.org)",
       "cause": "sni-mismatch",
       "observed": "allowed",
-      "elapsed_ms": 27.0,
+      "elapsed_ms": 28.7,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":3,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc320\",\"inbound_remote_addr\":\"192.168.64.1:53812\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.499397043Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":4660,\"bytes_out\":1598,\"conn_establish_time_ms\":9,\"duration\":0.012096333,\"end_time\":\"2026-09-09T19:31:09.52461496Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc320\",\"inbound_remote_addr\":\"192.168.64.1:53812\",\"last_activity\":\"2026-09-09T19:31:09.524580585Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60468\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.499397043Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}"
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":3,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etthog\",\"inbound_remote_addr\":\"192.168.64.1:54120\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.504145543Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":4660,\"bytes_out\":1598,\"conn_establish_time_ms\":8,\"duration\":0.014792625,\"end_time\":\"2026-09-09T19:36:59.531187585Z\",\"error\":\"\",\"id\":\"dagramot8kv000etthog\",\"inbound_remote_addr\":\"192.168.64.1:54120\",\"last_activity\":\"2026-09-09T19:36:59.531151585Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36552\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.504145543Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -498,12 +498,12 @@
       "detail": "raw bytes traversed the tunnel; response: type=alert(21) version=TLS1.2 length=2 -> alert level=fatal(2) description=decode_error(50); type=alert(21) version=TLS1.2 length=2 -> alert level=warning(1) description=close_notify(0)",
       "cause": "non-tls-in-tunnel",
       "observed": "allowed",
-      "elapsed_ms": 25.2,
+      "elapsed_ms": 23.0,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":3,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc32g\",\"inbound_remote_addr\":\"192.168.64.1:53814\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.55744821Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":14,\"bytes_out\":53,\"conn_establish_time_ms\":9,\"duration\":0.009287917,\"end_time\":\"2026-09-09T19:31:09.58026096Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc32g\",\"inbound_remote_addr\":\"192.168.64.1:53814\",\"last_activity\":\"2026-09-09T19:31:09.57953171Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60478\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.55744821Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}"
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":3,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etthp0\",\"inbound_remote_addr\":\"192.168.64.1:54122\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.563749001Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":14,\"bytes_out\":53,\"conn_establish_time_ms\":8,\"duration\":0.008964583,\"end_time\":\"2026-09-09T19:36:59.58436646Z\",\"error\":\"\",\"id\":\"dagramot8kv000etthp0\",\"inbound_remote_addr\":\"192.168.64.1:54122\",\"last_activity\":\"2026-09-09T19:36:59.584287251Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36556\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.563749001Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}"
       ]
     },
     {
@@ -514,30 +514,30 @@
       "detail": "10 concurrent CONNECTs to an allowed host: 10 established, 0 denied/failed",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 23.9,
+      "elapsed_ms": 24.3,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc34g\",\"inbound_remote_addr\":\"192.168.64.1:53828\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.619330751Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":3,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc330\",\"inbound_remote_addr\":\"192.168.64.1:53827\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.616894085Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc340\",\"inbound_remote_addr\":\"192.168.64.1:53825\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.617781293Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":3,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc33g\",\"inbound_remote_addr\":\"192.168.64.1:53826\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.617077085Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc37g\",\"inbound_remote_addr\":\"192.168.64.1:53829\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.623048876Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc35g\",\"inbound_remote_addr\":\"192.168.64.1:53830\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.622440418Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc370\",\"inbound_remote_addr\":\"192.168.64.1:53832\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.623036585Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc36g\",\"inbound_remote_addr\":\"192.168.64.1:53833\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.622453001Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc360\",\"inbound_remote_addr\":\"192.168.64.1:53834\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.622446293Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagr7v8t8kv0009bc350\",\"inbound_remote_addr\":\"192.168.64.1:53831\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.62131621Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":9,\"duration\":0.000867,\"end_time\":\"2026-09-09T19:31:09.630822376Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc34g\",\"inbound_remote_addr\":\"192.168.64.1:53828\",\"last_activity\":\"2026-09-09T19:31:09.63005296Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60488\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.619330751Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":8,\"duration\":0.000902708,\"end_time\":\"2026-09-09T19:31:09.630835835Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc330\",\"inbound_remote_addr\":\"192.168.64.1:53827\",\"last_activity\":\"2026-09-09T19:31:09.630020335Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60500\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.616894085Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":9,\"duration\":0.001922333,\"end_time\":\"2026-09-09T19:31:09.632837585Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc340\",\"inbound_remote_addr\":\"192.168.64.1:53825\",\"last_activity\":\"2026-09-09T19:31:09.630989501Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60508\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.617781293Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":10,\"duration\":0.001076083,\"end_time\":\"2026-09-09T19:31:09.63335896Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc33g\",\"inbound_remote_addr\":\"192.168.64.1:53826\",\"last_activity\":\"2026-09-09T19:31:09.632455001Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60512\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.617077085Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":7,\"duration\":0.001314458,\"end_time\":\"2026-09-09T19:31:09.63361396Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc37g\",\"inbound_remote_addr\":\"192.168.64.1:53829\",\"last_activity\":\"2026-09-09T19:31:09.632467585Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60524\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.623048876Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":8,\"duration\":0.000916333,\"end_time\":\"2026-09-09T19:31:09.633665543Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc35g\",\"inbound_remote_addr\":\"192.168.64.1:53830\",\"last_activity\":\"2026-09-09T19:31:09.632861751Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60538\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.622440418Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":10,\"duration\":0.000495042,\"end_time\":\"2026-09-09T19:31:09.635533293Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc370\",\"inbound_remote_addr\":\"192.168.64.1:53832\",\"last_activity\":\"2026-09-09T19:31:09.635124085Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60548\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.623036585Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":11,\"duration\":0.000585,\"end_time\":\"2026-09-09T19:31:09.636611668Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc360\",\"inbound_remote_addr\":\"192.168.64.1:53834\",\"last_activity\":\"2026-09-09T19:31:09.636129376Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60552\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.622446293Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":11,\"duration\":0.00073675,\"end_time\":\"2026-09-09T19:31:09.636955168Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc36g\",\"inbound_remote_addr\":\"192.168.64.1:53833\",\"last_activity\":\"2026-09-09T19:31:09.636670876Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60558\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.622453001Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}",
-        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":11,\"duration\":0.0005055,\"end_time\":\"2026-09-09T19:31:09.637023668Z\",\"error\":\"\",\"id\":\"dagr7v8t8kv0009bc350\",\"inbound_remote_addr\":\"192.168.64.1:53831\",\"last_activity\":\"2026-09-09T19:31:09.636585251Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.175:60562\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:31:09.62131621Z\",\"time\":\"2026-09-09T19:31:09Z\",\"trace_id\":\"\"}"
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etthr0\",\"inbound_remote_addr\":\"192.168.64.1:54136\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.62258421Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":3,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etthpg\",\"inbound_remote_addr\":\"192.168.64.1:54133\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.620572126Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etthqg\",\"inbound_remote_addr\":\"192.168.64.1:54134\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.621726043Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etthq0\",\"inbound_remote_addr\":\"192.168.64.1:54135\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.621155835Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":0,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etths0\",\"inbound_remote_addr\":\"192.168.64.1:54138\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.626845293Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":3,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etthrg\",\"inbound_remote_addr\":\"192.168.64.1:54137\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.623964376Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":1,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etthu0\",\"inbound_remote_addr\":\"192.168.64.1:54141\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.62907871Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000ettht0\",\"inbound_remote_addr\":\"192.168.64.1:54142\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.628381751Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etthsg\",\"inbound_remote_addr\":\"192.168.64.1:54139\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.628246293Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"allow\":true,\"decision_reason\":\"host matched allowed domain in rule\",\"dns_lookup_time_ms\":2,\"enforce_would_deny\":false,\"id\":\"dagramot8kv000etthtg\",\"inbound_remote_addr\":\"192.168.64.1:54140\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-DECISION\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.628423251Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":7,\"duration\":0.00063175,\"end_time\":\"2026-09-09T19:36:59.632651085Z\",\"error\":\"\",\"id\":\"dagramot8kv000etthr0\",\"inbound_remote_addr\":\"192.168.64.1:54136\",\"last_activity\":\"2026-09-09T19:36:59.632309168Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36570\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.62258421Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":8,\"duration\":0.000792875,\"end_time\":\"2026-09-09T19:36:59.633122001Z\",\"error\":\"\",\"id\":\"dagramot8kv000etthpg\",\"inbound_remote_addr\":\"192.168.64.1:54133\",\"last_activity\":\"2026-09-09T19:36:59.632383835Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36578\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.620572126Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":8,\"duration\":0.000725416,\"end_time\":\"2026-09-09T19:36:59.63396371Z\",\"error\":\"\",\"id\":\"dagramot8kv000etthqg\",\"inbound_remote_addr\":\"192.168.64.1:54134\",\"last_activity\":\"2026-09-09T19:36:59.633305168Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36590\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.621726043Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":8,\"duration\":0.000623709,\"end_time\":\"2026-09-09T19:36:59.633948293Z\",\"error\":\"\",\"id\":\"dagramot8kv000etthq0\",\"inbound_remote_addr\":\"192.168.64.1:54135\",\"last_activity\":\"2026-09-09T19:36:59.63337871Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36592\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.621155835Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":9,\"duration\":0.00065925,\"end_time\":\"2026-09-09T19:36:59.637223043Z\",\"error\":\"\",\"id\":\"dagramot8kv000etths0\",\"inbound_remote_addr\":\"192.168.64.1:54138\",\"last_activity\":\"2026-09-09T19:36:59.63662721Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36608\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.626845293Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":9,\"duration\":0.000656208,\"end_time\":\"2026-09-09T19:36:59.63761721Z\",\"error\":\"\",\"id\":\"dagramot8kv000etthrg\",\"inbound_remote_addr\":\"192.168.64.1:54137\",\"last_activity\":\"2026-09-09T19:36:59.637060168Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36612\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.623964376Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":7,\"duration\":0.000792459,\"end_time\":\"2026-09-09T19:36:59.639317668Z\",\"error\":\"\",\"id\":\"dagramot8kv000etthu0\",\"inbound_remote_addr\":\"192.168.64.1:54141\",\"last_activity\":\"2026-09-09T19:36:59.638615876Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36626\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.62907871Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":8,\"duration\":0.00051975,\"end_time\":\"2026-09-09T19:36:59.63944846Z\",\"error\":\"\",\"id\":\"dagramot8kv000ettht0\",\"inbound_remote_addr\":\"192.168.64.1:54142\",\"last_activity\":\"2026-09-09T19:36:59.639069751Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36642\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.628381751Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":9,\"duration\":0.000415125,\"end_time\":\"2026-09-09T19:36:59.640478751Z\",\"error\":\"\",\"id\":\"dagramot8kv000etthsg\",\"inbound_remote_addr\":\"192.168.64.1:54139\",\"last_activity\":\"2026-09-09T19:36:59.64014621Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36648\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.628246293Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}",
+        "{\"bytes_in\":0,\"bytes_out\":0,\"conn_establish_time_ms\":9,\"duration\":0.000398542,\"end_time\":\"2026-09-09T19:36:59.641297793Z\",\"error\":\"\",\"id\":\"dagramot8kv000etthtg\",\"inbound_remote_addr\":\"192.168.64.1:54140\",\"last_activity\":\"2026-09-09T19:36:59.640951835Z\",\"level\":\"info\",\"msg\":\"CANONICAL-PROXY-CN-CLOSE\",\"outbound_local_addr\":\"192.168.64.181:36652\",\"outbound_remote_addr\":\"151.101.192.223:443\",\"project\":\"internet-proxy-locally\",\"proxy_type\":\"connect\",\"requested_host\":\"pypi.org:443\",\"role\":\"\",\"start_time\":\"2026-09-09T19:36:59.628423251Z\",\"time\":\"2026-09-09T19:36:59Z\",\"trace_id\":\"\"}"
       ]
     }
   ]

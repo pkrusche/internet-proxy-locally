@@ -112,8 +112,13 @@ A CONNECT `200` only acknowledges the tunnel. With interception, even a
 successful TLS handshake may be with the proxy itself. The CONNECT deny
 probes therefore send ClientHello with the destination name, complete TLS,
 and send an HTTP GET. A complete HTTP 2xx/3xx response is evidence of access;
-Squid's explicit HTTP 403 with `X-Squid-Error: ERR_ACCESS_DENIED` inside TLS
-is a denial (`proxy-access-denied`). Ordinary CONNECT 4xx refusals also pass.
+Squid's HTTP 403 containing our `internet-proxy-locally denied this request:`
+page is a denial, with its stated reason retained for classification. These
+custom `deny_info` pages need not include `X-Squid-Error`. An explicit
+`X-Squid-Error: ERR_ACCESS_DENIED` also counts (`proxy-access-denied`).
+Ordinary CONNECT 4xx refusals also pass. Generic origin 403s remain inconclusive.
+Error responses retain a bounded body excerpt and any `X-Squid-Error` value,
+so a fixture's 503 can be diagnosed rather than reduced to its status line.
 
 Timeouts, resets, TLS alerts, incomplete responses, and other HTTP errors
 remain inconclusive (`error`): the client alone cannot tell an origin failure

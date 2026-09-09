@@ -8,7 +8,7 @@
   "policy": "test",
   "tls_interception": true,
   "host": "Darwin 25.6.0 arm64",
-  "generated_at": "2026-09-09T19:31:16Z",
+  "generated_at": "2026-09-09T19:37:05Z",
   "exit_code": 1,
   "results": [
     {
@@ -19,7 +19,7 @@
       "detail": "reached pypi.org (HTTP/1.1 301 Moved Permanently)",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 30.1,
+      "elapsed_ms": 40.8,
       "attempts": [],
       "headers": {
         "Content-Length": "0",
@@ -27,11 +27,11 @@
         "Retry-After": "0",
         "Location": "https://pypi.org/",
         "Accept-Ranges": "bytes",
-        "Date": "Wed, 09 Sep 2026 19:31:13 GMT",
-        "X-Served-By": "cache-fra-etou8220064-FRA",
+        "Date": "Wed, 09 Sep 2026 19:37:02 GMT",
+        "X-Served-By": "cache-fra-etou8220026-FRA",
         "X-Cache": "HIT",
         "X-Cache-Hits": "0",
-        "X-Timer": "S1788982273.414532,VS0,VE0",
+        "X-Timer": "S1788982623.761900,VS0,VE0",
         "X-Frame-Options": "deny",
         "X-XSS-Protection": "1; mode=block",
         "X-Content-Type-Options": "nosniff",
@@ -42,7 +42,7 @@
         "Connection": "close"
       },
       "engine_logs": [
-        "1788982273.189     28 192.168.64.1 TCP_MISS/301 1137 GET http://pypi.org/ - HIER_DIRECT/151.101.192.223 -"
+        "1788982623.229     38 192.168.64.1 TCP_MISS/301 1137 GET http://pypi.org/ - HIER_DIRECT/151.101.192.223 -"
       ]
     },
     {
@@ -53,27 +53,27 @@
       "detail": "tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 48.6,
+      "elapsed_ms": 40.3,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982273.263     47 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
+        "1788982623.296     39 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
       ]
     },
     {
       "name": "blocked-host-connect",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "error",
-      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: the destination is not in the allowlist.",
+      "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 17.5,
+      "elapsed_ms": 19.5,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982273.306     14 192.168.64.1 TCP_DENIED/200 0 CONNECT example.com:443 - HIER_NONE/- -",
-        "1788982273.307      0 192.168.64.1 NONE_NONE/403 456 GET https://example.com/ - HIER_NONE/- text/html"
+        "1788982623.339     16 192.168.64.1 TCP_DENIED/200 0 CONNECT example.com:443 - HIER_NONE/- -",
+        "1788982623.340      0 192.168.64.1 NONE_NONE/403 456 GET https://example.com/ - HIER_NONE/- text/html"
       ]
     },
     {
@@ -84,141 +84,141 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: the destination is not in the allowlist.",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 2.7,
+      "elapsed_ms": 2.6,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982273.336      0 192.168.64.1 TCP_DENIED/403 456 GET http://example.com/ - HIER_NONE/- text/html"
+        "1788982623.370      0 192.168.64.1 TCP_DENIED/403 456 GET http://example.com/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "direct-ip-connect",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "error",
-      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: the destination is a bare IP address, and this proxy allowlists destinations by hostname only.",
+      "cause": "ip-literal-destination",
       "observed": null,
-      "elapsed_ms": 8.6,
+      "elapsed_ms": 9.2,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982273.369      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 1.1.1.1:443 - HIER_NONE/- -",
-        "1788982273.370      0 192.168.64.1 NONE_NONE/403 505 GET https://1.1.1.1/ - HIER_NONE/- text/html"
+        "1788982623.404      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 1.1.1.1:443 - HIER_NONE/- -",
+        "1788982623.404      0 192.168.64.1 NONE_NONE/403 505 GET https://1.1.1.1/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "loopback-ipv4",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "error",
-      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
+      "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 9.0,
+      "elapsed_ms": 7.6,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982273.403      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 127.0.0.1:80 - HIER_NONE/- -",
-        "1788982273.403      0 192.168.64.1 NONE_NONE/403 517 GET https://127.0.0.1:80/ - HIER_NONE/- text/html"
+        "1788982623.437      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 127.0.0.1:80 - HIER_NONE/- -",
+        "1788982623.437      0 192.168.64.1 NONE_NONE/403 517 GET https://127.0.0.1:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "rfc1918-ipv4",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "error",
-      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.; denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.; denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
+      "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 23.7,
+      "elapsed_ms": 21.0,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982273.436      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 10.0.0.1:80 - HIER_NONE/- -",
-        "1788982273.436      0 192.168.64.1 NONE_NONE/403 517 GET https://10.0.0.1:80/ - HIER_NONE/- text/html",
-        "1788982273.443      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 192.168.1.1:80 - HIER_NONE/- -",
-        "1788982273.444      0 192.168.64.1 NONE_NONE/403 517 GET https://192.168.1.1:80/ - HIER_NONE/- text/html",
-        "1788982273.451      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 172.16.0.1:80 - HIER_NONE/- -",
-        "1788982273.451      0 192.168.64.1 NONE_NONE/403 517 GET https://172.16.0.1:80/ - HIER_NONE/- text/html"
+        "1788982623.468      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 10.0.0.1:80 - HIER_NONE/- -",
+        "1788982623.468      0 192.168.64.1 NONE_NONE/403 517 GET https://10.0.0.1:80/ - HIER_NONE/- text/html",
+        "1788982623.474      4 192.168.64.1 TCP_DENIED/200 0 CONNECT 192.168.1.1:80 - HIER_NONE/- -",
+        "1788982623.475      0 192.168.64.1 NONE_NONE/403 517 GET https://192.168.1.1:80/ - HIER_NONE/- text/html",
+        "1788982623.481      4 192.168.64.1 TCP_DENIED/200 0 CONNECT 172.16.0.1:80 - HIER_NONE/- -",
+        "1788982623.482      0 192.168.64.1 NONE_NONE/403 517 GET https://172.16.0.1:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "link-local-ipv4",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "error",
-      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
+      "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 8.2,
+      "elapsed_ms": 8.4,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982273.483      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 169.254.1.1:80 - HIER_NONE/- -",
-        "1788982273.484      0 192.168.64.1 NONE_NONE/403 517 GET https://169.254.1.1:80/ - HIER_NONE/- text/html"
+        "1788982623.514      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 169.254.1.1:80 - HIER_NONE/- -",
+        "1788982623.514      0 192.168.64.1 NONE_NONE/403 517 GET https://169.254.1.1:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "metadata-endpoint",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "error",
-      "detail": "CONNECT: inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; GET: denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "denied for CONNECT and GET (CONNECT: denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.; GET: denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.)",
+      "cause": "metadata",
       "observed": null,
-      "elapsed_ms": 10.5,
+      "elapsed_ms": 9.9,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982273.515      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 169.254.169.254:80 - HIER_NONE/- -",
-        "1788982273.516      0 192.168.64.1 NONE_NONE/403 477 GET https://169.254.169.254:80/ - HIER_NONE/- text/html",
-        "1788982273.517      0 192.168.64.1 TCP_DENIED/403 477 GET http://169.254.169.254/latest/meta-data/ - HIER_NONE/- text/html"
+        "1788982623.545      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 169.254.169.254:80 - HIER_NONE/- -",
+        "1788982623.545      0 192.168.64.1 NONE_NONE/403 477 GET https://169.254.169.254:80/ - HIER_NONE/- text/html",
+        "1788982623.547      0 192.168.64.1 TCP_DENIED/403 477 GET http://169.254.169.254/latest/meta-data/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "loopback-ipv6",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "error",
-      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
+      "cause": "private-ip",
       "observed": null,
       "elapsed_ms": 9.3,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982273.549      6 192.168.64.1 TCP_DENIED/200 0 CONNECT [::1]:80 - HIER_NONE/- -",
-        "1788982273.550      0 192.168.64.1 NONE_NONE/403 517 GET https://[::1]:80/ - HIER_NONE/- text/html"
+        "1788982623.580      7 192.168.64.1 TCP_DENIED/200 0 CONNECT [::1]:80 - HIER_NONE/- -",
+        "1788982623.580      0 192.168.64.1 NONE_NONE/403 517 GET https://[::1]:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "private-ipv6",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "error",
-      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.; denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
+      "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 16.1,
+      "elapsed_ms": 15.4,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982273.588      5 192.168.64.1 TCP_DENIED/200 0 CONNECT [fd00::1]:80 - HIER_NONE/- -",
-        "1788982273.589      0 192.168.64.1 NONE_NONE/403 517 GET https://[fd00::1]:80/ - HIER_NONE/- text/html",
-        "1788982273.596      5 192.168.64.1 TCP_DENIED/200 0 CONNECT [fe80::1]:80 - HIER_NONE/- -",
-        "1788982273.597      0 192.168.64.1 NONE_NONE/403 517 GET https://[fe80::1]:80/ - HIER_NONE/- text/html"
+        "1788982623.611      5 192.168.64.1 TCP_DENIED/200 0 CONNECT [fd00::1]:80 - HIER_NONE/- -",
+        "1788982623.611      0 192.168.64.1 NONE_NONE/403 517 GET https://[fd00::1]:80/ - HIER_NONE/- text/html",
+        "1788982623.618      5 192.168.64.1 TCP_DENIED/200 0 CONNECT [fe80::1]:80 - HIER_NONE/- -",
+        "1788982623.619      0 192.168.64.1 NONE_NONE/403 517 GET https://[fe80::1]:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "dns-private-ipv4",
       "group": "full",
       "expectation": "deny",
-      "outcome": "error",
-      "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "allowlisted hostnames resolving to private/loopback/metadata IPv4 all denied; resolved IPs recorded per attempt",
+      "cause": "metadata+private-ip",
       "observed": null,
-      "elapsed_ms": 47.2,
+      "elapsed_ms": 50.4,
       "attempts": [
         {
           "n": 0,
@@ -226,11 +226,11 @@
           "local_resolved": [
             "10.0.0.1"
           ],
-          "outcome": "error",
+          "outcome": "denied",
           "status": 200,
-          "elapsed_ms": 12.3,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-          "cause": null
+          "elapsed_ms": 10.9,
+          "detail": "HTTP/1.1 200 Connection established \u2014 denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
+          "cause": "private-ip"
         },
         {
           "n": 1,
@@ -238,11 +238,11 @@
           "local_resolved": [
             "192.168.1.1"
           ],
-          "outcome": "error",
+          "outcome": "denied",
           "status": 200,
-          "elapsed_ms": 10.5,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-          "cause": null
+          "elapsed_ms": 7.7,
+          "detail": "HTTP/1.1 200 Connection established \u2014 denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
+          "cause": "private-ip"
         },
         {
           "n": 2,
@@ -250,11 +250,11 @@
           "local_resolved": [
             "127.0.0.1"
           ],
-          "outcome": "error",
+          "outcome": "denied",
           "status": 200,
-          "elapsed_ms": 10.2,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-          "cause": null
+          "elapsed_ms": 9.0,
+          "detail": "HTTP/1.1 200 Connection established \u2014 denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
+          "cause": "private-ip"
         },
         {
           "n": 3,
@@ -262,34 +262,34 @@
           "local_resolved": [
             "169.254.169.254"
           ],
-          "outcome": "error",
+          "outcome": "denied",
           "status": 200,
-          "elapsed_ms": 7.8,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-          "cause": null
+          "elapsed_ms": 10.1,
+          "detail": "HTTP/1.1 200 Connection established \u2014 denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.",
+          "cause": "metadata"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "1788982273.685      9 192.168.64.1 TCP_DENIED/200 0 CONNECT 10.0.0.1.nip.io:80 - HIER_NONE/- -",
-        "1788982273.686      0 192.168.64.1 NONE_NONE/403 517 GET https://10.0.0.1.nip.io:80/ - HIER_NONE/- text/html",
-        "1788982273.698      8 192.168.64.1 TCP_DENIED/200 0 CONNECT 192.168.1.1.nip.io:80 - HIER_NONE/- -",
-        "1788982273.699      0 192.168.64.1 NONE_NONE/403 517 GET https://192.168.1.1.nip.io:80/ - HIER_NONE/- text/html",
-        "1788982273.709      7 192.168.64.1 TCP_DENIED/200 0 CONNECT 127.0.0.1.nip.io:80 - HIER_NONE/- -",
-        "1788982273.710      0 192.168.64.1 NONE_NONE/403 517 GET https://127.0.0.1.nip.io:80/ - HIER_NONE/- text/html",
-        "1788982273.719      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 169.254.169.254.nip.io:80 - HIER_NONE/- -",
-        "1788982273.719      0 192.168.64.1 NONE_NONE/403 477 GET https://169.254.169.254.nip.io:80/ - HIER_NONE/- text/html"
+        "1788982623.699      8 192.168.64.1 TCP_DENIED/200 0 CONNECT 10.0.0.1.nip.io:80 - HIER_NONE/- -",
+        "1788982623.700      0 192.168.64.1 NONE_NONE/403 517 GET https://10.0.0.1.nip.io:80/ - HIER_NONE/- text/html",
+        "1788982623.708      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 192.168.1.1.nip.io:80 - HIER_NONE/- -",
+        "1788982623.708      0 192.168.64.1 NONE_NONE/403 517 GET https://192.168.1.1.nip.io:80/ - HIER_NONE/- text/html",
+        "1788982623.718      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 127.0.0.1.nip.io:80 - HIER_NONE/- -",
+        "1788982623.718      0 192.168.64.1 NONE_NONE/403 517 GET https://127.0.0.1.nip.io:80/ - HIER_NONE/- text/html",
+        "1788982623.729      7 192.168.64.1 TCP_DENIED/200 0 CONNECT 169.254.169.254.nip.io:80 - HIER_NONE/- -",
+        "1788982623.730      0 192.168.64.1 NONE_NONE/403 477 GET https://169.254.169.254.nip.io:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "dns-private-ipv6",
       "group": "full",
       "expectation": "deny",
-      "outcome": "error",
-      "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "allowlisted hostnames resolving to private/loopback IPv6 all denied; resolved IPs recorded per attempt",
+      "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 34.8,
+      "elapsed_ms": 35.6,
       "attempts": [
         {
           "n": 0,
@@ -297,11 +297,11 @@
           "local_resolved": [
             "::1"
           ],
-          "outcome": "error",
+          "outcome": "denied",
           "status": 200,
-          "elapsed_ms": 10.6,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-          "cause": null
+          "elapsed_ms": 11.7,
+          "detail": "HTTP/1.1 200 Connection established \u2014 denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
+          "cause": "private-ip"
         },
         {
           "n": 1,
@@ -309,11 +309,11 @@
           "local_resolved": [
             "fe80::1"
           ],
-          "outcome": "error",
+          "outcome": "denied",
           "status": 200,
-          "elapsed_ms": 10.0,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-          "cause": null
+          "elapsed_ms": 8.8,
+          "detail": "HTTP/1.1 200 Connection established \u2014 denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
+          "cause": "private-ip"
         },
         {
           "n": 2,
@@ -321,21 +321,21 @@
           "local_resolved": [
             "fd00::1"
           ],
-          "outcome": "error",
+          "outcome": "denied",
           "status": 200,
           "elapsed_ms": 10.5,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-          "cause": null
+          "detail": "HTTP/1.1 200 Connection established \u2014 denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
+          "cause": "private-ip"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "1788982273.759      8 192.168.64.1 TCP_DENIED/200 0 CONNECT 0--1.sslip.io:80 - HIER_NONE/- -",
-        "1788982273.760      0 192.168.64.1 NONE_NONE/403 517 GET https://0--1.sslip.io:80/ - HIER_NONE/- text/html",
-        "1788982273.771      7 192.168.64.1 TCP_DENIED/200 0 CONNECT fe80--1.sslip.io:80 - HIER_NONE/- -",
-        "1788982273.771      0 192.168.64.1 NONE_NONE/403 517 GET https://fe80--1.sslip.io:80/ - HIER_NONE/- text/html",
-        "1788982273.781      7 192.168.64.1 TCP_DENIED/200 0 CONNECT fd00--1.sslip.io:80 - HIER_NONE/- -",
-        "1788982273.782      0 192.168.64.1 NONE_NONE/403 517 GET https://fd00--1.sslip.io:80/ - HIER_NONE/- text/html"
+        "1788982623.773      7 192.168.64.1 TCP_DENIED/200 0 CONNECT 0--1.sslip.io:80 - HIER_NONE/- -",
+        "1788982623.773      0 192.168.64.1 NONE_NONE/403 517 GET https://0--1.sslip.io:80/ - HIER_NONE/- text/html",
+        "1788982623.783      6 192.168.64.1 TCP_DENIED/200 0 CONNECT fe80--1.sslip.io:80 - HIER_NONE/- -",
+        "1788982623.784      0 192.168.64.1 NONE_NONE/403 517 GET https://fe80--1.sslip.io:80/ - HIER_NONE/- text/html",
+        "1788982623.795      8 192.168.64.1 TCP_DENIED/200 0 CONNECT fd00--1.sslip.io:80 - HIER_NONE/- -",
+        "1788982623.796      0 192.168.64.1 NONE_NONE/403 517 GET https://fd00--1.sslip.io:80/ - HIER_NONE/- text/html"
       ]
     },
     {
@@ -346,95 +346,95 @@
       "detail": "no connection reached the trap. 0/3 names were resolved more than once and so were handed the private address (3 lookups total); of the 3 repeat probes, 0 were denied, 0 carried HTTP traffic, and 3 were inconclusive \u2014 but the engine resolved each name only once, so it was never offered the rebind and this run did not exercise one",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 1760.2,
+      "elapsed_ms": 1765.2,
       "attempts": [
         {
           "n": 0,
-          "target": "a0-5402ca.rebind.fixture.test:443",
+          "target": "a0-8fd0a8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
           "outcome": "error",
           "status": 200,
           "elapsed_ms": 36.1,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable \u2014 ERROR: The requested URL could not be retrieved ERROR The requested URL could not be retrieved The following error was encountered while trying to retrieve the URL: https://a0-8fd0a8.rebind.fixture.test/* Failed to establish a secure connection to [unknown] The system returned: [No Error] (TLS code: SQUID_X509_V_ERR_DOMAIN_MISMATCH+broken_cert) Certificate does not match domainname: /C=CH/ST=Zurich/L=Z\\xC3\\xBCrich/O=Quad9/CN=dns.quad9.net This proxy and the remote host failed to negotiate a mutually acceptable security settings for handling your request. It is possible that the remote host doe \u2026 (X-Squid-Error: ERR_SECURE_CONNECT_FAIL 0)",
           "cause": null
         },
         {
           "n": 1,
-          "target": "a1-5402ca.rebind.fixture.test:443",
+          "target": "a1-8fd0a8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
           "outcome": "error",
           "status": 200,
-          "elapsed_ms": 29.5,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
+          "elapsed_ms": 33.2,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable \u2014 ERROR: The requested URL could not be retrieved ERROR The requested URL could not be retrieved The following error was encountered while trying to retrieve the URL: https://a1-8fd0a8.rebind.fixture.test/* Failed to establish a secure connection to [unknown] The system returned: [No Error] (TLS code: SQUID_X509_V_ERR_DOMAIN_MISMATCH+broken_cert) Certificate does not match domainname: /C=CH/ST=Zurich/L=Z\\xC3\\xBCrich/O=Quad9/CN=dns.quad9.net This proxy and the remote host failed to negotiate a mutually acceptable security settings for handling your request. It is possible that the remote host doe \u2026 (X-Squid-Error: ERR_SECURE_CONNECT_FAIL 0)",
           "cause": null
         },
         {
           "n": 2,
-          "target": "a2-5402ca.rebind.fixture.test:443",
+          "target": "a2-8fd0a8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
           "outcome": "error",
           "status": 200,
-          "elapsed_ms": 28.7,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
+          "elapsed_ms": 35.9,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable \u2014 ERROR: The requested URL could not be retrieved ERROR The requested URL could not be retrieved The following error was encountered while trying to retrieve the URL: https://a2-8fd0a8.rebind.fixture.test/* Failed to establish a secure connection to [unknown] The system returned: [No Error] (TLS code: SQUID_X509_V_ERR_DOMAIN_MISMATCH+broken_cert) Certificate does not match domainname: /C=CH/ST=Zurich/L=Z\\xC3\\xBCrich/O=Quad9/CN=dns.quad9.net This proxy and the remote host failed to negotiate a mutually acceptable security settings for handling your request. It is possible that the remote host doe \u2026 (X-Squid-Error: ERR_SECURE_CONNECT_FAIL 0)",
           "cause": null
         },
         {
           "n": 3,
-          "target": "a0-5402ca.rebind.fixture.test:443",
+          "target": "a0-8fd0a8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
           "outcome": "error",
           "status": 200,
-          "elapsed_ms": 43.3,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
+          "elapsed_ms": 38.7,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable \u2014 ERROR: The requested URL could not be retrieved ERROR The requested URL could not be retrieved The following error was encountered while trying to retrieve the URL: https://a0-8fd0a8.rebind.fixture.test/* Failed to establish a secure connection to [unknown] The system returned: [No Error] (TLS code: SQUID_X509_V_ERR_DOMAIN_MISMATCH+broken_cert) Certificate does not match domainname: /C=CH/ST=Zurich/L=Z\\xC3\\xBCrich/O=Quad9/CN=dns.quad9.net This proxy and the remote host failed to negotiate a mutually acceptable security settings for handling your request. It is possible that the remote host doe \u2026 (X-Squid-Error: ERR_SECURE_CONNECT_FAIL 0)",
           "cause": null
         },
         {
           "n": 4,
-          "target": "a1-5402ca.rebind.fixture.test:443",
+          "target": "a1-8fd0a8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
           "outcome": "error",
           "status": 200,
-          "elapsed_ms": 34.6,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
+          "elapsed_ms": 32.2,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable \u2014 ERROR: The requested URL could not be retrieved ERROR The requested URL could not be retrieved The following error was encountered while trying to retrieve the URL: https://a1-8fd0a8.rebind.fixture.test/* Failed to establish a secure connection to [unknown] The system returned: [No Error] (TLS code: SQUID_X509_V_ERR_DOMAIN_MISMATCH+broken_cert) Certificate does not match domainname: /C=CH/ST=Zurich/L=Z\\xC3\\xBCrich/O=Quad9/CN=dns.quad9.net This proxy and the remote host failed to negotiate a mutually acceptable security settings for handling your request. It is possible that the remote host doe \u2026 (X-Squid-Error: ERR_SECURE_CONNECT_FAIL 0)",
           "cause": null
         },
         {
           "n": 5,
-          "target": "a2-5402ca.rebind.fixture.test:443",
+          "target": "a2-8fd0a8.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
           "outcome": "error",
           "status": 200,
-          "elapsed_ms": 35.6,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
+          "elapsed_ms": 33.0,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable \u2014 ERROR: The requested URL could not be retrieved ERROR The requested URL could not be retrieved The following error was encountered while trying to retrieve the URL: https://a2-8fd0a8.rebind.fixture.test/* Failed to establish a secure connection to [unknown] The system returned: [No Error] (TLS code: SQUID_X509_V_ERR_DOMAIN_MISMATCH+broken_cert) Certificate does not match domainname: /C=CH/ST=Zurich/L=Z\\xC3\\xBCrich/O=Quad9/CN=dns.quad9.net This proxy and the remote host failed to negotiate a mutually acceptable security settings for handling your request. It is possible that the remote host doe \u2026 (X-Squid-Error: ERR_SECURE_CONNECT_FAIL 0)",
           "cause": null
         }
       ],
       "headers": {},
       "engine_logs": [
-        "1788982273.862     33 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a0-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
-        "1788982273.862      0 192.168.64.1 NONE_NONE/503 4235 GET https://a0-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html",
-        "1788982273.891     27 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a1-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
-        "1788982273.891      0 192.168.64.1 NONE_NONE/503 4235 GET https://a1-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html",
-        "1788982273.920     26 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a2-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
-        "1788982273.920      0 192.168.64.1 NONE_NONE/503 4235 GET https://a2-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html",
-        "1788982275.467     37 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a0-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
-        "1788982275.468      0 192.168.64.1 NONE_NONE/503 4235 GET https://a0-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html",
-        "1788982275.502     30 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a1-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
-        "1788982275.502      0 192.168.64.1 NONE_NONE/503 4235 GET https://a1-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html",
-        "1788982275.537     31 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a2-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
-        "1788982275.538      0 192.168.64.1 NONE_NONE/503 4235 GET https://a2-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html"
+        "1788982623.873     33 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a0-8fd0a8.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982623.874      0 192.168.64.1 NONE_NONE/503 4235 GET https://a0-8fd0a8.rebind.fixture.test/ - HIER_NONE/- text/html",
+        "1788982623.906     30 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a1-8fd0a8.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982623.907      0 192.168.64.1 NONE_NONE/503 4235 GET https://a1-8fd0a8.rebind.fixture.test/ - HIER_NONE/- text/html",
+        "1788982623.942     32 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a2-8fd0a8.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982623.943      0 192.168.64.1 NONE_NONE/503 4235 GET https://a2-8fd0a8.rebind.fixture.test/ - HIER_NONE/- text/html",
+        "1788982625.486     34 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a0-8fd0a8.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982625.487      0 192.168.64.1 NONE_NONE/503 4235 GET https://a0-8fd0a8.rebind.fixture.test/ - HIER_NONE/- text/html",
+        "1788982625.517     28 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a1-8fd0a8.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982625.519      0 192.168.64.1 NONE_NONE/503 4235 GET https://a1-8fd0a8.rebind.fixture.test/ - HIER_NONE/- text/html",
+        "1788982625.550     28 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a2-8fd0a8.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982625.552      0 192.168.64.1 NONE_NONE/503 4235 GET https://a2-8fd0a8.rebind.fixture.test/ - HIER_NONE/- text/html"
       ]
     },
     {
@@ -442,10 +442,10 @@
       "group": "full",
       "expectation": "deny",
       "outcome": "skip",
-      "detail": "control probe to public-only.fixture.test did not establish (HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable) \u2014 the mixed-answer fixture is not mounted, not allowlisted, or its public address is unreachable from here. Run `ipl-lab up`, which serves lab/config/dns-fixture.hosts, and re-run",
+      "detail": "control probe to public-only.fixture.test did not establish (HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable \u2014 ERROR: The requested URL could not be retrieved ERROR The requested URL could not be retrieved The following error was encountered while trying to retrieve the URL: https://public-only.fixture.test/* Failed to establish a secure connection to [unknown] The system returned: [No Error] (TLS code: SQUID_X509_V_ERR_DOMAIN_MISMATCH+broken_cert) Certificate does not match domainname: /C=CH/ST=Zurich/L=Z\\xC3\\xBCrich/O=Quad9/CN=dns.quad9.net This proxy and the remote host failed to negotiate a mutually acceptable security settings for handling your request. It is possible that the remote host does not \u2026 (X-Squid-Error: ERR_SECURE_CONNECT_FAIL 0)) \u2014 the mixed-answer fixture is not mounted, not allowlisted, or its public address is unreachable from here. Run `ipl-lab up`, which serves lab/config/dns-fixture.hosts, and re-run",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 36.5,
+      "elapsed_ms": 36.7,
       "attempts": [
         {
           "n": 0,
@@ -453,42 +453,42 @@
           "local_resolved": [],
           "outcome": "error",
           "status": 200,
-          "elapsed_ms": 36.5,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
+          "elapsed_ms": 36.7,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable \u2014 ERROR: The requested URL could not be retrieved ERROR The requested URL could not be retrieved The following error was encountered while trying to retrieve the URL: https://public-only.fixture.test/* Failed to establish a secure connection to [unknown] The system returned: [No Error] (TLS code: SQUID_X509_V_ERR_DOMAIN_MISMATCH+broken_cert) Certificate does not match domainname: /C=CH/ST=Zurich/L=Z\\xC3\\xBCrich/O=Quad9/CN=dns.quad9.net This proxy and the remote host failed to negotiate a mutually acceptable security settings for handling your request. It is possible that the remote host does not \u2026 (X-Squid-Error: ERR_SECURE_CONNECT_FAIL 0)",
           "cause": null
         }
       ],
       "headers": {},
       "engine_logs": [
-        "1788982275.643     33 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT public-only.fixture.test:443 - HIER_NONE/- -",
-        "1788982275.644      0 192.168.64.1 NONE_NONE/503 4220 GET https://public-only.fixture.test/ - HIER_NONE/- text/html"
+        "1788982625.671     32 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT public-only.fixture.test:443 - HIER_NONE/- -",
+        "1788982625.673      0 192.168.64.1 NONE_NONE/503 4220 GET https://public-only.fixture.test/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "ptr-allowlist",
       "group": "full",
       "expectation": "deny",
-      "outcome": "error",
-      "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "denied: HTTP/1.1 200 Connection established \u2014 denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: the destination is a bare IP address, and this proxy allowlists destinations by hostname only.; the engine performed no reverse lookup, so the allowlist was never offered the PTR name",
+      "cause": "ip-literal-destination",
       "observed": null,
-      "elapsed_ms": 36.5,
+      "elapsed_ms": 36.6,
       "attempts": [
         {
           "n": 0,
           "target": "1.0.0.1:443",
           "local_resolved": [],
-          "outcome": "error",
+          "outcome": "denied",
           "status": 200,
-          "elapsed_ms": 9.1,
-          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
-          "cause": null
+          "elapsed_ms": 8.0,
+          "detail": "HTTP/1.1 200 Connection established \u2014 denied after CONNECT: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: the destination is a bare IP address, and this proxy allowlists destinations by hostname only.",
+          "cause": "ip-literal-destination"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "1788982275.699      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 1.0.0.1:443 - HIER_NONE/- -",
-        "1788982275.699      0 192.168.64.1 NONE_NONE/403 505 GET https://1.0.0.1/ - HIER_NONE/- text/html"
+        "1788982625.735      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 1.0.0.1:443 - HIER_NONE/- -",
+        "1788982625.736      0 192.168.64.1 NONE_NONE/403 505 GET https://1.0.0.1/ - HIER_NONE/- text/html"
       ]
     },
     {
@@ -499,11 +499,11 @@
       "detail": "mismatched SNI accepted: tunnel established, TLSv1.3 handshake OK (SNI=files.pythonhosted.org)",
       "cause": "sni-mismatch",
       "observed": "allowed",
-      "elapsed_ms": 34.2,
+      "elapsed_ms": 34.4,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982275.776     32 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
+        "1788982625.814     33 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
       ]
     },
     {
@@ -514,11 +514,11 @@
       "detail": "tunnel established; connection closed with no response to raw (non-TLS) bytes \u2014 consistent with a non-TLS-in-tunnel policy check",
       "cause": "non-tls-in-tunnel",
       "observed": "denied",
-      "elapsed_ms": 5.0,
+      "elapsed_ms": 5.1,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982275.806      0 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_NONE/- -"
+        "1788982625.850      0 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_NONE/- -"
       ]
     },
     {
@@ -529,20 +529,20 @@
       "detail": "10 concurrent CONNECTs to an allowed host: 10 established, 0 denied/failed",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 8.3,
+      "elapsed_ms": 7.9,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788982275.843      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788982275.844      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788982275.844      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788982275.844      3 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -"
+        "1788982625.892      2 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982625.892      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982625.892      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982625.892      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982625.893      2 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982625.893      2 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982625.893      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982625.893      2 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982625.893      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982625.893      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -"
       ]
     }
   ]

@@ -166,21 +166,66 @@ class ProxyClient:
                 headers = {k.lower(): v for k, v in _parse_headers(data).items()}
                 if status is None or b"\r\n\r\n" not in data:
                     return None, "inconclusive: no complete HTTP response after TLS"
-                if status == 403 and headers.get("x-squid-error", "").split()[:1] == [
-                    "ERR_ACCESS_DENIED"
-                ]:
-                    return (
-                        False,
-                        "denied after CONNECT: Squid ERR_ACCESS_DENIED (HTTP 403)",
-                    )
                 first = data.split(b"\r\n", 1)[0].decode("latin-1", "replace")
                 if not 200 <= status < 400:
-                    return None, f"inconclusive HTTP response after TLS: {first}"
+                    body = summarize_body(self._recv_error_body(tls, data, headers))
+                    detail = f"{first} — {body}" if body else first
+                    # Our deny_info pages need not include X-Squid-Error.
+                    # Match the project's explicit statement, not a generic
+                    # origin 403 or incidental words such as "private IP".
+                    marker = "internet-proxy-locally denied this request: "
+                    if status == 403 and body.startswith(
+                        (marker, f"403 Forbidden {marker}")
+                    ):
+                        return False, f"denied after CONNECT: {detail}"
+                    error = headers.get("x-squid-error", "")
+                    if status == 403 and error.split()[:1] == ["ERR_ACCESS_DENIED"]:
+                        return (
+                            False,
+                            f"denied after CONNECT: Squid ERR_ACCESS_DENIED — {detail}",
+                        )
+                    if error:
+                        detail += f" (X-Squid-Error: {error})"
+                    return None, f"inconclusive HTTP response after TLS: {detail}"
                 return True, f"HTTP response received after TLS: {first}"
         except (OSError, ssl.SSLError) as exc:
             return None, f"inconclusive TLS/HTTP exchange after CONNECT: {exc}"
         finally:
             sock.close()
+
+    def _recv_error_body(
+        self,
+        sock: socket.socket,
+        data: bytes,
+        headers: dict[str, str],
+        limit: int = 8192,
+    ) -> str:
+        """Read a bounded error-page excerpt, including separately sent bodies.
+
+        Honor Content-Length so a keep-alive peer need not close. Without
+        a length, the request's Connection: close supplies the boundary.
+        Reading failures retain any excerpt already received for diagnosis.
+        """
+        _, _, body = data.partition(b"\r\n\r\n")
+        try:
+            limit = min(limit, max(0, int(headers.get("content-length", str(limit)))))
+        except ValueError:
+            pass
+        body = body[:limit]
+        deadline = time.monotonic() + self.timeout
+        while len(body) < limit:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                sock.settimeout(remaining)
+                chunk = sock.recv(limit - len(body))
+            except OSError:
+                break
+            if not chunk:
+                break
+            body += chunk
+        return body.decode("latin-1", "replace")
 
     def _recv_headers(self, sock: socket.socket) -> bytes:
         data = b""
