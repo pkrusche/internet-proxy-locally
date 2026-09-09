@@ -9,6 +9,7 @@ import unittest
 import warnings
 
 from internet_proxy_locally.checks.egress import denial, transport
+from tests.egress import support
 
 
 class SummarizeBodyTest(unittest.TestCase):
@@ -45,14 +46,12 @@ class SummarizeBodyTest(unittest.TestCase):
 
 
 class TunnelCarriedTest(unittest.TestCase):
-    """A refusal that arrives after the `200` can only tear the tunnel
-    down, so "was anything carried?" is what the deny checks grade on
-    (transport.ProxyClient.tunnel_carried)."""
+    """Idle sockets and un-attributable closures prove neither access nor denial."""
 
     def _pair(self, close: str) -> transport.ProxyClient:
         """A server that accepts and then either holds the connection open,
         closes it cleanly (FIN), or resets it (RST). Returns a client whose
-        grace period is short enough not to slow the suite down."""
+        timeout is short enough not to slow the suite down."""
         server = socket.socket()
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind(("127.0.0.1", 0))
@@ -70,35 +69,74 @@ class TunnelCarriedTest(unittest.TestCase):
             elif close == "fin":
                 conn.close()
             else:
-                held.append(conn)  # keep the tunnel open past the grace period
+                held.append(conn)  # keep the tunnel open past the timeout
 
         thread = threading.Thread(target=accept, daemon=True)
         thread.start()
         self.addCleanup(thread.join, 2.0)
         self.addCleanup(lambda: [c.close() for c in held])
-        return transport.ProxyClient(
-            "127.0.0.1", server.getsockname()[1], timeout=2.0, tunnel_grace=0.2
-        )
+        return transport.ProxyClient("127.0.0.1", server.getsockname()[1], timeout=0.2)
 
-    def _carried(self, close: str) -> tuple[bool, str]:
+    def _carried(self, close: str) -> tuple[bool | None, str]:
         client = self._pair(close)
         sock = socket.create_connection((client.host, client.port), timeout=2.0)
         self.addCleanup(sock.close)
-        return client.tunnel_carried(sock)
+        return client.tunnel_carried(sock, "example.com:443")
 
-    def test_an_open_tunnel_counts_as_carried(self) -> None:
+    def test_an_idle_tunnel_is_inconclusive(self) -> None:
         carried, detail = self._carried("hold")
-        self.assertTrue(carried, detail)
+        self.assertIsNone(carried, detail)
 
-    def test_a_clean_close_counts_as_a_refusal(self) -> None:
+    def test_a_clean_close_is_inconclusive(self) -> None:
         carried, detail = self._carried("fin")
-        self.assertFalse(carried, detail)
-        self.assertEqual(denial.classify_denial(detail), "aborted-after-connect")
+        self.assertIsNone(carried, detail)
 
-    def test_a_reset_counts_as_a_refusal(self) -> None:
+    def test_a_reset_is_inconclusive(self) -> None:
         carried, detail = self._carried("reset")
+        self.assertIsNone(carried, detail)
+
+
+@support.requires_openssl
+class ActiveTunnelTest(unittest.TestCase):
+    def test_denial_waits_for_clienthello_and_http(self) -> None:
+        _, port = support.start_mock(self, mode="bumping")
+        client = transport.ProxyClient("127.0.0.1", port, timeout=1)
+        sock, status, _ = client.connect("example.com:443")
+        assert sock is not None
+        self.addCleanup(sock.close)
+        self.assertEqual(status, 200)
+        sock.settimeout(0.05)
+        with self.assertRaises(TimeoutError):
+            sock.recv(1)
+        carried, detail = client.tunnel_carried(sock, "example.com:443")
         self.assertFalse(carried, detail)
-        self.assertEqual(denial.classify_denial(detail), "aborted-after-connect")
+        self.assertIn("ERR_ACCESS_DENIED", detail)
+
+    def test_handshake_alone_and_ambiguous_errors_are_inconclusive(self) -> None:
+        server, port = support.start_mock(self, mode="bumping")
+        client = transport.ProxyClient("127.0.0.1", port, timeout=1)
+        for response in (
+            b"",
+            b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n",
+            b"HTTP/1.1 502 Bad Gateway\r\nX-Squid-Error: ERR_CONNECT_FAIL 0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\n",
+        ):
+            with self.subTest(response=response):
+                server.tunnel_response = response
+                sock, _, _ = client.connect("pypi.org:443")
+                assert sock is not None
+                carried, detail = client.tunnel_carried(sock, "pypi.org:443")
+                self.assertIsNone(carried, detail)
+
+    def test_allowed_tls_http_exchange(self) -> None:
+        _, port = support.start_mock(self, mode="bumping")
+        client = transport.ProxyClient("127.0.0.1", port, timeout=1)
+        sock, _, _ = client.connect("pypi.org:443")
+        assert sock is not None
+        self.addCleanup(sock.close)
+        carried, detail = client.tunnel_carried(sock, "pypi.org:443")
+        self.assertTrue(carried, detail)
+        self.assertIn("HTTP response received after TLS", detail)
 
 
 class ProxyClientConnectTest(unittest.TestCase):

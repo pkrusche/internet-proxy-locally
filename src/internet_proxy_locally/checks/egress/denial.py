@@ -101,16 +101,9 @@ _TAXONOMY: list[tuple[str, re.Pattern]] = [
             re.IGNORECASE,
         ),
     ),
-    # Last, and the one bucket keyed on the checker's own words rather than
-    # the engine's — because there are no engine words to read. A proxy
-    # that refuses only after answering `200` cannot state a reason; it
-    # aborts the tunnel, and "the tunnel carried nothing" is the whole of
-    # the evidence (ProxyClient.tunnel_carried).
-    #
-    # Below every stated reason on purpose: whatever the engine did manage
-    # to say is more informative than the abort. metadata-endpoint probes
-    # CONNECT *and* GET, and on a bumping Squid only the GET half gets a
-    # page — that half's `metadata` must still win the row.
+    ("proxy-access-denied", re.compile(r"\bERR_ACCESS_DENIED\b")),
+    # Legacy result wording, retained for reading older measurements.
+    # New active probes leave an un-attributable abort inconclusive.
     (
         "aborted-after-connect",
         re.compile(

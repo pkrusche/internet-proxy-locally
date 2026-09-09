@@ -16,9 +16,9 @@ any network egress:
   - bumping mode (Squid-with-ssl_bump-like): every CONNECT is answered
     `200` before policy runs, because the ClientHello the proxy means to
     inspect only arrives once the client believes it has a tunnel. A
-    denial reached afterwards can no longer send a page and aborts the
-    tunnel instead. Enforcement is identical to strict mode; only the
-    shape of the refusal differs.
+    denial is sent inside TLS after the client sends ClientHello and HTTP.
+    This models the deferred decision, without treating an idle socket as
+    proof of reachability.
 
 TLS termination requires a self-signed cert (see tests/egress/).
 Used two ways: imported and started in-process by tests, and spawned as
@@ -54,6 +54,7 @@ class MockProxyServer(socketserver.ThreadingTCPServer):
     ):
         self.allowed = allowed
         self.mode = mode
+        self.tunnel_response = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
         self.tls_ctx: ssl.SSLContext | None = None
         if certfile and keyfile:
             self.tls_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -158,9 +159,6 @@ class Handler(socketserver.BaseRequestHandler):
             self._send(403, "Forbidden", self.server.deny_reason(host) + "\n")
             return
         self.request.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
-        if not allowed:
-            return  # the 200 is already sent; aborting is the only refusal left
-
         first = self.request.recv(1, socket.MSG_PEEK)
         if not first:
             return
@@ -177,7 +175,12 @@ class Handler(socketserver.BaseRequestHandler):
         if self.server.tls_ctx is None:
             return  # cannot terminate TLS without a cert; close
         expected = host.lower()
-        strict = self.server.mode == "strict"
+        try:
+            ipaddress.ip_address(host.strip("[]"))
+            literal = True
+        except ValueError:
+            literal = False
+        strict = self.server.mode == "strict" and not literal
 
         def sni_cb(sock: ssl.SSLObject, name: str | None, ctx: ssl.SSLContext):
             if strict and (name or "").lower() != expected:
@@ -192,7 +195,14 @@ class Handler(socketserver.BaseRequestHandler):
         try:
             tls.settimeout(2)
             try:
-                tls.recv(4096)
+                request = tls.recv(4096)
+                if request:
+                    response = (
+                        self.server.tunnel_response
+                        if allowed
+                        else b"HTTP/1.1 403 Forbidden\r\nX-Squid-Error: ERR_ACCESS_DENIED 0\r\nContent-Length: 0\r\n\r\n"
+                    )
+                    tls.sendall(response)
             except (ssl.SSLError, OSError):
                 pass
         finally:

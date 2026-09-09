@@ -20,25 +20,19 @@ def resolve_locally(host: str) -> list[str]:
 
 
 def _classify_deny_connect(client: ProxyClient, target: str) -> tuple[str, str]:
-    """Was the destination reached? — not "what status came back?".
-
-    A refusal states itself two ways. A proxy that decides before
-    acknowledging the tunnel answers 4xx, and the body says why. A proxy
-    that decides afterwards has already sent `200` and can only abort
-    (ProxyClient.tunnel_carried). Both refuse; only the first is legible.
-    Grading the second a failure would report an enforcing proxy as a hole,
-    so the tunnel itself is the evidence and the status line is not.
-    """
+    """Require an active exchange rather than treating CONNECT 200 as access."""
     sock, status, detail = client.connect(target)
     if sock is None:
-        if status is None:
+        if status is None or not 400 <= status < 500:
             return "error", f"inconclusive transport failure: {detail}"
         return "pass", f"denied: {detail}"
-    carried, why = client.tunnel_carried(sock)
+    carried, why = client.tunnel_carried(sock, target)
     sock.close()
+    if carried is None:
+        return "error", why
     if not carried:
-        return "pass", f"denied after CONNECT: {why}"
-    return "fail", f"tunnel to {target} was ESTABLISHED: {detail}"
+        return "pass", why
+    return "fail", f"tunnel to {target} carried traffic: {why}"
 
 
 def _classify_deny_http(client: ProxyClient, url: str) -> tuple[str, str]:
@@ -60,12 +54,12 @@ def _deny_all(client: ProxyClient, *targets: str) -> tuple[str, str]:
     than as two results that have to be compared by eye.
     """
     outcomes = [_classify_deny_connect(client, target) for target in targets]
-    errors = [detail for outcome, detail in outcomes if outcome == "error"]
-    if errors:
-        return "error", "; ".join(errors)
     bad = [detail for outcome, detail in outcomes if outcome == "fail"]
     if bad:
         return "fail", "; ".join(bad)
+    errors = [detail for outcome, detail in outcomes if outcome == "error"]
+    if errors:
+        return "error", "; ".join(errors)
     return "pass", "; ".join(detail for _, detail in outcomes)
 
 
@@ -82,18 +76,12 @@ def _connect_attempt(
     local = resolve_locally(host_for_resolution) if resolve else []
     t0 = time.monotonic()
     sock, status, detail = client.connect(target)
-    # Timed to the CONNECT response, so the grace period tunnel_carried()
-    # spends on a live tunnel never lands in the recorded latency.
-    elapsed = round((time.monotonic() - t0) * 1000, 1)
     if sock is None:
-        outcome = "error" if status is None else "denied"
+        outcome = "error" if status is None or not 400 <= status < 500 else "denied"
     else:
-        carried, why = client.tunnel_carried(sock)
+        carried, why = client.tunnel_carried(sock, target)
         sock.close()
-        outcome = "established" if carried else "aborted"
-        if not carried:
-            detail = f"{detail} — {why}"
-    # An aborted tunnel is a denial the engine stated no reason for, so the
-    # cause is set here rather than left to the runner's text classifier.
-    cause = "aborted-after-connect" if outcome == "aborted" else None
-    return Attempt(n, target, local, outcome, status, elapsed, detail, cause)
+        outcome = "error" if carried is None else "established" if carried else "denied"
+        detail = f"{detail} — {why}"
+    elapsed = round((time.monotonic() - t0) * 1000, 1)
+    return Attempt(n, target, local, outcome, status, elapsed, detail)

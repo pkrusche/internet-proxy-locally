@@ -82,7 +82,7 @@ See [lab.md](lab.md).
 Each result carries, where relevant: a best-effort denial-cause
 classification (`hostname-not-allowlisted`, `private-ip`, `metadata`,
 `sni-mismatch`, `non-tls-in-tunnel`, `port-not-allowed`, `dns-failure`,
-`unparseable-destination`, `timeout`, `aborted-after-connect`,
+`unparseable-destination`, `timeout`, `proxy-access-denied`,
 `unknown`), timing, per-attempt
 evidence, response headers on the allow-path checks, decoded TLS alert
 records rather than raw bytes for the tunnel-abuse checks, and the engine's
@@ -98,12 +98,11 @@ reports `domain not in allowlist: 127.0.0.1`, so a pattern for a bare
 because classifying concatenated text reports whichever bucket comes first
 in the taxonomy rather than what the set actually contained.
 
-`aborted-after-connect` is the one exception to the stated-reason rule, and
-it is one because there is no stated reason to read: an engine that refuses
-only after answering `200 Connection established` cannot deliver an error
-page and tears the tunnel down instead. The bucket sits last in the
-taxonomy so that anything the engine *did* manage to say still wins the
-row. See [tls-interception.md](tls-interception.md#late-denials-and-how-the-suite-grades-them).
+`proxy-access-denied` records an explicit Squid access-denial response inside
+TLS. Un-attributable closures and TLS failures are inconclusive, not policy
+passes. The historical `aborted-after-connect` cause remains readable for
+older measurements. See
+[tls-interception.md](tls-interception.md#late-denials-and-how-the-suite-grades-them).
 
 Measured results: [findings.md](findings.md).
 

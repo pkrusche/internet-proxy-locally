@@ -46,11 +46,14 @@ def test_ptr_allowlist(client: ProxyClient) -> RawOutcome:
             "fail",
             (
                 f"{target} was reached even though only {PTR_FIXTURE_CLAIMS} is "
-                f"allowlisted — the address inherited an allowlisted name from its "
-                f"reverse record"
+                f"allowlisted; {asked} reverse lookup(s) observed. Reachability alone "
+                "does not establish whether a reverse record authorized it"
             ),
             attempts=[attempt],
         )
+
+    if attempt.outcome == "error":
+        return RawOutcome("error", attempt.detail, attempts=[attempt])
 
     detail = f"denied: {attempt.detail}"
     detail += (

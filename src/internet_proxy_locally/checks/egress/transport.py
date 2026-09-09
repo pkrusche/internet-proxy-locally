@@ -16,12 +16,6 @@ from .tls import annotate_tls_bytes
 
 TIMEOUT = 8.0
 MAX_HEADER_BYTES = 64 * 1024
-# How long a tunnel is watched for a teardown before it counts as usable.
-# A proxy that refuses after answering CONNECT does so at once — Squid's
-# ssl-bump abort lands in the same millisecond as its own `200` — so this
-# only has to outlast scheduling jitter. A live tunnel pays it in full,
-# which is why nothing on the allow path calls tunnel_carried().
-TUNNEL_GRACE = 0.5
 
 
 @dataclass
@@ -68,12 +62,10 @@ class ProxyClient:
         host: str,
         port: int,
         timeout: float = TIMEOUT,
-        tunnel_grace: float = TUNNEL_GRACE,
     ):
         self.host = host
         self.port = port
         self.timeout = timeout
-        self.tunnel_grace = tunnel_grace
 
     def _sock(self) -> socket.socket:
         sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
@@ -145,43 +137,50 @@ class ProxyClient:
         )
         return None, status, detail
 
-    def tunnel_carried(self, sock: socket.socket) -> tuple[bool, str]:
-        """Is this tunnel usable, or did the proxy tear it down straight
-        after answering `200 Connection established`?
+    def tunnel_carried(
+        self, sock: socket.socket, target: str
+    ) -> tuple[bool | None, str]:
+        """Actively exercise CONNECT, including an intercepting TLS endpoint.
 
-        A proxy that decides against a CONNECT only *after* acknowledging
-        it cannot send an error page — the `200` is already on the wire —
-        so it closes or resets the tunnel instead. Squid does exactly this
-        on an `ssl-bump` port: it has to answer the CONNECT to obtain the
-        ClientHello it means to peek at, and a later `http_access` denial
-        can then only abort. Its own log is explicit —
-        `TCP_DENIED_ABORTED/200 … HIER_NONE/-`: denied, no upstream
-        connection, nothing carried.
-
-        Grading such a row on the status line alone reads an enforcing
-        proxy as a failure, so the deny checks ask this question instead:
-        did anything actually get through? A refusal that arrives late is
-        still a refusal — it is a worse *signal*, which is a finding of its
-        own (docs/tls-interception.md), not a hole.
-
-        Returns (False, detail) when the tunnel was torn down without
-        carrying anything, (True, detail) when it is open and usable.
-        Consumes nothing a caller needs: a live tunnel to an origin that
-        speaks second has nothing to read, which is the timeout case.
+        True means an HTTP response was received through TLS; False means
+        Squid explicitly reported an access denial. A bare CONNECT 200,
+        TLS handshake alone, timeout, EOF, or TLS alert cannot establish
+        origin reachability or attribute a refusal, so those return None.
+        Certificate verification is disabled for this behavioral probe,
+        as in tls_in_tunnel(); this is not a trust-chain test.
         """
+        host = target.rsplit(":", 1)[0].strip("[]")
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
         try:
-            sock.settimeout(self.tunnel_grace)
-            data = sock.recv(2048)
-        except TimeoutError:
-            return True, "tunnel stayed open"
-        except OSError as exc:
-            return False, f"tunnel reset immediately after CONNECT: {exc}"
-        if not data:
-            return False, "tunnel closed immediately after CONNECT, nothing carried"
-        return True, (
-            "tunnel stayed open and the far end spoke first: "
-            f"{annotate_tls_bytes(data)}"
-        )
+            sock.settimeout(self.timeout)
+            with ctx.wrap_socket(sock, server_hostname=host) as tls:
+                tls.sendall(
+                    (
+                        f"GET / HTTP/1.1\r\nHost: {target}\r\nConnection: close\r\n\r\n"
+                    ).encode()
+                )
+                data = self._recv_headers(tls)
+                status = self._status_of(data)
+                headers = {k.lower(): v for k, v in _parse_headers(data).items()}
+                if status is None or b"\r\n\r\n" not in data:
+                    return None, "inconclusive: no complete HTTP response after TLS"
+                if status == 403 and headers.get("x-squid-error", "").split()[:1] == [
+                    "ERR_ACCESS_DENIED"
+                ]:
+                    return (
+                        False,
+                        "denied after CONNECT: Squid ERR_ACCESS_DENIED (HTTP 403)",
+                    )
+                first = data.split(b"\r\n", 1)[0].decode("latin-1", "replace")
+                if not 200 <= status < 400:
+                    return None, f"inconclusive HTTP response after TLS: {first}"
+                return True, f"HTTP response received after TLS: {first}"
+        except (OSError, ssl.SSLError) as exc:
+            return None, f"inconclusive TLS/HTTP exchange after CONNECT: {exc}"
+        finally:
+            sock.close()
 
     def _recv_headers(self, sock: socket.socket) -> bytes:
         data = b""

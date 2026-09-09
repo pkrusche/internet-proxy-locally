@@ -13,6 +13,8 @@ def test_metadata(client: ProxyClient) -> tuple[str, str]:
     o2, d2 = _classify_deny_http(client, "http://169.254.169.254/latest/meta-data/")
     if "fail" in (o1, o2):
         return "fail", f"CONNECT: {d1}; GET: {d2}"
+    if "error" in (o1, o2):
+        return "error", f"CONNECT: {d1}; GET: {d2}"
     # Avoid "metadata": classification must use the engine's reason, not ours.
     return "pass", f"denied for CONNECT and GET (CONNECT: {d1}; GET: {d2})"
 

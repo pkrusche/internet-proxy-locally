@@ -18,15 +18,14 @@ class DnsPrivateV4Test(unittest.TestCase):
         self.assertEqual(raw.outcome, "pass", raw.detail)
         self.assertEqual(len(raw.attempts), 4)
 
-    def test_records_a_late_denial_as_aborted_rather_than_established(self) -> None:
-        """Per-attempt evidence has to keep a 200-then-abort distinguishable
-        from a legible 4xx: both refuse, only one says why."""
+    def test_records_a_denial_inside_tls_rather_than_established(self) -> None:
+        """A CONNECT acknowledgment must not mask a later TLS denial."""
         _, port = support.start_mock(self, mode="bumping")
-        client = transport.ProxyClient("127.0.0.1", port, tunnel_grace=0.3)
+        client = transport.ProxyClient("127.0.0.1", port)
         raw = dns_private_v4.test_dns_private_v4(client)
         self.assertEqual(raw.outcome, "pass", raw.detail)
-        self.assertEqual({a.outcome for a in raw.attempts}, {"aborted"})
-        self.assertEqual({a.cause for a in raw.attempts}, {"aborted-after-connect"})
+        self.assertEqual({a.outcome for a in raw.attempts}, {"denied"})
+        self.assertEqual({a.cause for a in raw.attempts}, {None})
 
     def test_fails_when_any_target_is_wrongly_allowed(self) -> None:
         _, port = support.start_mock(

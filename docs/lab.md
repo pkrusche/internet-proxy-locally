@@ -82,13 +82,10 @@ Grades are `pass` (expectation met), `fail` (violated), `record` (behavior
 observed without a defined verdict), `skip` (missing prerequisite), and `error`
 (check could not run). Recorded rows retain the observed allowed/denied behavior.
 
-A deny row is graded on whether the destination was reached, not on the
-status code that came back. Some engines refuse a CONNECT before
-acknowledging it and answer 4xx with a page naming the cause; others —
-Squid on an `ssl-bump` port — can only decide after the `200` is already
-on the wire, and refuse by aborting the tunnel. Both refuse, so both pass,
-and the `aborted-after-connect` cause keeps the two apart in the results:
-the second enforces just as well and explains itself far worse. See
+CONNECT deny probes require an active TLS/HTTP exchange after the CONNECT
+acknowledgment. Explicit refusals pass; timeouts, resets, or ambiguous TLS/HTTP
+failures remain `error` rather than proving access or denial. DNS and PTR
+checks preserve that uncertainty. See
 [tls-interception.md](tls-interception.md#late-denials-and-how-the-suite-grades-them).
 
 JSON results include timing, available per-attempt evidence, response headers,

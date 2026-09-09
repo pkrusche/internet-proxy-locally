@@ -8,7 +8,7 @@
   "policy": "test",
   "tls_interception": true,
   "host": "Darwin 25.6.0 arm64",
-  "generated_at": "2026-09-09T19:02:01Z",
+  "generated_at": "2026-09-09T19:31:16Z",
   "exit_code": 1,
   "results": [
     {
@@ -19,7 +19,7 @@
       "detail": "reached pypi.org (HTTP/1.1 301 Moved Permanently)",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 36.3,
+      "elapsed_ms": 30.1,
       "attempts": [],
       "headers": {
         "Content-Length": "0",
@@ -27,11 +27,11 @@
         "Retry-After": "0",
         "Location": "https://pypi.org/",
         "Accept-Ranges": "bytes",
-        "Date": "Wed, 09 Sep 2026 19:01:44 GMT",
-        "X-Served-By": "cache-fra-etou8220109-FRA",
+        "Date": "Wed, 09 Sep 2026 19:31:13 GMT",
+        "X-Served-By": "cache-fra-etou8220064-FRA",
         "X-Cache": "HIT",
         "X-Cache-Hits": "0",
-        "X-Timer": "S1788980504.350920,VS0,VE0",
+        "X-Timer": "S1788982273.414532,VS0,VE0",
         "X-Frame-Options": "deny",
         "X-XSS-Protection": "1; mode=block",
         "X-Content-Type-Options": "nosniff",
@@ -42,7 +42,7 @@
         "Connection": "close"
       },
       "engine_logs": [
-        "1788980504.229     33 192.168.64.1 TCP_MISS/301 1137 GET http://pypi.org/ - HIER_DIRECT/151.101.192.223 -"
+        "1788982273.189     28 192.168.64.1 TCP_MISS/301 1137 GET http://pypi.org/ - HIER_DIRECT/151.101.192.223 -"
       ]
     },
     {
@@ -53,26 +53,27 @@
       "detail": "tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 315.5,
+      "elapsed_ms": 48.6,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980504.572    313 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
+        "1788982273.263     47 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
       ]
     },
     {
       "name": "blocked-host-connect",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "tunnel to example.com:443 was ESTABLISHED: HTTP/1.1 200 Connection established",
-      "cause": "unknown",
+      "outcome": "error",
+      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
+      "cause": null,
       "observed": null,
-      "elapsed_ms": 644.7,
+      "elapsed_ms": 17.5,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980505.270    643 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT example.com:443 - HIER_NONE/- -"
+        "1788982273.306     14 192.168.64.1 TCP_DENIED/200 0 CONNECT example.com:443 - HIER_NONE/- -",
+        "1788982273.307      0 192.168.64.1 NONE_NONE/403 456 GET https://example.com/ - HIER_NONE/- text/html"
       ]
     },
     {
@@ -87,127 +88,137 @@
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980505.318      0 192.168.64.1 TCP_DENIED/403 456 GET http://example.com/ - HIER_NONE/- text/html"
+        "1788982273.336      0 192.168.64.1 TCP_DENIED/403 456 GET http://example.com/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "direct-ip-connect",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "tunnel to 1.1.1.1:443 was ESTABLISHED: HTTP/1.1 200 Connection established",
-      "cause": "unknown",
+      "outcome": "error",
+      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
+      "cause": null,
       "observed": null,
-      "elapsed_ms": 503.3,
+      "elapsed_ms": 8.6,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980505.850    502 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 1.1.1.1:443 - HIER_NONE/- -"
+        "1788982273.369      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 1.1.1.1:443 - HIER_NONE/- -",
+        "1788982273.370      0 192.168.64.1 NONE_NONE/403 505 GET https://1.1.1.1/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "loopback-ipv4",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "tunnel to 127.0.0.1:80 was ESTABLISHED: HTTP/1.1 200 Connection established",
-      "cause": "unknown",
+      "outcome": "error",
+      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
+      "cause": null,
       "observed": null,
-      "elapsed_ms": 504.7,
+      "elapsed_ms": 9.0,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980506.411    503 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 127.0.0.1:80 - HIER_NONE/- -"
+        "1788982273.403      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 127.0.0.1:80 - HIER_NONE/- -",
+        "1788982273.403      0 192.168.64.1 NONE_NONE/403 517 GET https://127.0.0.1:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "rfc1918-ipv4",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "tunnel to 10.0.0.1:80 was ESTABLISHED: HTTP/1.1 200 Connection established; tunnel to 192.168.1.1:80 was ESTABLISHED: HTTP/1.1 200 Connection established; tunnel to 172.16.0.1:80 was ESTABLISHED: HTTP/1.1 200 Connection established",
-      "cause": "unknown",
+      "outcome": "error",
+      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
+      "cause": null,
       "observed": null,
-      "elapsed_ms": 1512.7,
+      "elapsed_ms": 23.7,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980506.971    502 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 10.0.0.1:80 - HIER_NONE/- -",
-        "1788980507.475    502 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 192.168.1.1:80 - HIER_NONE/- -",
-        "1788980507.980    502 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 172.16.0.1:80 - HIER_NONE/- -"
+        "1788982273.436      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 10.0.0.1:80 - HIER_NONE/- -",
+        "1788982273.436      0 192.168.64.1 NONE_NONE/403 517 GET https://10.0.0.1:80/ - HIER_NONE/- text/html",
+        "1788982273.443      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 192.168.1.1:80 - HIER_NONE/- -",
+        "1788982273.444      0 192.168.64.1 NONE_NONE/403 517 GET https://192.168.1.1:80/ - HIER_NONE/- text/html",
+        "1788982273.451      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 172.16.0.1:80 - HIER_NONE/- -",
+        "1788982273.451      0 192.168.64.1 NONE_NONE/403 517 GET https://172.16.0.1:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "link-local-ipv4",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "tunnel to 169.254.1.1:80 was ESTABLISHED: HTTP/1.1 200 Connection established",
-      "cause": "unknown",
+      "outcome": "error",
+      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
+      "cause": null,
       "observed": null,
-      "elapsed_ms": 503.7,
+      "elapsed_ms": 8.2,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980508.539    502 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 169.254.1.1:80 - HIER_NONE/- -"
+        "1788982273.483      5 192.168.64.1 TCP_DENIED/200 0 CONNECT 169.254.1.1:80 - HIER_NONE/- -",
+        "1788982273.484      0 192.168.64.1 NONE_NONE/403 517 GET https://169.254.1.1:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "metadata-endpoint",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "CONNECT: tunnel to 169.254.169.254:80 was ESTABLISHED: HTTP/1.1 200 Connection established; GET: denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.",
-      "cause": "metadata",
+      "outcome": "error",
+      "detail": "CONNECT: inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; GET: denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.",
+      "cause": null,
       "observed": null,
-      "elapsed_ms": 509.6,
+      "elapsed_ms": 10.5,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980509.093    502 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 169.254.169.254:80 - HIER_NONE/- -",
-        "1788980509.096      0 192.168.64.1 TCP_DENIED/403 477 GET http://169.254.169.254/latest/meta-data/ - HIER_NONE/- text/html"
+        "1788982273.515      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 169.254.169.254:80 - HIER_NONE/- -",
+        "1788982273.516      0 192.168.64.1 NONE_NONE/403 477 GET https://169.254.169.254:80/ - HIER_NONE/- text/html",
+        "1788982273.517      0 192.168.64.1 TCP_DENIED/403 477 GET http://169.254.169.254/latest/meta-data/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "loopback-ipv6",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "tunnel to [::1]:80 was ESTABLISHED: HTTP/1.1 200 Connection established",
-      "cause": "unknown",
+      "outcome": "error",
+      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
+      "cause": null,
       "observed": null,
-      "elapsed_ms": 503.4,
+      "elapsed_ms": 9.3,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980509.657    502 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT [::1]:80 - HIER_NONE/- -"
+        "1788982273.549      6 192.168.64.1 TCP_DENIED/200 0 CONNECT [::1]:80 - HIER_NONE/- -",
+        "1788982273.550      0 192.168.64.1 NONE_NONE/403 517 GET https://[::1]:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "private-ipv6",
       "group": "quick",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "tunnel to [fd00::1]:80 was ESTABLISHED: HTTP/1.1 200 Connection established; tunnel to [fe80::1]:80 was ESTABLISHED: HTTP/1.1 200 Connection established",
-      "cause": "unknown",
+      "outcome": "error",
+      "detail": "inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
+      "cause": null,
       "observed": null,
-      "elapsed_ms": 1007.8,
+      "elapsed_ms": 16.1,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980510.206    502 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT [fd00::1]:80 - HIER_NONE/- -",
-        "1788980510.710    502 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT [fe80::1]:80 - HIER_NONE/- -"
+        "1788982273.588      5 192.168.64.1 TCP_DENIED/200 0 CONNECT [fd00::1]:80 - HIER_NONE/- -",
+        "1788982273.589      0 192.168.64.1 NONE_NONE/403 517 GET https://[fd00::1]:80/ - HIER_NONE/- text/html",
+        "1788982273.596      5 192.168.64.1 TCP_DENIED/200 0 CONNECT [fe80::1]:80 - HIER_NONE/- -",
+        "1788982273.597      0 192.168.64.1 NONE_NONE/403 517 GET https://[fe80::1]:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "dns-private-ipv4",
       "group": "full",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "10.0.0.1.nip.io:80 established (resolved ['10.0.0.1']); 192.168.1.1.nip.io:80 established (resolved ['192.168.1.1']); 127.0.0.1.nip.io:80 established (resolved ['127.0.0.1']); 169.254.169.254.nip.io:80 established (resolved ['169.254.169.254'])",
+      "outcome": "error",
+      "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 2043.4,
+      "elapsed_ms": 47.2,
       "attempts": [
         {
           "n": 0,
@@ -215,10 +226,10 @@
           "local_resolved": [
             "10.0.0.1"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 5.9,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 12.3,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
           "cause": null
         },
         {
@@ -227,10 +238,10 @@
           "local_resolved": [
             "192.168.1.1"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 4.8,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 10.5,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
           "cause": null
         },
         {
@@ -239,10 +250,10 @@
           "local_resolved": [
             "127.0.0.1"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 7.1,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 10.2,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
           "cause": null
         },
         {
@@ -251,30 +262,34 @@
           "local_resolved": [
             "169.254.169.254"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 9.0,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 7.8,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
           "cause": null
         }
       ],
       "headers": {},
       "engine_logs": [
-        "1788980511.288    505 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 10.0.0.1.nip.io:80 - HIER_NONE/- -",
-        "1788980511.796    505 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 192.168.1.1.nip.io:80 - HIER_NONE/- -",
-        "1788980512.307    506 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 127.0.0.1.nip.io:80 - HIER_NONE/- -",
-        "1788980512.821    508 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 169.254.169.254.nip.io:80 - HIER_NONE/- -"
+        "1788982273.685      9 192.168.64.1 TCP_DENIED/200 0 CONNECT 10.0.0.1.nip.io:80 - HIER_NONE/- -",
+        "1788982273.686      0 192.168.64.1 NONE_NONE/403 517 GET https://10.0.0.1.nip.io:80/ - HIER_NONE/- text/html",
+        "1788982273.698      8 192.168.64.1 TCP_DENIED/200 0 CONNECT 192.168.1.1.nip.io:80 - HIER_NONE/- -",
+        "1788982273.699      0 192.168.64.1 NONE_NONE/403 517 GET https://192.168.1.1.nip.io:80/ - HIER_NONE/- text/html",
+        "1788982273.709      7 192.168.64.1 TCP_DENIED/200 0 CONNECT 127.0.0.1.nip.io:80 - HIER_NONE/- -",
+        "1788982273.710      0 192.168.64.1 NONE_NONE/403 517 GET https://127.0.0.1.nip.io:80/ - HIER_NONE/- text/html",
+        "1788982273.719      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 169.254.169.254.nip.io:80 - HIER_NONE/- -",
+        "1788982273.719      0 192.168.64.1 NONE_NONE/403 477 GET https://169.254.169.254.nip.io:80/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "dns-private-ipv6",
       "group": "full",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "0--1.sslip.io:80 established (resolved ['::1']); fe80--1.sslip.io:80 established (resolved ['fe80::1']); fd00--1.sslip.io:80 established (resolved ['fd00::1'])",
+      "outcome": "error",
+      "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden; HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 1530.8,
+      "elapsed_ms": 34.8,
       "attempts": [
         {
           "n": 0,
@@ -282,10 +297,10 @@
           "local_resolved": [
             "::1"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 4.5,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 10.6,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
           "cause": null
         },
         {
@@ -294,10 +309,10 @@
           "local_resolved": [
             "fe80::1"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 7.6,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 10.0,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
           "cause": null
         },
         {
@@ -306,18 +321,21 @@
           "local_resolved": [
             "fd00::1"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 7.2,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 10.5,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
           "cause": null
         }
       ],
       "headers": {},
       "engine_logs": [
-        "1788980513.380    505 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 0--1.sslip.io:80 - HIER_NONE/- -",
-        "1788980513.892    506 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT fe80--1.sslip.io:80 - HIER_NONE/- -",
-        "1788980514.403    506 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT fd00--1.sslip.io:80 - HIER_NONE/- -"
+        "1788982273.759      8 192.168.64.1 TCP_DENIED/200 0 CONNECT 0--1.sslip.io:80 - HIER_NONE/- -",
+        "1788982273.760      0 192.168.64.1 NONE_NONE/403 517 GET https://0--1.sslip.io:80/ - HIER_NONE/- text/html",
+        "1788982273.771      7 192.168.64.1 TCP_DENIED/200 0 CONNECT fe80--1.sslip.io:80 - HIER_NONE/- -",
+        "1788982273.771      0 192.168.64.1 NONE_NONE/403 517 GET https://fe80--1.sslip.io:80/ - HIER_NONE/- text/html",
+        "1788982273.781      7 192.168.64.1 TCP_DENIED/200 0 CONNECT fd00--1.sslip.io:80 - HIER_NONE/- -",
+        "1788982273.782      0 192.168.64.1 NONE_NONE/403 517 GET https://fd00--1.sslip.io:80/ - HIER_NONE/- text/html"
       ]
     },
     {
@@ -325,166 +343,152 @@
       "group": "full",
       "expectation": "deny",
       "outcome": "error",
-      "detail": "no connection reached the trap. 0/3 names were resolved more than once and so were handed the private address (3 lookups total); of the 3 repeat probes, 0 were denied and 3 established \u2014 but the engine resolved each name only once, so it was never offered the rebind and this run did not exercise one",
+      "detail": "no connection reached the trap. 0/3 names were resolved more than once and so were handed the private address (3 lookups total); of the 3 repeat probes, 0 were denied, 0 carried HTTP traffic, and 3 were inconclusive \u2014 but the engine resolved each name only once, so it was never offered the rebind and this run did not exercise one",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 4589.4,
+      "elapsed_ms": 1760.2,
       "attempts": [
         {
           "n": 0,
-          "target": "a0-639deb.rebind.fixture.test:443",
+          "target": "a0-5402ca.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 3.5,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 36.1,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
           "cause": null
         },
         {
           "n": 1,
-          "target": "a1-639deb.rebind.fixture.test:443",
+          "target": "a1-5402ca.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 5.9,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 29.5,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
           "cause": null
         },
         {
           "n": 2,
-          "target": "a2-639deb.rebind.fixture.test:443",
+          "target": "a2-5402ca.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 6.1,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 28.7,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
           "cause": null
         },
         {
           "n": 3,
-          "target": "a0-639deb.rebind.fixture.test:443",
+          "target": "a0-5402ca.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 4.4,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 43.3,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
           "cause": null
         },
         {
           "n": 4,
-          "target": "a1-639deb.rebind.fixture.test:443",
+          "target": "a1-5402ca.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 3.7,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 34.6,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
           "cause": null
         },
         {
           "n": 5,
-          "target": "a2-639deb.rebind.fixture.test:443",
+          "target": "a2-5402ca.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9"
           ],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 3.7,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 35.6,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
           "cause": null
         }
       ],
       "headers": {},
       "engine_logs": [
-        "1788980514.981    504 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a0-639deb.rebind.fixture.test:443 - HIER_NONE/- -",
-        "1788980515.488    505 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a1-639deb.rebind.fixture.test:443 - HIER_NONE/- -",
-        "1788980515.995    505 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a2-639deb.rebind.fixture.test:443 - HIER_NONE/- -",
-        "1788980518.006    503 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a0-639deb.rebind.fixture.test:443 - HIER_NONE/- -",
-        "1788980518.511    503 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a1-639deb.rebind.fixture.test:443 - HIER_NONE/- -",
-        "1788980519.016    503 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a2-639deb.rebind.fixture.test:443 - HIER_NONE/- -"
+        "1788982273.862     33 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a0-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982273.862      0 192.168.64.1 NONE_NONE/503 4235 GET https://a0-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html",
+        "1788982273.891     27 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a1-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982273.891      0 192.168.64.1 NONE_NONE/503 4235 GET https://a1-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html",
+        "1788982273.920     26 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a2-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982273.920      0 192.168.64.1 NONE_NONE/503 4235 GET https://a2-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html",
+        "1788982275.467     37 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a0-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982275.468      0 192.168.64.1 NONE_NONE/503 4235 GET https://a0-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html",
+        "1788982275.502     30 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a1-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982275.502      0 192.168.64.1 NONE_NONE/503 4235 GET https://a1-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html",
+        "1788982275.537     31 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT a2-5402ca.rebind.fixture.test:443 - HIER_NONE/- -",
+        "1788982275.538      0 192.168.64.1 NONE_NONE/503 4235 GET https://a2-5402ca.rebind.fixture.test/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "dns-mixed-answers",
       "group": "full",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "mixed-public-first.fixture.test:443 established \u2014 the engine connected although a private address was in the answer set; mixed-private-first.fixture.test:443 established \u2014 the engine connected although a private address was in the answer set",
+      "outcome": "skip",
+      "detail": "control probe to public-only.fixture.test did not establish (HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable) \u2014 the mixed-answer fixture is not mounted, not allowlisted, or its public address is unreachable from here. Run `ipl-lab up`, which serves lab/config/dns-fixture.hosts, and re-run",
       "cause": null,
-      "observed": "allowed",
-      "elapsed_ms": 1517.3,
+      "observed": null,
+      "elapsed_ms": 36.5,
       "attempts": [
         {
           "n": 0,
           "target": "public-only.fixture.test:443",
           "local_resolved": [],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 4.6,
-          "detail": "HTTP/1.1 200 Connection established",
-          "cause": null
-        },
-        {
-          "n": 1,
-          "target": "mixed-public-first.fixture.test:443",
-          "local_resolved": [],
-          "outcome": "established",
-          "status": 200,
-          "elapsed_ms": 3.4,
-          "detail": "HTTP/1.1 200 Connection established",
-          "cause": null
-        },
-        {
-          "n": 2,
-          "target": "mixed-private-first.fixture.test:443",
-          "local_resolved": [],
-          "outcome": "established",
-          "status": 200,
-          "elapsed_ms": 6.5,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 36.5,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 503 Service Unavailable",
           "cause": null
         }
       ],
       "headers": {},
       "engine_logs": [
-        "1788980519.593    504 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT public-only.fixture.test:443 - HIER_NONE/- -",
-        "1788980520.098    504 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT mixed-public-first.fixture.test:443 - HIER_NONE/- -",
-        "1788980520.605    505 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT mixed-private-first.fixture.test:443 - HIER_NONE/- -"
+        "1788982275.643     33 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT public-only.fixture.test:443 - HIER_NONE/- -",
+        "1788982275.644      0 192.168.64.1 NONE_NONE/503 4220 GET https://public-only.fixture.test/ - HIER_NONE/- text/html"
       ]
     },
     {
       "name": "ptr-allowlist",
       "group": "full",
       "expectation": "deny",
-      "outcome": "fail",
-      "detail": "1.0.0.1:443 was reached even though only pypi.org is allowlisted \u2014 the address inherited an allowlisted name from its reverse record",
+      "outcome": "error",
+      "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 537.2,
+      "elapsed_ms": 36.5,
       "attempts": [
         {
           "n": 0,
           "target": "1.0.0.1:443",
           "local_resolved": [],
-          "outcome": "established",
+          "outcome": "error",
           "status": 200,
-          "elapsed_ms": 1.4,
-          "detail": "HTTP/1.1 200 Connection established",
+          "elapsed_ms": 9.1,
+          "detail": "HTTP/1.1 200 Connection established \u2014 inconclusive HTTP response after TLS: HTTP/1.1 403 Forbidden",
           "cause": null
         }
       ],
       "headers": {},
       "engine_logs": [
-        "1788980521.183    502 192.168.64.1 TCP_DENIED_ABORTED/200 0 CONNECT 1.0.0.1:443 - HIER_NONE/- -"
+        "1788982275.699      6 192.168.64.1 TCP_DENIED/200 0 CONNECT 1.0.0.1:443 - HIER_NONE/- -",
+        "1788982275.699      0 192.168.64.1 NONE_NONE/403 505 GET https://1.0.0.1/ - HIER_NONE/- text/html"
       ]
     },
     {
@@ -495,11 +499,11 @@
       "detail": "mismatched SNI accepted: tunnel established, TLSv1.3 handshake OK (SNI=files.pythonhosted.org)",
       "cause": "sni-mismatch",
       "observed": "allowed",
-      "elapsed_ms": 36.1,
+      "elapsed_ms": 34.2,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980521.266     34 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
+        "1788982275.776     32 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
       ]
     },
     {
@@ -514,7 +518,7 @@
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980521.299      0 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_NONE/- -"
+        "1788982275.806      0 192.168.64.1 NONE_NONE/200 0 CONNECT pypi.org:443 - HIER_NONE/- -"
       ]
     },
     {
@@ -525,20 +529,20 @@
       "detail": "10 concurrent CONNECTs to an allowed host: 10 established, 0 denied/failed",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 9.7,
+      "elapsed_ms": 8.3,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "1788980521.335      0 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788980521.335      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788980521.336      2 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788980521.337      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788980521.337      2 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788980521.337      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788980521.337      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788980521.338      0 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788980521.338      0 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
-        "1788980521.339      0 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -"
+        "1788982275.843      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982275.844      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982275.844      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982275.844      3 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -",
+        "1788982275.845      1 192.168.64.1 NONE_NONE_ABORTED/200 0 CONNECT pypi.org:443 - HIER_NONE/- -"
       ]
     }
   ]

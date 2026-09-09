@@ -82,12 +82,13 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
     rebound = [name for name, seen in ours.items() if len(seen) > 1]
     second_probes = attempts[REBIND_NAMES:]
     established = sum(1 for a in second_probes if a.outcome == "established")
+    inconclusive = sum(a.outcome == "error" for a in second_probes)
     detail = (
         f"no connection reached the trap. {len(rebound)}/{REBIND_NAMES} names were "
         f"resolved more than once and so were handed the private address "
         f"({lookups} lookups total); of the {len(second_probes)} repeat probes, "
-        f"{len(second_probes) - established} were denied and {established} "
-        "established"
+        f"{len(second_probes) - established - inconclusive} were denied, {established} "
+        f"carried HTTP traffic, and {inconclusive} were inconclusive"
     )
     if not rebound:
         detail += (

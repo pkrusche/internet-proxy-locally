@@ -83,13 +83,8 @@ class EgressSuiteTest(unittest.TestCase):
     ) -> None:
         """The regression that made 13 of Squid's rows fail at once.
 
-        On an `ssl-bump` port Squid answers every CONNECT `200` before
-        policy runs, so a denial can only abort the tunnel afterwards
-        (`TCP_DENIED_ABORTED/200 … HIER_NONE/-` — denied, no upstream
-        connection, nothing carried). It enforces exactly as it does in
-        tunnel mode; only the signal is worse. Reading the status line
-        alone reported that as an open proxy, which is the opposite of
-        what happened, so every deny row grades on the tunnel instead.
+        A CONNECT acknowledgment and a successful local TLS handshake must
+        not hide an explicit denial sent inside the TLS session.
         """
         prompt = self.run_suite("pipelock", "strict", full=False)
         late = self.run_suite("squid", "bumping", full=False)
@@ -97,8 +92,8 @@ class EgressSuiteTest(unittest.TestCase):
             {name: r.outcome for name, r in late.items()},
             {name: r.outcome for name, r in prompt.items()},
         )
-        # Still distinguishable: only one of the two says why it refused.
-        self.assertEqual(late["blocked-host-connect"].cause, "aborted-after-connect")
+        # The intercepted denial states access denied, without a specific reason.
+        self.assertEqual(late["blocked-host-connect"].cause, "proxy-access-denied")
         self.assertEqual(
             prompt["blocked-host-connect"].cause, "hostname-not-allowlisted"
         )

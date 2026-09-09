@@ -56,6 +56,9 @@ def test_dns_mixed(client: ProxyClient) -> RawOutcome:
             ),
             attempts=attempts,
         )
+    errors = [a.detail for a in attempts[1:] if a.outcome == "error"]
+    if errors:
+        return RawOutcome("error", "; ".join(errors), attempts=attempts)
     return RawOutcome(
         "denied",
         (

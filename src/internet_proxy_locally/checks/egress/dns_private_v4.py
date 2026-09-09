@@ -26,6 +26,9 @@ def test_dns_private_v4(client: ProxyClient) -> RawOutcome:
             f"{a.target} established (resolved {a.local_resolved})" for a in bad
         )
         return RawOutcome("fail", detail, attempts=attempts)
+    errors = [a.detail for a in attempts if a.outcome == "error"]
+    if errors:
+        return RawOutcome("error", "; ".join(errors), attempts=attempts)
     return RawOutcome(
         "pass",
         "allowlisted hostnames resolving to private/loopback/metadata IPv4 "

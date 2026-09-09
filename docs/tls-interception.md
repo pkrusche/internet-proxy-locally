@@ -108,12 +108,35 @@ Smokescreen doesn't support TLS interception.
 
 ## Late denials, and how the suite grades them
 
-A deny check asks whether the destination was reached, not what status came
-back. `ProxyClient.tunnel_carried()` watches a tunnel that was answered
-`200`: if it is torn down without carrying anything, the row passes with
-cause `aborted-after-connect`, and only a tunnel that stays open and usable
-fails. Grading the status line alone reported a correctly-enforcing Squid
-as an open proxy — 13 rows at once, every one of them a refusal.
+A CONNECT `200` only acknowledges the tunnel. With interception, even a
+successful TLS handshake may be with the proxy itself. The CONNECT deny
+probes therefore send ClientHello with the destination name, complete TLS,
+and send an HTTP GET. A complete HTTP 2xx/3xx response is evidence of access;
+Squid's explicit HTTP 403 with `X-Squid-Error: ERR_ACCESS_DENIED` inside TLS
+is a denial (`proxy-access-denied`). Ordinary CONNECT 4xx refusals also pass.
+
+Timeouts, resets, TLS alerts, incomplete responses, and other HTTP errors
+remain inconclusive (`error`): the client alone cannot tell an origin failure
+from a proxy refusal. In particular, waiting silently for 0.5 seconds does
+not prove a tunnel carried traffic. The old `aborted-after-connect` grade
+also overstated what a client-side close proves; it remains readable in
+historical results but new probes do not emit it.
+
+The active probe uses TLS even for CONNECT targets on port 80, to exercise
+an intercepting listener. A plaintext-only origin may therefore produce an
+inconclusive result; this is not proof that the proxy blocked it. Certificate
+verification is disabled for these behavioral probes, so they do not verify
+CA trust or upstream identity. Engine logs remain attached for diagnosis,
+but are not used to turn ambiguous client observations into policy passes.
+
+DNS and PTR checks propagate inconclusive attempts instead of silently
+counting them as denials. The mixed-answer check needs a working TLS/HTTP
+control; DNS rebinding still uses the fixture's trap and requires evidence
+that a replacement DNS answer was actually offered.
+
+Saved results are historical evidence. Re-run
+`uv run ipl-lab measure --tls-interception` to regenerate results and findings
+with the active probes; editing the checker does not retroactively regrade them.
 
 ## Verifying interception end to end
 
@@ -131,9 +154,8 @@ curl --cacert ca.pem https://example.com  # denied: a real 4xx, not a hung tunne
 That second line is the one that catches an ungated peek on Squid: a
 `curl: (56) Recv failure` or an empty reply where a 403 page belongs means
 the CONNECT is being acknowledged before policy runs, and the peek is
-covering destinations the floors deny (see [Squid](#squid) above). The
-egress suite still passes such a run — the tunnel carries nothing either
-way — so this is the check that sees it.
+covering destinations the floors deny (see [Squid](#squid) above). An
+ambiguous client-side abort remains inconclusive in the egress suite.
 
 `ipl-lab up --tls-interception && ipl-lab check` runs the adversarial suite
 against the intercepting configuration. `ipl-lab measure --tls-interception`

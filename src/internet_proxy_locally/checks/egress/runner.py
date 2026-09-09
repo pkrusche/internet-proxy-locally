@@ -17,14 +17,14 @@ from .models import Result, _normalize
 from .transport import ProxyClient
 
 
-def fixtures_active(client: ProxyClient) -> bool:
+def fixtures_active(client: ProxyClient) -> bool | None:
     """True when *.nip.io is allowlisted (test policy) — a public-IP nip.io
     name should then tunnel; under the normal policy it is hostname-denied."""
-    sock, _status, _ = client.connect("1.1.1.1.nip.io:443")
-    if sock is not None:
-        sock.close()
-        return True
-    return False
+    sock, status, _ = client.connect("1.1.1.1.nip.io:443")
+    if sock is None:
+        return False if status is not None and 400 <= status < 500 else None
+    carried, _ = client.tunnel_carried(sock, "1.1.1.1.nip.io:443")
+    return carried
 
 
 FIXTURE_SKIP = (
@@ -109,6 +109,7 @@ def run_suite(
         )
 
     have_fixtures = None
+    fixtures_checked = False
     results: list[Result] = []
     for check in TESTS:
         name, group, fn = check.name, check.group, check.fn
@@ -117,9 +118,11 @@ def run_suite(
             continue
         expectation = check.expectation
         if needs_fixtures:
-            if have_fixtures is None:
+            if not fixtures_checked:
                 have_fixtures = fixtures_active(client)
-            if not have_fixtures:
+                fixtures_checked = True
+            # An inconclusive control must not hide the individual DNS probes.
+            if have_fixtures is False:
                 results.append(Result(name, group, expectation, "skip", FIXTURE_SKIP))
                 continue
         before_logs = _fetch_logs(backend_bin, container)
