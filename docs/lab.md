@@ -75,7 +75,7 @@ DNS/SSRF fixtures and CONNECT-abuse probes.
 
 ```bash
 ipl check                          # check connectivity quickly
-ipl lab check --full               # full check / egress suite; needs lab mode
+ipl-lab check                      # full check / egress suite; needs lab mode
 ```
 
 Grades are `pass` (expectation met), `fail` (violated), `record` (behavior
@@ -86,7 +86,7 @@ JSON results include timing, available per-attempt evidence, response headers,
 denial causes, and engine logs. 
 
 ```bash
-ipl-lab measure                    # ipl check --full for all three engines, then rewrite findings.md
+ipl-lab measure                    # ipl-lab check for all three engines, then rewrite findings.md
 ipl-lab measure --backend docker   # or pin the backend
 ipl-lab report                     # rewrite from the committed results/
 ipl-lab report --check             # CI: exit 1 if the tables are stale

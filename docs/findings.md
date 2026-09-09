@@ -693,11 +693,11 @@ The same, for IPv6 (sslip.io).
 A name whose answer changes between the first lookup and the next does not get the engine to a private address. Graded on whether the fixture's trap was reached, not on counts.
 
 * **Pipelock** — SKIP (expectation: deny, 1590ms, 6 probes)  
-  the DNS fixture reported no lookups for *.rebind.fixture.test — it is not running, the engine is not resolving through it, or its log stream is not readable from here. Run `ipl-lab up` and `ipl check --full`, which wires the fixture's container through automatically
+  the DNS fixture reported no lookups for *.rebind.fixture.test — it is not running, the engine is not resolving through it, or its log stream is not readable from here. Run `ipl-lab up` and `ipl-lab check`, which wires the fixture's container through automatically
 * **Smokescreen** — SKIP (expectation: deny, 1612ms, 6 probes)  
-  the DNS fixture reported no lookups for *.rebind.fixture.test — it is not running, the engine is not resolving through it, or its log stream is not readable from here. Run `ipl-lab up` and `ipl check --full`, which wires the fixture's container through automatically
+  the DNS fixture reported no lookups for *.rebind.fixture.test — it is not running, the engine is not resolving through it, or its log stream is not readable from here. Run `ipl-lab up` and `ipl-lab check`, which wires the fixture's container through automatically
 * **Squid** — SKIP (expectation: deny, 1629ms, 6 probes)  
-  the DNS fixture reported no lookups for *.rebind.fixture.test — it is not running, the engine is not resolving through it, or its log stream is not readable from here. Run `ipl-lab up` and `ipl check --full`, which wires the fixture's container through automatically
+  the DNS fixture reported no lookups for *.rebind.fixture.test — it is not running, the engine is not resolving through it, or its log stream is not readable from here. Run `ipl-lab up` and `ipl-lab check`, which wires the fixture's container through automatically
 
 ### dns-mixed-answers
 

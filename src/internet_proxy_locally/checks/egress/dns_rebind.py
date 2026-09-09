@@ -57,8 +57,8 @@ def test_dns_rebind(client: ProxyClient) -> RawOutcome:
             (
                 f"the DNS fixture reported no lookups for *.{REBIND_ZONE} — it is not "
                 "running, the engine is not resolving through it, or its log stream is not "
-                "readable from here. Run `ipl-lab up` and `ipl check "
-                "--full`, which wires the fixture's container through automatically"
+                "readable from here. Run `ipl-lab up` and `ipl-lab check`, which wires "
+                "the fixture's container through automatically"
             ),
             attempts=attempts,
         )
