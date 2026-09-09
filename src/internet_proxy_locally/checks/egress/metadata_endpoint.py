@@ -13,12 +13,7 @@ def test_metadata(client: ProxyClient) -> tuple[str, str]:
     o2, d2 = _classify_deny_http(client, "http://169.254.169.254/latest/meta-data/")
     if "fail" in (o1, o2):
         return "fail", f"CONNECT: {d1}; GET: {d2}"
-    # Deliberately does not say "metadata": the cause is classified from
-    # this text, and a reason word injected by the checker would be read
-    # back as the engine's own. Pipelock in fact rejects the bare address
-    # at the allowlist, exactly as it does 127.0.0.1 — the genuine
-    # metadata verdict shows up in dns-private-ipv4, where an allowlisted
-    # hostname resolves to 169.254.169.254.
+    # Avoid "metadata": classification must use the engine's reason, not ours.
     return "pass", f"denied for CONNECT and GET (CONNECT: {d1}; GET: {d2})"
 
 

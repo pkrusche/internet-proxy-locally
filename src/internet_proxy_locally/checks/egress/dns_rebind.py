@@ -1,40 +1,4 @@
-"""dns-rebinding: a name whose answer changes between the first lookup and
-the next does not get the engine to a private address.
-
-The fixture answers the first lookup of a name with a public address and
-every later one with its own private address, on which it listens as a
-trap. Each name is probed twice, with a pause between passes, so the second
-answer is actually handed out; two probes in the same second would be
-served from one lookup by any resolver cache with second granularity, and
-the rebind would never happen.
-
-The engine must never connect to an address it was handed *after*
-validating a different one. So the second probe is a genuine rebind:
-whatever the engine does there, it does knowing only what its resolver just
-told it. An engine that re-resolves and re-validates refuses. An engine
-that re-resolves and forgets to re-validate arrives at the trap, and the
-fixture reports it.
-
-Probing twice, with a pause between the passes, is the point. A single
-probe per name never causes the private answer to be handed out at all, so
-the trap could not fire even against a vulnerable engine and the row would
-pass while testing nothing — the same failure mode that once made
-`dns-private-ipv6` vacuous: it asked only for a denial, and got one for the
-wrong reason. Two probes in the same second are no better against a
-resolver cache with second granularity, which is why the passes are
-separated rather than interleaved.
-
-**Only the trap decides the grade.** A second probe that establishes with
-the trap silent is not a failure: it means the engine connected to the
-public address it had already validated, which is the safe way to resist
-rebinding. Both behaviors are recorded in the detail, because they are
-different designs and the difference is worth seeing.
-
-This replaced `rbndr.us`, which stopped resolving in 2026-08 and had always
-been ungradable: it answered each query with one of its two addresses at
-random, so nothing the checker observed could attribute what the engine did
-(docs/findings.md, "DNS rebinding").
-"""
+"""Probe DNS rebinding; only fixture trap connections count as failures."""
 
 from __future__ import annotations
 
@@ -46,19 +10,10 @@ from .models import Attempt, Check, RawOutcome
 from .probes import _connect_attempt
 from .transport import ProxyClient
 
-# Rebinding fixture, served by the local DNS fixture container. The first A
-# query for one of these names is answered with a public address and every
-# later query with the fixture's own private address, where it listens as
-# a trap. Each name is fresh, so no name can be served from a cache an
-# earlier one warmed, and each is probed twice so that the second answer is
-# actually handed out.
+# Fresh names avoid cached answers; probe each twice to trigger rebinding.
 REBIND_ZONE = "rebind.fixture.test"
 REBIND_NAMES = 3  # probed twice each, either side of REBIND_TTL_GAP
-# The fixture answers with TTL 0, but a resolver cache keyed on a
-# whole-second clock — Squid's ipcache is one — will still serve two
-# probes issued in the same second from a single lookup, and the rebind
-# never gets handed out. One pass over every name, a pause, then a second
-# pass costs one gap for the whole check rather than one per name.
+# Cross a whole-second cache boundary even though the fixture uses TTL 0.
 REBIND_TTL_GAP = 1.5
 
 

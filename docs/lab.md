@@ -1,14 +1,13 @@
 # The lab
 
-The other lane. `ipl` starts a proxy on the reviewed allowlist and
-knows nothing about any of this. `ipl-lab` owns everything that exists to
-**measure** an engine rather than run one: the adversarial test policy, the
-local DNS fixture, the full egress suite, and the three-engine comparison
+`ipl-lab` runs extended checks for engines:
+local DNS fixture, the full egress suite, and reports the comparison
 in [findings.md](findings.md).
 
-Nothing here can reach an operational run. `ipl` never reads
-`data/lab/fixtures.toml`, the fixture names live under `.test` (RFC 6761, can
-never resolve publicly), and any `ipl up` removes the fixture
+Testing / measurement requires a different policy from production,
+this is defined in `data/lab/fixtures.toml`, the fixture names live 
+under `.test` (RFC 6761, can never resolve publicly), and 
+any `ipl up` removes the fixture
 container.
 
 ```bash
@@ -177,3 +176,28 @@ What the fixture *serves* is not in the image at all: `[fixture]` in
 and `lab/config/fixture.env`, both bind-mounted read-only, so an edit
 there takes effect on the next `ipl-lab up` rather than on the next
 rebuild.
+
+## Checker results
+
+`ipl-check` runs `quick` allow/deny checks or the `full` suite, which adds
+DNS/SSRF fixtures and CONNECT-abuse probes. Fixture checks skip when the test
+policy or required fixture evidence is unavailable. Mixed-answer probes resolve
+inside the engine, so their `local_resolved` lists are intentionally empty.
+
+Grades are `pass` (expectation met), `fail` (violated), `record` (behavior
+observed without a defined verdict), `skip` (missing prerequisite), and `error`
+(check could not run). Recorded rows retain the observed allowed/denied behavior.
+
+JSON results include timing, available per-attempt evidence, response headers,
+denial causes, and engine logs. Schema v2 also records run conditions, including
+image, backend, policy, host, and timestamp. Diffing v1 and v2 results is supported
+with a warning. Denial causes match the engine's stated reason; echoed targets
+and generic HTTP status text are not evidence of a specific rule.
+
+The fixture supervisor logs DNS answers and trap connections as `IPL-FIXTURE`
+lines. Required settings come from the mounted `fixture.env`; missing settings
+stop startup to avoid measuring an unintended fixture. The PTR probe uses a
+public address claiming an allowlisted hostname. PTR lookups are recorded but
+not required: rejecting IP literals before reverse DNS is valid enforcement.
+
+For package layout, image updates, and tooling, see [development.md](development.md).

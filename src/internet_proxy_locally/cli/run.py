@@ -1,12 +1,4 @@
-"""`ipl` — the operational lane.
-
-Runs one engine behind one stable endpoint on the shipped allowlist. This
-is the proxy a person actually puts a client behind, which is why it knows
-nothing about the DNS fixture beyond the name it has to sweep: a fixture
-reachable from here would answer allowlisted names with private addresses.
-
-The measurement lane is `ipl-lab` (see `cli.lab` and docs/lab.md).
-"""
+"""`ipl` — the operational lane."""
 
 from __future__ import annotations
 
@@ -43,8 +35,6 @@ from internet_proxy_locally.policy.render import (
 )
 from internet_proxy_locally.spec import ServiceSpec
 
-# What `ipl policy` regenerates from, and what `up` re-renders before it
-# mounts anything. The lab lane's counterpart is `cli.lab._POLICY_SOURCE`.
 _POLICY_SOURCE = "config.toml"
 
 
@@ -70,8 +60,6 @@ def cmd_setup(opts: argparse.Namespace) -> int:
 
     report_synced(sync_policies(), _POLICY_SOURCE)
 
-    # Gated strictly on the config flag — a repo that never opts into TLS
-    # interception gets zero new files here, identical footprint to today.
     if load_policy_config().tls_interception and not ca.ca_present():
         ca.generate_ca()
         print(f"generated the TLS-interception CA at {ca.ca_cert_path()}")
@@ -138,8 +126,6 @@ def cmd_status(opts: argparse.Namespace) -> int:
         marker = " (active)" if spec.engine == active else ""
         print(f"{spec.engine}: {state}{marker}")
         print(f"  container: {spec.container_name}")
-        # The tag `up` runs, not a reconstruction of it: what the pin
-        # behind it is belongs to data/images/<engine>/Dockerfile.
         print(f"  image:     {spec.image}")
         print(f"  built:     {'yes' if backend.image_present(spec.image) else 'no'}")
     if active:
@@ -180,11 +166,6 @@ def cmd_check(opts: argparse.Namespace) -> int:
         group="--quick",
         as_json=opts.json,
     )
-
-
-# ---------------------------------------------------------------------------
-# `ipl ca` — the TLS-interception CA's lifecycle (docs/tls-interception.md)
-# ---------------------------------------------------------------------------
 
 
 def cmd_ca_init(opts: argparse.Namespace) -> int:
@@ -242,11 +223,6 @@ def cmd_init(opts: argparse.Namespace) -> int:
     report_synced(sync_policies(), _POLICY_SOURCE)
     print("workspace initialized")
     return 0
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -364,9 +340,6 @@ def main(argv: list[str] | None = None) -> int:
     return common.main(build_parser(), argv)
 
 
-# `python -m internet_proxy_locally.cli.run` as well as the console script:
-# subprocess callers can use the module form without depending on the
-# wrapper being on PATH.
 if __name__ == "__main__":
     import sys
 

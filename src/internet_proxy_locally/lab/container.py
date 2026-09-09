@@ -1,14 +1,4 @@
-"""The DNS fixture container: a resolver that lies, on purpose.
-
-It answers the fixture names with the addresses `fixtures.toml` describes —
-private ones, rebinding ones, a PTR claiming an allowlisted host — so that
-`dns-mixed-answers`, `dns-rebinding` and `ptr-allowlist` are testing an
-engine against a hostile resolver rather than against nothing.
-
-That is also why it must never outlive the run that started it, and why the
-operational lane sweeps its container — by the name in `spec.SERVICES`,
-which it can read without knowing anything else about this module.
-"""
+"""The DNS fixture container: a resolver that lies, on purpose."""
 
 from __future__ import annotations
 

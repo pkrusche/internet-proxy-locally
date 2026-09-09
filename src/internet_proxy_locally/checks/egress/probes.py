@@ -1,10 +1,4 @@
-"""Small probe helpers shared by several checks.
-
-Kept in one module rather than duplicated per check file: the "close the
-socket, build the graded detail string" logic is exactly what
-tests/egress/test_denial.py::ClassifyDenialRealWordingTest guards against
-drifting, so it must stay singular.
-"""
+"""Small probe helpers shared by several checks."""
 
 from __future__ import annotations
 

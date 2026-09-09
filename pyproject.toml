@@ -1,13 +1,3 @@
-# internet-proxy-locally.
-#
-# Every entry point here is run through uv — `uv run ipl ...`,
-# `uv run ipl-lab ...` — so the interpreter comes from .python-version and
-# the dependencies from this file. There is no supported bare-interpreter
-# path, and nothing is imported lazily to preserve one.
-#
-#   jinja2       renders data/templates/*.j2 into config/  (`render_policies()`)
-#   cryptography generates and reads the opt-in TLS-interception CA (`ca.py`)
-
 [project]
 name = "internet-proxy-locally"
 version = "0.1.0"
@@ -31,9 +21,6 @@ Documentation = "https://github.com/internet-proxy-locally/internet-proxy-locall
 Source = "https://github.com/internet-proxy-locally/internet-proxy-locally"
 Issues = "https://github.com/internet-proxy-locally/internet-proxy-locally/issues"
 
-# `ipl` is the operational lane and `ipl-lab` the measurement one; the
-# split between them is described in the package docstring. `ipl-check` is
-# the egress checker, which `ipl check` also invokes as a subprocess.
 [project.scripts]
 ipl = "internet_proxy_locally.cli.run:main"
 ipl-lab = "internet_proxy_locally.cli.lab:main"
@@ -43,10 +30,6 @@ ipl-check = "internet_proxy_locally.checks.egress:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# data/ carries the templates and the image build contexts, so an installed
-# wheel can render a policy and build an image without a checkout. Hatchling ships every file under the package
-# directory, which is what makes that work — `unzip -l dist/*.whl` is the
-# check that it still does.
 [tool.hatch.build.targets.wheel]
 packages = ["src/internet_proxy_locally"]
 
@@ -69,13 +52,6 @@ include = [
 ]
 exclude = ["**/__pycache__/**", "**/*.pyc", "/state/**", "/results/**"]
 
-# Lint and format, run in CI by .github/workflows/lint.yml and locally by
-# `uv run ruff check .` / `uv run ruff format .`. No [tool.ruff] section: the
-# repo takes ruff's default rule set, so the exact set of rules is whatever
-# the pinned version ships. That pin lives in uv.lock and CI syncs with
-# --frozen, which is what keeps a CI run and a local run agreeing — bumping
-# ruff is therefore a deliberate `uv lock --upgrade-package ruff`, not
-# something a fresh checkout does on its own.
 [dependency-groups]
 dev = [
     "ruff>=0.16.5",

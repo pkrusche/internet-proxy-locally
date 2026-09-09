@@ -1,14 +1,4 @@
-"""`ipl-lab` — the measurement lane.
-
-The adversarial test policy, the DNS fixture and the three-engine
-comparison. Never an operational proxy: it starts an engine on an allowlist
-that includes `*.nip.io`, `*.sslip.io` and the local fixture zones, next to
-a resolver whose whole job is to answer those names dishonestly. `ipl` is
-the one you put a client behind.
-
-Where a command here is the operational one with a different source, it
-delegates rather than repeats — see `cli.common`.
-"""
+"""`ipl-lab` — the measurement lane."""
 
 from __future__ import annotations
 
@@ -29,9 +19,6 @@ from internet_proxy_locally.lab.render import (
 )
 from internet_proxy_locally.policy.render import report_synced, write_rendered
 
-# What `ipl-lab policy` regenerates from, and the line it prints when it
-# has nothing to do. Both lanes render from config.toml; this one adds
-# the fixture spec on top, and says so.
 _POLICY_SOURCE = "data/lab/fixtures.toml"
 _POLICY_LABEL = "lab configs: up to date with config.toml + data/lab/fixtures.toml"
 
@@ -150,11 +137,6 @@ def cmd_report(opts: argparse.Namespace) -> int:
     return _report().write_findings(check=opts.check)
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ipl-lab",
@@ -220,9 +202,6 @@ def main(argv: list[str] | None = None) -> int:
     return common.main(build_parser(), argv)
 
 
-# `python -m internet_proxy_locally.cli.lab` as well as the console script:
-# subprocess callers can use the module form without depending on the
-# wrapper being on PATH.
 if __name__ == "__main__":
     import sys
 

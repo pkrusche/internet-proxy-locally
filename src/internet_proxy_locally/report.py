@@ -1,22 +1,4 @@
-"""Render the measured tables of docs/findings.md from result files.
-
-docs/findings.md holds two things: what the three engines actually did, and
-what that means. The second half is written by a person. The first is
-generated here from the JSON in `results/`, the same way config/ is a
-rendering of config.toml — so a stale table is a diff rather than a belief.
-
-This module has no CLI. ipl-lab is the entry point:
-
-    ipl-lab measure         # measure all three engines, then rewrite
-    ipl-lab report          # rewrite from the existing results/
-    ipl-lab report --check  # report drift as a diff, exit 1, write nothing
-
-It rewrites only the regions of docs/findings.md delimited by
-`<!-- BEGIN GENERATED <name> -->` / `<!-- END GENERATED <name> -->`; the
-narrative around them is copied through byte for byte.
-
-Reached as `ipl-lab report` and `ipl-lab measure`. Stdlib only.
-"""
+"""Render the measured tables of docs/findings.md from result files."""
 
 from __future__ import annotations
 
@@ -26,15 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# The generated blocks, in the order they appear in docs/findings.md. Each
-# is delimited in that file by
-#
-#     <!-- BEGIN GENERATED <name> -->  …  <!-- END GENERATED <name> -->
-#
-# and this script rewrites only what is between the two. The narrative
-# around them is written by a person and is never touched, which is how one
-# document can hold both the measurements and what they mean without
-# either being able to overwrite the other.
+# Marker names in docs/findings.md; only their contents are regenerated.
 SECTIONS = ("conditions", "summary", "matrix", "per-check")
 
 from internet_proxy_locally import paths
@@ -43,10 +17,6 @@ from internet_proxy_locally.cli import CLI_MODULE
 from internet_proxy_locally.constants import ENGINE_LABELS as LABELS
 from internet_proxy_locally.constants import ENGINES
 from internet_proxy_locally.errors import Fail
-
-# ---------------------------------------------------------------------------
-# Reading result files
-# ---------------------------------------------------------------------------
 
 
 def result_path(results_dir: Path, engine: str) -> Path:
@@ -102,11 +72,6 @@ def load_runs(results_dir: Path, engines: tuple[str, ...]) -> dict[str, dict]:
 
 def rows_of(run: dict) -> dict[str, dict]:
     return {row["name"]: row for row in run.get("results", [])}
-
-
-# ---------------------------------------------------------------------------
-# Rendering
-# ---------------------------------------------------------------------------
 
 
 def verdict(row: dict | None) -> str:
@@ -293,10 +258,7 @@ def _summary(runs: dict[str, dict]) -> str:
         add("")
 
     diverging = divergences(runs, [c.name for c in egress.TESTS])
-    # Two very different kinds of disagreement, kept apart because the
-    # counts read as alarming when they are pooled: one engine behaving
-    # differently, and three engines behaving identically while naming
-    # different rules for it.
+    # Separate behavioral disagreements from different names for the same denial.
     behavioral = [
         (name, groups) for name, groups in diverging if behavior_differs(runs, name)
     ]
@@ -401,11 +363,6 @@ def _per_check(runs: dict[str, dict]) -> str:
     return "\n".join(out).rstrip()
 
 
-# ---------------------------------------------------------------------------
-# Injecting the sections into docs/findings.md
-# ---------------------------------------------------------------------------
-
-
 def _marker(name: str, edge: str) -> str:
     return f"<!-- {edge} GENERATED {name} -->"
 
@@ -491,11 +448,6 @@ def write_findings(
     return 0
 
 
-# ---------------------------------------------------------------------------
-# --run: measure first
-# ---------------------------------------------------------------------------
-
-
 def measure_all(
     backend: str | None = None,
     engines: tuple[str, ...] = ENGINES,
@@ -528,9 +480,7 @@ def measure_all(
                     text=True,
                     check=False,
                 )
-                # A failing check is data, not an error: the suite exits 1
-                # when a graded row failed, and that run is exactly what the
-                # report has to show. Only unparseable output is a problem.
+                # Exit 1 is a measured failure to report; only invalid output aborts.
                 try:
                     json.loads(proc.stdout)
                 except json.JSONDecodeError as exc:
@@ -546,7 +496,6 @@ def measure_all(
                     flush=True,
                 )
         finally:
-            # Back to no engine and no fixture, whatever happened above.
             subprocess.run(lab_cli + common + ["down"], check=False)
     except Fail as exc:
         print(f"error: {exc}", file=sys.stderr)

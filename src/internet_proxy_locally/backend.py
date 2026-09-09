@@ -1,11 +1,4 @@
-"""The container runtime, behind one interface.
-
-Docker and Apple `container` differ in argument spelling and, more
-awkwardly, in the JSON they report state through — a container address is
-under `NetworkSettings` in one and `status.networks[]` as a CIDR in the
-other. Every one of those differences is absorbed here, so nothing above
-this module has a runtime-shaped branch in it.
-"""
+"""The container runtime, behind one interface."""
 
 from __future__ import annotations
 

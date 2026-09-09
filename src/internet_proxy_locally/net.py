@@ -1,10 +1,4 @@
-"""Talking to the endpoint: where it is, whether it is up, whether it works.
-
-`probe_proxy` is the interesting one. It does not ask whether something is
-listening — it asks whether what is listening is a proxy enforcing a
-default-deny policy, by requesting a host that cannot be allowlisted. A 2xx
-is a failure, not a success.
-"""
+"""Talking to the endpoint: where it is, whether it is up, whether it works."""
 
 from __future__ import annotations
 
@@ -84,9 +78,7 @@ def probe_proxy(host: str, port: int, timeout: float = 4.0) -> tuple[bool, str, 
     if not match:
         return False, f"non-HTTP response: {line!r}", True
     status = int(match.group(1))
-    # 403 is the one portable, attributable policy response configured by
-    # the shipped engines.  A 5xx commonly means DNS/origin failure and is
-    # not evidence that an allowlist was enforced.
+    # Only 403 proves policy denial; 5xx may be a DNS or origin failure.
     if status == 403:
         return True, f"policy denies unknown destinations ({line.strip()})", False
     if status >= 400:

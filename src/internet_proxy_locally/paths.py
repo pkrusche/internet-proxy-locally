@@ -1,27 +1,4 @@
-"""Where everything is. The only module that answers that question.
-
-There are two roots, and keeping them apart is the point of this file.
-
-**The data root** holds what ships with the package and is read, never
-written, at runtime: the Jinja templates, the lab fixture's records, and
-the image build contexts with their pins. It lives inside the package so an
-installed wheel is self-contained — `ipl setup` can build the Squid image
-without a checkout to find the Dockerfile in.
-
-**The workspace root** holds what a person edits or the tool generates:
-`config.toml` (the allowlist), the rendered `config/` and `lab/config/`
-that get bind-mounted into containers, `results/` and `docs/findings.md`.
-None of it belongs in a wheel, and it is found by walking up from the
-working directory looking for `config.toml` — which is what makes the CLI
-work from anywhere inside a checkout, the way git does.
-
-Both are overridable by environment variable. That is not a convenience
-for users: it is how the test suite gets an isolated repository without
-copying the code into it.
-
-This replaces eight separate `REPO_ROOT = Path(__file__).resolve().parent`
-lines that all had to stay in agreement about the layout.
-"""
+"""Resolve packaged data and workspace paths; see docs/development.md."""
 
 from __future__ import annotations
 
@@ -67,9 +44,6 @@ def workspace_root() -> Path:
     return start
 
 
-# --- the data root ---------------------------------------------------------
-
-
 def template_dir() -> Path:
     return data_root() / "templates"
 
@@ -95,9 +69,6 @@ def lab_dir() -> Path:
 
 def fixture_file() -> Path:
     return lab_dir() / "fixtures.toml"
-
-
-# --- the workspace root ----------------------------------------------------
 
 
 def policy_file() -> Path:

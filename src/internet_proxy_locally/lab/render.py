@@ -1,10 +1,4 @@
-"""Rendering lab/config/: the test policy and the fixture hosts file.
-
-The same templates and the same renderer as the operational lane, with
-`test_policy=True` and a second allowlist — which is what guarantees the
-`.test` configs are the shipped policy plus fixture names rather than an
-independently written policy that happens to look similar.
-"""
+"""Rendering lab/config/: the test policy and the fixture hosts file."""
 
 from __future__ import annotations
 

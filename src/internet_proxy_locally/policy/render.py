@@ -1,18 +1,4 @@
-"""Rendering the allowlist into engine configs, and writing the result.
-
-config.toml holds the allowlist once; data/templates/*.j2 hold everything else
-each engine needs, as literal text. Rendering the two together produces
-config/<engine>.{yaml,conf} and the `.test` variants, so the three
-engines cannot express different policies — the thing docs/policy.md used
-to ask a human to keep true by editing three files.
-
-Almost nothing security-critical is parameterized: the deny floors, the
-rule order and `cache deny all` are literal text in the templates. The one
-exception is `tls_interception`, and even that is not a knob with a range
-— it is a single on/off gate between two fixed, literal recipes (plain
-`http_port`/no `ssl_bump` vs. the full CA-backed bump recipe for Squid; the
-same shape for Pipelock), each reviewed as a whole.
-"""
+"""Rendering the allowlist into engine configs, and writing the result."""
 
 from __future__ import annotations
 
@@ -48,13 +34,7 @@ def _template_name(spec: ServiceSpec) -> str:
 
 
 def jinja_env():
-    """The shared Jinja environment for data/templates/.
-
-    Public because ipl-lab renders the same templates with `test_policy`
-    set, and a second environment configured slightly differently would be
-    a way for the two lanes to disagree about whitespace or undefined
-    handling rather than about policy.
-    """
+    """The shared Jinja environment for data/templates/."""
     env = Environment(
         loader=FileSystemLoader(str(paths.template_dir())),
         trim_blocks=True,
@@ -69,12 +49,7 @@ def jinja_env():
 
 
 def render_named(env, name: str, **variables) -> str:
-    """Render one template from data/templates/ by file name.
-
-    The existence check is here rather than at the call sites because a
-    missing template has to fail loudly: rendering nothing would produce
-    an empty policy, and an empty policy is an open one.
-    """
+    """Render one template from data/templates/ by file name."""
     if not (paths.template_dir() / name).is_file():
         raise Fail(f"missing template: {paths.template_dir() / name}")
     return env.get_template(name).render(
@@ -102,14 +77,7 @@ def render_engine_policies(
     destination: Callable[[ServiceSpec], Path],
     tls_interception: bool = False,
 ) -> dict[Path, str]:
-    """Render every engine's config from one allowlist pair.
-
-    Both lanes come through here, differing only in `test_policy`, the
-    second allowlist and where the result is written — so they cannot
-    disagree about anything else. That is the whole point: the `.test`
-    configs have to be the shipped policy plus fixture names, and the
-    cheapest way to guarantee it is for one function to render both.
-    """
+    """Render every engine's config from one allowlist pair."""
     env = jinja_env()
     rendered: dict[Path, str] = {}
     for engine in ENGINES:
@@ -130,12 +98,7 @@ def render_engine_policies(
 
 
 def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
-    """Render every engine config from config.toml. Path -> file contents.
-
-    The operational policy only. The `.test` variants of these same
-    templates are rendered by ipl-lab into lab/config/, which is the only
-    place a fixture domain can enter a config file.
-    """
+    """Render every engine config from config.toml. Path -> file contents."""
     config = load_policy_config() if config is None else config
     return render_engine_policies(
         allow=config.allow,
@@ -147,11 +110,7 @@ def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
 
 
 def sync_policies(config: PolicyConfig | None = None) -> list[Path]:
-    """Regenerate the engine configs from config.toml; return what changed.
-
-    Files whose contents already match are left alone, so a no-op `up`
-    does not churn mtimes or the working tree.
-    """
+    """Regenerate the engine configs from config.toml; return what changed."""
     return write_rendered(render_policies(config))
 
 
@@ -175,11 +134,6 @@ def write_rendered(rendered: dict[Path, str]) -> list[Path]:
 
 
 def report_synced(changed: list[Path], source: str) -> None:
-    """Name what a sync rewrote; quiet when everything was already current.
-
-    Both lanes report a regeneration the same way, and each names its own
-    source — `config.toml` for the operational lane, that plus the fixture
-    spec for the lab one.
-    """
+    """Name what a sync rewrote; quiet when everything was already current."""
     for path in changed:
         print(f"regenerated {path.relative_to(paths.workspace_root())} from {source}")

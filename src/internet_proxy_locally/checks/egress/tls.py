@@ -1,9 +1,4 @@
-"""Decoding raw TLS records, for the CONNECT-abuse checks.
-
-`raw_in_tunnel` (transport.py) sends non-TLS bytes into an established
-tunnel and needs to describe whatever comes back — usually a TLS alert from
-the *destination*, not the proxy — without dumping `repr(bytes)`.
-"""
+"""Decoding raw TLS records, for the CONNECT-abuse checks."""
 
 from __future__ import annotations
 

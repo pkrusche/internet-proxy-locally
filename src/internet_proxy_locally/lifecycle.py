@@ -1,11 +1,4 @@
-"""Starting, finding and sweeping the containers this repository owns.
-
-`start_engine` is shared by both lanes: the operational one starts an
-engine on the shipped policy, the lab one starts the same engine on the
-test policy with the DNS fixture attached, and they differ only in
-arguments. That is deliberate — an engine that starts differently under
-test is an engine the test does not describe.
-"""
+"""Starting, finding and sweeping the containers this repository owns."""
 
 from __future__ import annotations
 
@@ -110,10 +103,6 @@ def start_engine(
 
     mounts = spec.mounts(config_path)
     if tls_interception:
-        # This single check is what makes Smokescreen's exclusion fail
-        # closed at `up`-time with no smokescreen-specific code anywhere
-        # else — it falls out of `supports_tls_interception` being False on
-        # that one ServiceSpec entry.
         if not spec.supports_tls_interception:
             raise Fail(
                 f"{engine} does not support TLS interception "
@@ -122,10 +111,7 @@ def start_engine(
         ca.validate_ca()
         mounts += spec.ca_mounts()
 
-    # Recreate: remove every container owned by this repository first —
-    # every engine publishes the same endpoint, so they cannot coexist.
-    # The DNS fixture goes too, even from the operational lane: a stale one
-    # must never be left running alongside a real policy.
+    # Engines share one endpoint; also remove stale fixtures from operational runs.
     for name in owned_containers(include_fixture=not keep_fixture):
         if remove_owned(backend, name):
             print(f"removed existing container {name}")
@@ -151,8 +137,6 @@ def start_engine(
         """A verdict, or None while the engine is still coming up."""
         if port_listening(host, port):
             healthy, detail, retryable = probe_proxy(host, port)
-            # A retryable failure is one the engine may still grow out of;
-            # anything else is the answer, healthy or not.
             if healthy or not retryable:
                 return healthy, detail
         if backend.container_state(spec.container_name) != "running":
@@ -215,9 +199,6 @@ def egress_command(backend: Backend, engine: str | None, cli: str) -> list[str]:
         backend.bin,
         "--container",
         spec.container_name,
-        # Recorded in the JSON envelope so a result file states which
-        # build it measured; `report` reads it back into the
-        # conditions table in docs/findings.md.
         "--image",
         spec.image,
     ]

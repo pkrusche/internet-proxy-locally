@@ -1,29 +1,5 @@
 #!/usr/bin/env python3
-"""DNS rebinding fixture and connection trap for `ipl-lab check`.
-
-Runs as PID 1 in the DNS-fixture container and does three things:
-
-1. supervises dnsmasq, which serves the static mixed-answer records and
-   forwards everything else upstream (data/images/dnsfixture/Dockerfile);
-2. answers the `rebind.fixture.test` zone, which dnsmasq delegates here.
-   The *first* A query for a given name is answered with a public address;
-   every later query for that same name is answered with this container's
-   own — private — address, with TTL 0 so nothing may cache it. That is a
-   DNS rebind: an engine that validates the first answer and then resolves
-   again before connecting ends up pointed at a private address;
-3. listens on TCP 443 as a trap. Nothing should ever connect: the only way
-   to arrive is to have followed the rebound answer. Every connection is
-   logged, which is what makes `dns-rebinding` gradable — "did the engine
-   reach a private address" stops being an inference and becomes an
-   observation.
-
-Both the answers and the trap hits are logged as single `IPL-FIXTURE`
-lines, which `checks.egress` parses out of the container's log stream.
-
-Stdlib only; the parsing here is deliberately minimal because dnsmasq
-fronts it — this responder only ever sees queries for one zone, already
-normalized, and never has to speak to a real client.
-"""
+"""DNS rebinding fixture and connection trap for `ipl-lab check`."""
 
 from __future__ import annotations
 
@@ -34,21 +10,7 @@ import subprocess
 import sys
 import threading
 
-# Every fact about what this fixture serves comes from data/lab/fixtures.toml,
-# rendered into lab/config/fixture.env and bind-mounted read-only at the
-# path below (lab/render.py `_render_fixture_env()`). It used to be a third
-# copy of those values, with a "keep in sync" comment and nothing enforcing
-# it — and this copy is the one nothing could check, because it only
-# existed inside the image.
-#
-# Mounted rather than baked in as build args: an image is built once and
-# `[fixture]` is edited more often than that, so values compiled into it go
-# stale silently. Read at start, they cannot.
-#
-# There is no fallback on purpose: a fixture serving something other than
-# what the checker probes for produces denials that look like enforcement
-# and are really NXDOMAIN, so a missing value has to stop the container
-# rather than quietly change what is measured.
+# Mounted fixture settings are required; defaults could silently invalidate probes.
 FIXTURE_ENV = "/fixture/fixture.env"
 
 
@@ -89,13 +51,7 @@ REBIND_ZONE = _required("REBIND_ZONE")
 # The public half of every first answer, and of the mixed-answer records.
 PUBLIC_ANSWER = _required("PUBLIC_ANSWER")
 
-# Reverse-DNS claim for the `ptr-allowlist` check: this address asserts a
-# PTR of an allowlisted hostname. An engine that resolves a bare-IP
-# destination backwards and matches the answer against its hostname
-# allowlist will let it through — which is exactly what Squid used to do
-# (docs/findings.md). The address is public, so the SSRF floors do not fire
-# and the allowlist is genuinely the rule under test; it is deliberately
-# none of the addresses any other check connects to.
+# A public IP claims an allowlisted PTR to isolate hostname-policy enforcement.
 PTR_ADDRESS = _required("PTR_ADDRESS")
 PTR_CLAIMS = _required("PTR_CLAIMS")
 TRAP_PORT = 443
@@ -142,10 +98,6 @@ def own_address() -> str:
     finally:
         sock.close()
 
-
-# ---------------------------------------------------------------------------
-# Minimal DNS
-# ---------------------------------------------------------------------------
 
 TYPE_A = 1
 TYPE_AAAA = 28

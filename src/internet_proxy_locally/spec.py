@@ -1,16 +1,4 @@
-"""One service definition: which image to run and what to mount where.
-
-There are four of these and they change about as often as the code does,
-so they are constants rather than data files. They used to be
-`data/services/*.toml`, parsed at every call, carrying an `[image]` /
-`[source]` / `[build]` table that Python read pins out of and wrote pins
-back into. Pins now live in the Dockerfiles (see `images.py`) and what is
-left is the part that genuinely describes a *run*: a container name, the
-port it listens on, and which rendered config file is bind-mounted where.
-
-The engines are `ENGINES`; `dnsfixture` is the lab lane's and is reached
-only through `lab.container.fixture_spec()`.
-"""
+"""One service definition: which image to run and what to mount where."""
 
 from __future__ import annotations
 
@@ -30,27 +18,14 @@ from internet_proxy_locally.images import (
 @dataclass(frozen=True)
 class ServiceSpec:
     engine: str
-    # The tag `images.py` builds and `up` runs. Not reconstructed from
-    # parts anywhere: one string, named once.
     image: str
     container_name: str
     internal_port: int
-    # Rendered from data/templates/ into the workspace, then bind-mounted
-    # read-only at `config_mount`. The template is named by the basename of
-    # `config_file`, so this one key moves the template, the destination and
-    # the mount together (`policy.render._template_name()`).
+    # config_file also selects the template by basename.
     config_file: str
     config_mount: str
-    # A second mounted file, where a service needs one: Smokescreen's daemon
-    # config (`allow_missing_role` is a config-file key with no CLI
-    # equivalent) and the DNS fixture's `[fixture]` facts.
     extra_config_file: str = ""
     extra_config_mount: str = ""
-    # Whether this engine can be started with TLS interception on, and
-    # where the CA material mounts in its container if so. Only pipelock
-    # and squid set these — smokescreen/dnsfixture keep the defaults, which
-    # is what makes `lifecycle.start_engine()`'s fail-closed check refuse
-    # smokescreen with no smokescreen-specific code anywhere.
     supports_tls_interception: bool = False
     ca_cert_mount: str = ""
     ca_key_mount: str = ""

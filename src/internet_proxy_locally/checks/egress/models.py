@@ -29,11 +29,7 @@ class Result:
     outcome: str  # "pass" | "fail" | "record" | "skip" | "error"
     detail: str
     cause: str | None = None  # best-effort denial classification
-    # What the engine actually did, for checks that report behavior rather
-    # than grading themselves: "allowed" or "denied". A `record` grade says
-    # only that no verdict is defined, so without this the result file would
-    # not say which way the engine went — which is the entire content of a
-    # recorded row.
+    # Preserve allowed/denied behavior even when the grade is record.
     observed: str | None = None
     elapsed_ms: float | None = None
     attempts: list[Attempt] = field(default_factory=list)

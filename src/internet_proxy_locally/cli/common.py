@@ -1,12 +1,4 @@
-"""What both CLIs do the same way.
-
-The two lanes are different commands with different defaults, but they are
-one tool: the same global options, the same error funnel, the same `policy`
-and `check` bodies. Each of these was two copies before, and at least one
-pair had already drifted — `run_policy_command` computed the stale set
-before regenerating in one lane and after in the other, which is invisible
-right up until `policy --check` passes on the wrong thing in CI.
-"""
+"""Shared CLI options, error handling, and lifecycle commands."""
 
 from __future__ import annotations
 
@@ -159,10 +151,7 @@ def run_up_command(
     if notice:
         print(notice)
 
-    # Truthy exactly when this run just started a fixture, which is the
-    # condition `start_engine` documents for `keep_fixture`: sweeping the
-    # owned containers would otherwise delete the resolver the engine is
-    # about to be pointed at.
+    # Preserve the resolver just started for this engine.
     dns = prestart(backend) if prestart else ""
 
     start_engine(

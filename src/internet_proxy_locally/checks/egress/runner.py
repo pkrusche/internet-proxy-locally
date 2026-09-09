@@ -124,11 +124,7 @@ def run_suite(
         for attempt in raw.attempts:
             if attempt.outcome == "denied" and attempt.cause is None:
                 attempt.cause = classify_denial(attempt.detail)
-        # A recorded row still deserves its reason when there is one to
-        # attribute — that is the whole content of a `record` grade. Only
-        # per-attempt evidence qualifies there: without it `aggregate_cause`
-        # falls back to matching the checker's own summary, which on a row
-        # nothing denied would invent a cause (docs/security.md).
+        # Require attempt evidence to avoid classifying our own summary as a denial.
         gradable = outcome in ("pass", "fail", "record")
         cause = (
             aggregate_cause(detail, raw.attempts)

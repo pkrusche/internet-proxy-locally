@@ -1,9 +1,4 @@
-"""config.toml: the allowlist, read once and validated hard.
-
-The grammar is two forms and nothing else, and both lanes parse it through
-here — a test-policy entry that config.toml would reject is not a test
-policy, it is a typo with an adversarial name.
-"""
+"""config.toml: the allowlist, read once and validated hard."""
 
 from __future__ import annotations
 
@@ -15,9 +10,7 @@ from pathlib import Path
 from internet_proxy_locally import paths
 from internet_proxy_locally.errors import Fail
 
-# The two forms docs/policy.md defines, and nothing else: `d` (that host
-# exactly) or `*.d` (subdomains of d, never the apex). At least two labels,
-# no leading dot, no regex metacharacters, no scheme/port/path.
+# Accept exact hosts or *.domain (subdomains only); see docs/policy.md.
 ALLOW_ENTRY = re.compile(
     r"\A(?:\*\.)?(?!-)[A-Za-z0-9-]{1,63}(?<!-)(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+\Z"
 )
@@ -33,15 +26,8 @@ class PolicyConfig:
     """
 
     allow: tuple[str, ...]
-    # Opt-in, off by default. See docs/tls-interception.md — turning this on
-    # makes pipelock/squid the real TLS endpoint for allowlisted HTTPS
-    # destinations instead of an opaque CONNECT tunnel.
     tls_interception: bool = False
 
-    # Static: Squid needs the two forms split into a `dstdomain` ACL and a
-    # `dstdom_regex` one, and ipl-lab has to split its own entries the same
-    # way. Taking the entries as an argument keeps one implementation of
-    # "what is a wildcard entry" for both lanes.
     @staticmethod
     def exact(entries: tuple[str, ...] | list[str]) -> list[str]:
         return [entry for entry in entries if not entry.startswith("*.")]
@@ -100,10 +86,7 @@ def allow_list(raw: object, path: Path, key: str) -> list[str]:
                 "Use `example.com` for one host or `*.example.com` for its "
                 "subdomains (docs/policy.md)."
             )
-        # `ALLOW_ENTRY` cannot tell 1.2.3.4 from a hostname, and an
-        # address-form entry is exactly what `http_access deny ip_literal`
-        # exists to refuse: this policy allowlists by name and never by
-        # address (docs/findings.md).
+        # The hostname regex also accepts IPv4 literals; reject them separately.
         if re.fullmatch(r"[0-9.]+", entry):
             raise Fail(
                 f"{path}: {key} entry `{entry}` is an address, not a hostname. "
@@ -125,8 +108,6 @@ def load_policy_config(path: Path | None = None) -> PolicyConfig:
         {"policy"},
         path,
         "top-level table(s)",
-        # `[fixture]` and `[policy.test]` moved to the fixture spec; say so
-        # rather than reporting them as an anonymous typo.
         hint="\n[fixture] and [policy.test] belong in data/lab/fixtures.toml, "
         "which only ipl-lab reads (docs/lab.md)."
         if "fixture" in data

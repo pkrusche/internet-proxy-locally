@@ -1,11 +1,4 @@
-"""The local DNS fixture's own log transcript.
-
-`dns-rebinding` and `ptr-allowlist` grade on what the fixture container
-itself observed (a trap connection, a PTR query) rather than on what the
-checker can infer from its own probes. Import this module (not the name
-`FIXTURE_LOG_SOURCE`) so a later reassignment — by `runner.run_suite` in
-production, or by a test — is visible to every reader.
-"""
+"""Read fixture logs; import this module to observe log-source reassignment."""
 
 from __future__ import annotations
 

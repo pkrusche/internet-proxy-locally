@@ -1,27 +1,4 @@
-"""ptr-allowlist: an address whose PTR record claims an allowlisted
-hostname is still refused, so a reverse lookup cannot satisfy the
-allowlist.
-
-Squid resolves `dstdomain` with a documented fallback: "a reverse lookup is
-tried if a IP based URL is used and no match is found". PTR records belong
-to whoever holds the address block and Squid does not forward-confirm
-them, so an agent exfiltrating to a host its operator controls only has to
-point that host's PTR at an allowlisted name. Measured before the fix:
-`CONNECT 1.1.1.1:443` was allowed under the real policy while `CONNECT
-9.9.9.9:443` was refused, the PTR record being the only difference
-(docs/findings.md).
-
-The local fixture answers PTR for `PTR_FIXTURE_ADDRESS` with
-`PTR_FIXTURE_CLAIMS`, which is on the allowlist. The destination is an
-address, so no forward lookup is involved and the only way to reach it is
-through that fallback.
-
-Whether the engine actually asked is recorded but not graded. Pipelock and
-Smokescreen never reverse-resolve, and a correctly configured Squid refuses
-address-form destinations before any `dstdomain` rule is reached — so on a
-healthy engine no PTR query is expected, and the detail says as much rather
-than implying a fallback was survived.
-"""
+"""Verify that an allowlisted PTR cannot authorize an IP-literal destination."""
 
 from __future__ import annotations
 

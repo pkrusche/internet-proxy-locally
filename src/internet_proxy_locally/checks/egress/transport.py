@@ -108,11 +108,7 @@ class ProxyClient:
             sock.sendall(request.encode())
             data = self._recv_headers(sock)
         except OSError as exc:
-            # The connection succeeded and then the send or the read failed
-            # — a reset or a timeout. Without this the descriptor is
-            # orphaned, and every probe that times out leaks one; a
-            # `--full` run against an engine that blackholes denials can
-            # get through a lot of them.
+            # Close even when sending or reading fails after a successful connection.
             if sock is not None:
                 sock.close()
             return None, None, f"connection error: {exc}"

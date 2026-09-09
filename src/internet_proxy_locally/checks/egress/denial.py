@@ -1,18 +1,4 @@
-"""Denial-cause classification.
-
-Best-effort text match over whatever detail a check already assembled (its
-own framing plus, when available, the engine's response body). Patterns
-match the engine's *stated reason*, never the destination it echoes back:
-verified against real Pipelock wording on 2026-08-19, it reports "domain not
-in allowlist: 127.0.0.1" for a direct-IP CONNECT, so an earlier revision
-that keyed on bare addresses (127.0.0.1, fd00, fe80, 169.254.169.254) read
-the *target* and mislabelled plain allowlist denials as "private-ip"/
-"metadata". Likewise "forbidden" is a status-line artifact present in every
-403, not a reason — matching it made the allowlist bucket a catch-all. Both
-are deliberately absent below; keep them out. "unknown" is expected and
-honest when nothing matches. Verbatim wording from all three engines is
-pinned in tests/egress/test_denial.py::ClassifyDenialRealWordingTest.
-"""
+"""Classify stated denial reasons, never echoed targets or generic HTTP status text."""
 
 from __future__ import annotations
 

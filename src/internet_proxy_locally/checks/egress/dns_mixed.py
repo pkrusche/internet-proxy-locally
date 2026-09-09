@@ -1,18 +1,4 @@
-"""dns-mixed-answers: an allowlisted name resolving to a public *and* a
-private address must be refused, in both answer orderings.
-
-This is the one check whose fixture cannot come from public DNS, so it is
-manufactured in lab/config/dns-fixture.hosts, served by the dnsmasq
-container `ipl-lab up` starts. The control probe is what makes the result
-attributable: it resolves to the same public address as the mixed names
-and nothing else, so if it does not establish, the fixture is missing,
-unallowlisted or unreachable and a denial below would prove nothing. The
-row skips in that case rather than banking an unearned pass.
-
-Local resolution is deliberately not attempted — the names exist only
-inside the engine's container — so `local_resolved` is empty on every
-attempt here by design, not by failure.
-"""
+"""Reject mixed public/private DNS answers after a successful control probe."""
 
 from __future__ import annotations
 

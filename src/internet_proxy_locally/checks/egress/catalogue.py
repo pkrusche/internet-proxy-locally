@@ -1,13 +1,4 @@
-"""The ordered catalogue of every egress check.
-
-Order matters: report.py renders docs/findings.md's tables in this order.
-Each check module owns its own name/group/expectation/needs_fixtures/
-purpose as a `CHECK` constant next to the function it describes — this
-file's only job is to say what order they run in, once. There is
-deliberately no second table (e.g. a `CHECK_PURPOSE` dict keyed by name)
-alongside this list: two tables keyed alike will eventually disagree, and a
-single row per check cannot.
-"""
+"""The ordered catalogue of every egress check."""
 
 from __future__ import annotations
 

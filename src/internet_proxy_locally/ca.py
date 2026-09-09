@@ -1,10 +1,4 @@
-"""The TLS-interception signing CA: generate, check, export.
-
-Filesystem-only, no `Backend`/container dependency, so it stays trivially
-unit-testable. Nothing here touches `project-sandbox`: getting
-the cert into a sandbox's trust store is a manual step documented in
-docs/tls-interception.md, the same way exporting `HTTP_PROXY` already is.
-"""
+"""The TLS-interception signing CA: generate, check, export."""
 
 from __future__ import annotations
 
@@ -165,11 +159,7 @@ def _generate_ca_locked() -> None:
             ),
             critical=True,
         )
-        # RFC 5280 4.2.1.2: "this extension MUST appear in all conforming CA
-        # certificates". Squid's generated leaf certs mimic the origin's
-        # extensions, so a leaf can carry an authorityKeyIdentifier; without
-        # a matching subjectKeyIdentifier here, a verifier that matches those
-        # two up has nothing to match against.
+        # Squid leaf authorityKeyIdentifier needs a matching CA subjectKeyIdentifier.
         .add_extension(
             x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
             critical=False,
@@ -178,9 +168,6 @@ def _generate_ca_locked() -> None:
     )
 
     ca_dir = paths.ca_dir()
-    # 0700: docs/tls-interception.md tells the reader to treat state/ as a
-    # private-key store, and the default 0755 would not be one. The key's own
-    # 0600 is the protection; this is the second lock on the same door.
     _safe_private_dir(ca_dir)
 
     key_bytes = key.private_bytes(
@@ -188,14 +175,7 @@ def _generate_ca_locked() -> None:
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     )
-    # os.open with the mode set at creation time, not chmod afterward —
-    # chmod leaves a window where the key is world-readable between the
-    # write and the permission change. The unlink is what makes that mode
-    # apply on the `force=True` path too: open()'s mode argument is honoured
-    # only when the file is *created*, so rotating onto an existing key file
-    # would otherwise keep whatever permissions that file already had — the
-    # rotate-after-compromise runbook writing a fresh key into a
-    # world-readable file, silently.
+    # Create a fresh file with mode 0600 to avoid exposure during writes or rotation.
     staged = Path(tempfile.mkdtemp(prefix=".ca-generation-", dir=ca_dir))
     try:
         key_tmp, cert_tmp = staged / "ca-key.pem", staged / "ca.pem"
