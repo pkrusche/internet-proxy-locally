@@ -36,7 +36,7 @@ allow = [
 
 [fixture]
 # The local DNS fixture (built from data/images/dnsfixture) — the source
-# of truth for the records it serves. `ipl-lab policy` renders
+# of truth for the records it serves. `ipl-lab up` renders
 # lab/config/dns-fixture.hosts from this table, so the hosts file and the
 # `[policy.test]` allowlist above can no longer disagree: rendering refuses
 # a record name the test policy does not allowlist, and refuses a

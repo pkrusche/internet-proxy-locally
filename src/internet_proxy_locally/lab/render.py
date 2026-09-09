@@ -35,12 +35,7 @@ def test_config_path(spec: ServiceSpec) -> Path:
 
 
 def render_test_policies(config: LabConfig | None = None) -> dict[Path, str]:
-    """Render the `.test` configs and the fixture hosts file.
-
-    Same templates and same Jinja environment as `ipl policy` — only
-    `test_policy` differs, so the two lanes cannot disagree about anything
-    but the allowlist itself.
-    """
+    """Render lab configs with the shared policy templates and fixture data."""
     config = load_lab_config() if config is None else config
     rendered = render_engine_policies(
         allow=config.allow,

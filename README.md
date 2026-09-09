@@ -66,7 +66,6 @@ See
 | `ipl check` | allow/deny behavior against the live proxy |
 | `ipl restart` | render, then recreate the proxy |
 | `ipl down` | remove containers owned by this repository |
-| `ipl policy` | render `config/*` from `config.toml` |
 | `ipl ca init/status/export/rotate` | manage the opt-in TLS-interception CA ([docs/tls-interception.md](docs/tls-interception.md)) |
 
 `--engine pipelock|smokescreen|squid` and `--backend docker|container`

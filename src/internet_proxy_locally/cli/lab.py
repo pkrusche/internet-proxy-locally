@@ -18,11 +18,6 @@ from internet_proxy_locally.lab.render import (
 )
 
 
-def cmd_policy(opts: argparse.Namespace) -> int:
-    sync_test_policies()
-    return 0
-
-
 def cmd_setup(opts: argparse.Namespace) -> int:
     """Prepare every engine plus the DNS fixture image.
 
@@ -56,7 +51,6 @@ def cmd_up(opts: argparse.Namespace) -> int:
         opts=opts,
         sync=sync_test_policies,
         destination=test_config_path,
-        missing_hint="run `ipl-lab policy`",
         notice="NOTE: starting with the TEST policy — an allowlist that "
         "includes *.nip.io, *.sslip.io and the local fixture zones, and a "
         "dnsmasq container answering them. This is not an operational "
@@ -135,11 +129,6 @@ def build_parser() -> argparse.ArgumentParser:
         parser, engine_help=f"proxy engine (default: {DEFAULT_ENGINE})"
     )
     sub = parser.add_subparsers(dest="command", required=True)
-
-    p_policy = sub.add_parser(
-        "policy", help="render lab/config/* from data/lab/fixtures.toml"
-    )
-    p_policy.set_defaults(func=cmd_policy)
 
     p_setup = sub.add_parser(
         "setup", help="prepare every engine plus the DNS fixture image"

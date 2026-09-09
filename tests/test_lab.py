@@ -190,6 +190,11 @@ class LabCliTest(RunPyCliTest):
         self.assertEqual(payload["mode"], "full")
         self.assertTrue(any(r["group"] == "full" for r in payload["results"]))
 
+    def test_lab_policy_command_is_unavailable(self) -> None:
+        proc = self.lab_cli("policy")
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("invalid choice", proc.stderr)
+
     def test_up_regenerates_a_hand_edited_lab_policy(self) -> None:
         self.build_engine()
         self.fake_dns_fixture_image()
@@ -239,7 +244,7 @@ class LabUnitTest(unittest.TestCase):
         self.assertEqual(
             env_path.read_text(encoding="utf-8"),
             rendered[env_path],
-            "run `ipl-lab policy` and commit lab/config/fixture.env",
+            "run `ipl-lab up` and commit lab/config/fixture.env",
         )
         self.assertEqual(spec.extra_config_mount, "/fixture/fixture.env")
 
@@ -432,7 +437,7 @@ class LabUnitTest(unittest.TestCase):
             self.assertEqual(
                 path.read_text(encoding="utf-8"),
                 body,
-                f"run `ipl-lab policy` and commit {path.name}",
+                f"run `ipl-lab up` and commit {path.name}",
             )
 
     def test_test_policy_is_a_strict_superset(self) -> None:
@@ -476,7 +481,7 @@ class LabUnitTest(unittest.TestCase):
         self.assertEqual(
             hosts.read_text(encoding="utf-8"),
             rendered[hosts],
-            "run `ipl-lab policy` and commit lab/config/dns-fixture.hosts",
+            "run `ipl-lab up` and commit lab/config/dns-fixture.hosts",
         )
         self.assertIn("GENERATED FILE", rendered[hosts])
         fixture = load_lab_config().fixture

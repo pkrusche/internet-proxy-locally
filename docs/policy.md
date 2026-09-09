@@ -102,7 +102,7 @@ falls through to the `default enforce` rule.
 ## Changing the policy
 
 1. Edit `[policy].allow` in `config.toml`.
-2. Run `ipl policy` (or just `ipl up`, which regenerates first).
+2. Run `ipl up` to regenerate configs and start the proxy.
 3. Review the diff to `config/*` — that is the change that ships.
 4. Commit `config.toml` and the generated files together.
 5. `ipl check` to confirm the live proxy behaves as intended.

@@ -63,7 +63,6 @@ def run_up_command(
     opts: argparse.Namespace,
     sync: Callable[[], list[Path]],
     destination: Callable[[ServiceSpec], Path],
-    missing_hint: str = "",
     notice: str = "",
     prestart: Callable[[Backend], str] | None = None,
     tls_interception: bool = False,
@@ -88,8 +87,8 @@ def run_up_command(
     sync()
 
     config_path = destination(spec)
-    if missing_hint and not config_path.is_file():
-        raise Fail(f"missing policy: {config_path} — {missing_hint}")
+    if not config_path.is_file():
+        raise Fail(f"missing generated policy: {config_path}")
     if notice:
         print(notice)
 

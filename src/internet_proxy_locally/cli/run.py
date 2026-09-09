@@ -33,11 +33,6 @@ from internet_proxy_locally.policy.render import (
 from internet_proxy_locally.spec import ServiceSpec
 
 
-def cmd_policy(opts: argparse.Namespace) -> int:
-    sync_policies()
-    return 0
-
-
 def cmd_setup(opts: argparse.Namespace) -> int:
     print(f"python: {platform.python_version()}")
 
@@ -74,7 +69,6 @@ def cmd_up(opts: argparse.Namespace) -> int:
         opts=opts,
         sync=sync_policies,
         destination=config_destination,
-        missing_hint="run `ipl policy`",
         tls_interception=load_policy_config().tls_interception,
     )
 
@@ -227,11 +221,6 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="initialize a standalone workspace").set_defaults(
         func=cmd_init
     )
-
-    p_policy = sub.add_parser(
-        "policy", help="render config/* from config.toml (setup/up do this too)"
-    )
-    p_policy.set_defaults(func=cmd_policy)
 
     p_setup = sub.add_parser(
         "setup", help="validate prerequisites, build the engine images"

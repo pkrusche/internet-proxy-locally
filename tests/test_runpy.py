@@ -358,12 +358,10 @@ class RunPyCliTest(unittest.TestCase):
             (self.tmp / "config" / "squid.conf").read_text(encoding="utf-8"), before
         )
 
-    def test_policy_regenerates_without_a_backend(self) -> None:
-        policy = self.tmp / "config" / "squid.conf"
-        policy.write_text(policy.read_text() + "\n# stray edit\n")
+    def test_policy_command_is_unavailable(self) -> None:
         proc = self.run_cli("policy")
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertNotIn("# stray edit", policy.read_text())
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("invalid choice", proc.stderr)
 
     def test_up_refuses_occupied_port(self) -> None:
         self.build_engine()
@@ -726,7 +724,7 @@ class RunPyUnitTest(unittest.TestCase):
             self.assertEqual(
                 path.read_text(encoding="utf-8"),
                 body,
-                f"{rel} is stale — run `ipl policy` and commit the result",
+                f"{rel} is stale — run `ipl up` and commit the result",
             )
 
     def test_generated_policies_include_tls_interception_recipe(self) -> None:
@@ -966,17 +964,15 @@ class RunPyUnitTest(unittest.TestCase):
         """The tag constant is what `setup` skips a rebuild on, so a
         Dockerfile edited without bumping it would leave the old image
         running. This is that mistake, as a red test."""
-        squid = dockerfile("squid").read_text()
-        # The squid tag carries a `-buildN` local build revision after the
-        # apk version (see the Dockerfile's own comment) — strip it before
-        # comparing, so a bump of just that suffix still passes this check.
-        squid_tag = IMAGES["squid"].rpartition(":")[2]
-        apk_pin_match = re.match(r"^([\w.]+-r\d+)", squid_tag)
-        assert apk_pin_match is not None, f"no apk-version prefix in {squid_tag!r}"
-        self.assertIn(f'"squid={apk_pin_match.group(1)}"', squid)
-
-        fixture = dockerfile(DNS_FIXTURE).read_text()
-        self.assertIn(f'"dnsmasq={IMAGES[DNS_FIXTURE].rpartition(":")[2]}"', fixture)
+        for image, package in (("squid", "squid"), (DNS_FIXTURE, "dnsmasq")):
+            with self.subTest(image=image):
+                tag = IMAGES[image].rpartition(":")[2]
+                match = re.fullmatch(r"([\w.]+-r\d+)(?:-build\d+)?", tag)
+                self.assertIsNotNone(match, f"invalid apk-based image tag: {tag!r}")
+                assert match is not None
+                self.assertIn(
+                    f'"{package}={match.group(1)}"', dockerfile(image).read_text()
+                )
 
         smokescreen = dockerfile("smokescreen").read_text()
         sha = re.search(r"checkout --detach ([0-9a-f]{40})", smokescreen)

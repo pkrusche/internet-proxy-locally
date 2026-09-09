@@ -23,9 +23,8 @@ ipl-lab measure   # all three engines end to end, then rewrite findings.md
 ## The test policy
 
 `data/lab/fixtures.toml` holds `[policy.test]` — domains added **on top of**
-`config.toml`'s allowlist — and `[fixture]`, the DNS records. `ipl-lab
-policy` renders both, with the same templates and the same Jinja
-environment `ipl policy` uses, into `lab/config/`:
+`config.toml`'s allowlist — and `[fixture]`, the DNS records. `ipl-lab up`
+renders both through the shared policy templates into `lab/config/`:
 
 | generated | from |
 | --- | --- |

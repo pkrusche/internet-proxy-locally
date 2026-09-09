@@ -23,7 +23,7 @@
 # Every pin this image depends on is a literal in this file — the base
 # image and both apk versions — and the unit suite asserts they stay pinned
 # and stay in step with `DNSFIXTURE_IMAGE` in images.py, whose tag is the
-# dnsmasq version.
+# dnsmasq version with an optional -buildN suffix for build-context changes.
 #
 # Upgrading: edit the versions below, bump `DNSFIXTURE_IMAGE` to match,
 # commit, then `ipl-lab setup`.

@@ -42,7 +42,7 @@ def _required(name: str) -> str:
     if not value:
         raise SystemExit(
             f"{name} is missing from {FIXTURE_ENV}. "
-            "Regenerate it with `ipl-lab policy`."
+            "Restart with `ipl-lab up` to regenerate fixture settings."
         )
     return value
 

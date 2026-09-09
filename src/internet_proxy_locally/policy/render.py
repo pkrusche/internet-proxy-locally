@@ -63,7 +63,7 @@ def render_template(env, spec: ServiceSpec, **variables) -> str:
 
 
 def config_destination(spec: ServiceSpec) -> Path:
-    """Where `ipl policy` writes this engine's config."""
+    """Workspace destination for the generated engine config."""
     if not spec.config_file:
         raise Fail(f"{spec.engine}: no config_file in spec.SERVICES")
     return paths.workspace_root() / spec.config_file

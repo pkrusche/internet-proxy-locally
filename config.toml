@@ -3,8 +3,7 @@
 # `ipl` renders this file, through data/templates/, into the engine
 # configurations: config/pipelock.yaml, config/smokescreen.yaml and
 # config/squid.conf. Those files are generated; do not edit them by hand.
-# `setup`, `up` and `restart` regenerate them, and `ipl policy --check`
-# reports drift without writing.
+# `setup`, `up` and `restart` regenerate them automatically.
 #
 # The rules the allowlist sits on top of — default deny, the IP-layer SSRF
 # floors — are NOT configurable here. They live in the templates as literal
