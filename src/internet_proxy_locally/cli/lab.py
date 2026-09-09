@@ -126,7 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
         "use `ipl` for that.",
     )
     common.add_global_options(
-        parser, engine_help=f"proxy engine (default: {DEFAULT_ENGINE})"
+        parser, engine_help=f"proxy engine (default: {DEFAULT_ENGINE})", lab=True
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

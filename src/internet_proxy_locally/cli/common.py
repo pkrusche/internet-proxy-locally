@@ -21,7 +21,9 @@ BACKEND_HELP = (
 )
 
 
-def add_global_options(parser: argparse.ArgumentParser, engine_help: str) -> None:
+def add_global_options(
+    parser: argparse.ArgumentParser, engine_help: str, *, lab: bool = False
+) -> None:
     """`--engine` and `--backend`, on the top-level parser of either lane.
 
     They sit before the subcommand — `ipl --engine squid up`, not `ipl up
@@ -29,7 +31,12 @@ def add_global_options(parser: argparse.ArgumentParser, engine_help: str) -> Non
     than on each subparser, and is the existing behavior.
     """
     parser.add_argument("--engine", choices=ENGINES, default=None, help=engine_help)
-    parser.add_argument("--backend", choices=BACKENDS, default=None, help=BACKEND_HELP)
+    parser.add_argument(
+        "--backend",
+        choices=("docker",) if lab else BACKENDS,
+        default="docker" if lab else None,
+        help="lab backend (Docker only)" if lab else BACKEND_HELP,
+    )
 
 
 def add_tls_option(parser: argparse.ArgumentParser) -> None:

@@ -48,7 +48,7 @@ class FixtureConfig:
 
     @property
     def public_answer(self) -> str:
-        """The public address the fixture answers with first.
+        """The nominal public address replaced by the local HTTPS origin at startup.
 
         The control record is public and nothing else, by the rule
         `_fixture_config()` enforces — so it *is* the public half, and the
@@ -186,6 +186,10 @@ def _fixture_config(
                 "one private address — that mixture is the whole content of "
                 "`dns-mixed-answers`"
             )
+        if any(
+            not flag and a != by_name[control][0] for a, flag in zip(addresses, private)
+        ):
+            raise Fail(f"{path}: mixed records must use the control's public address")
         orderings.add(private)
     if len(orderings) < 2:
         raise Fail(

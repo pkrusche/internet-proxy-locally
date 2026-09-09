@@ -14,16 +14,17 @@
 # first lookup and the next, which no static file can express, so
 # data/images/dnsfixture/rebind.py serves that zone instead.
 
+# Nominal addresses: the fixture substitutes its public HTTPS IP and private trap.
 # Control: one public address, nothing else — must be reachable through
 # the proxy or the mixed-answer rows below cannot be attributed.
-9.9.9.9         public-only.fixture.test
+11.203.0.2      public-only.fixture.test
 
 # Mixed answers, both orderings (docs/findings.md, "Mixed DNS answers").
 #
 # Public answer first, private second.
-9.9.9.9         mixed-public-first.fixture.test
+11.203.0.2      mixed-public-first.fixture.test
 10.0.0.1        mixed-public-first.fixture.test
 
 # Private answer first, public second.
 10.0.0.1        mixed-private-first.fixture.test
-9.9.9.9         mixed-private-first.fixture.test
+11.203.0.2      mixed-private-first.fixture.test

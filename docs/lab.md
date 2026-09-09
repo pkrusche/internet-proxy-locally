@@ -2,7 +2,10 @@
 
 `ipl-lab` runs extended checks for engines:
 local DNS fixture, the full egress suite, and reports the comparison
-in [findings.md](findings.md).
+in [findings.md](findings.md). The entire lab lane uses Docker, including
+the fixture and all measured proxies. Apple `container` remains supported
+for operational `ipl` setups. The lab tests proxy policy behavior, not runtime
+isolation differences.
 
 `config.toml` contains both operational and lab settings. Only `ipl-lab`
 adds `[policy.test].allow` to `[policy].allow` and starts the DNS fixture.
@@ -17,7 +20,9 @@ ipl-lab down      # remove both
 ipl-lab measure   # all three engines end to end, then rewrite findings.md
 ```
 
-`--engine` and `--backend` work as they do on `ipl`.
+`--engine` selects the proxy. `--backend docker` is optional and is the only
+lab backend; `--backend container` is rejected before starting anything.
+Use a Docker version supporting multiple `--network` attachments (25+).
 
 ## The test policy
 
@@ -42,31 +47,65 @@ in `config.toml` are read by `ipl-lab`.
 
 ## The DNS fixture
 
-Public DNS cannot serve a mixed public+private answer set, or an 
-answer that changes between lookups. `ipl-lab up` starts
-a private DNS server, reads its address, and starts the engine with 
-`--dns <that address>`. It publishes no host port.
+The fixture runs DNS, a controlled HTTPS origin, and a private connection
+trap. Docker attaches it and the proxy to the default bridge and to the
+managed internal network `internet-proxy-fixture-public` (`11.203.0.0/24`).
+The HTTPS origin binds `11.203.0.2:443` on that internal network; the trap
+binds port 443 on the fixture's separate private bridge address. No fixture
+port is published, no extra Linux capability is granted, and no host route
+is installed. The internal subnet models a public destination for the proxy's
+IP classifier; traffic to that origin stays on the local Docker network.
+This shadows that small public-numbered subnet while the lab is running.
 
-**Mixed answers.** dnsmasq serves `lab/config/dns-fixture.hosts`: a control
-name with one public address, and two names carrying one public and one
-private address in both orderings, so an engine that validates only the
-first answer is distinguished from one that validates all of them.
+The addresses in `[fixture.records]` specify public/private roles. At startup,
+the fixture substitutes its controlled origin address for the nominal public
+address and its trap address for private entries, preserving record order.
+It no longer connects to Quad9 or another external TLS server for these
+checks. Other probes (for example, allowed pypi.org) still use the Internet.
 
-**Rebinding.** dnsmasq delegates `rebind.fixture.test` to a small stdlib
-responder (`data/images/dnsfixture/rebind.py`), which answers the *first* lookup of
-a name with a public address and every later one with the fixture's own
-private address — where it also listens. Each name is probed twice, with a
-pause between passes, so the second answer is actually handed out; two
-probes in the same second are served from one lookup by any resolver cache
-with second granularity, and the rebind never happens.
+**TLS.** Each fixture startup creates a separate seven-day CA and origin
+certificate under gitignored `state/fixture-tls/`. The certificate covers
+all fixture records and `*.rebind.fixture.test`. The CA is name-constrained
+to `.test`, and its signing key is discarded after issuance. Only the origin's
+leaf key is mounted into the fixture. Lab engines receive the public CA:
+Squid adds it with `tls_outgoing_options cafile=...`; Go-based engines receive
+`SSL_CERT_FILE` while retaining the system certificate directory. Peer and
+hostname verification remain enabled. The operational interception CA is
+independent, and operational runs receive none of this lab trust.
 
-`dns-rebinding` then grades on whether anything connected to the trap. 
+**Mixed answers.** dnsmasq serves the generated hosts file: a public-only
+control, then public/private mixtures in both orders. A successful TLS/HTTP
+control is required. Traffic through either a mixed-name tunnel or to the
+private trap fails the check; a transport error cannot silently become a pass.
 
-The fixture supervisor logs DNS answers and trap connections as `IPL-FIXTURE`
-lines. Required settings come from the mounted `fixture.env`; missing settings
-stop startup to avoid measuring an unintended fixture. The PTR probe uses a
-public address claiming an allowlisted hostname. PTR lookups are recorded but
-not required: rejecting IP literals before reverse DNS is valid enforcement.
+**Rebinding.** dnsmasq delegates `rebind.fixture.test` to the Python responder.
+A fresh name resolves first to the controlled origin, then to the private
+trap. The checker repeats probes after a 1.5-second gap. Lab Squid sets
+`negative_dns_ttl 1 seconds`: despite its name, that directive also sets the
+minimum positive cache lifetime, whose default is one minute. This is a
+lab-only timing adjustment, not a claim that production uses that cache
+setting. [Squid's directive documentation](https://www.squid-cache.org/Doc/config/negative_dns_ttl/)
+explains the positive-cache floor.
+
+The fixture logs origin requests, DNS answers, and trap connections as
+`IPL-FIXTURE` lines. Startup waits for the origin and trap listeners and a
+successful DNS control before the proxy starts. Missing network, TLS, or
+DNS prerequisites stop startup instead of silently using an external origin.
+Rebinding remains inconclusive unless a repeat DNS lookup was actually
+observed; a connection to the private trap is a failure.
+
+The PTR probe still uses a separate public address claiming an allowlisted
+hostname. Rejecting literals before performing reverse DNS is valid enforcement.
+
+`ipl-lab down` removes the Docker proxies, fixture, and owned internal network.
+Operational `ipl --backend docker up` also removes a stale lab network after
+removing its containers. Apple operational commands do not contact Docker.
+Network ownership labels are checked before reuse or removal.
+
+After updating from the old fixtures, rebuild with `uv run ipl-lab setup`.
+The fixture image tag is now `2.91-r1-build3`, so setup cannot reuse the old
+image. Then run `uv run ipl-lab measure --tls-interception` to replace the
+historical results with Docker measurements.
 
 ## Reproducing the comparison
 
@@ -93,7 +132,7 @@ denial causes, and engine logs.
 
 ```bash
 ipl-lab measure                    # ipl-lab check for all three engines, then rewrite findings.md
-ipl-lab measure --backend docker   # or pin the backend
+ipl-lab --backend docker measure   # Docker is also the default
 ipl-lab report                     # rewrite from the committed results/
 ipl-lab report --check             # CI: exit 1 if the tables are stale
 ```

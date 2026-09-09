@@ -91,3 +91,8 @@ def ca_dir() -> Path:
     why it lives under `state/` rather than `config/` (see .gitignore).
     """
     return workspace_root() / "state" / "ca"
+
+
+def fixture_tls_dir() -> Path:
+    """Ephemeral lab-origin certificates; never operational trust material."""
+    return workspace_root() / "state" / "fixture-tls"

@@ -54,6 +54,31 @@ set -u
 echo "$*" >> "$FAKE_LOG"
 cmd="${1:-}"; shift || true
 case "$cmd" in
+  network)
+    sub="$1"; shift
+    case "$sub" in
+      inspect)
+        f="$FAKE_STATE/network-$1"
+        if [ -f "$f" ]; then cat "$f"; else exit 1; fi
+        ;;
+      create)
+        prev=""; managed=""; workspace=""; role=""; subnet=""
+        for a in "$@"; do
+          if [ "$prev" = "--subnet" ]; then subnet="$a"; fi
+          if [ "$prev" = "--label" ]; then
+            case "$a" in
+              io.internet-proxy-locally.managed=*) managed="${a#*=}";;
+              io.internet-proxy-locally.workspace=*) workspace="${a#*=}";;
+              io.internet-proxy-locally.role=*) role="${a#*=}";;
+            esac
+          fi
+          prev="$a"
+        done
+        printf '[{"Internal":true,"IPAM":{"Config":[{"Subnet":"%s"}]},"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s","io.internet-proxy-locally.role":"%s","io.internet-proxy-locally.tls-interception":"false"}}]\n' "$subnet" "$managed" "$workspace" "$role" > "$FAKE_STATE/network-$prev"
+        ;;
+      rm) rm -f "$FAKE_STATE/network-$1" ;;
+    esac
+    ;;
   inspect)
     f="$FAKE_STATE/container-$1"
     if [ -f "$f" ]; then
@@ -78,6 +103,7 @@ case "$cmd" in
     ;;
   pull|build|stop) : ;;
   logs)
+    if [ "${!#}" = "internet-proxy-dnsfixture" ]; then echo "IPL-FIXTURE ready"; fi
     n_file="$FAKE_STATE/logcalls"
     n=$(( $(cat "$n_file" 2>/dev/null || echo 0) + 1 ))
     echo "$n" > "$n_file"

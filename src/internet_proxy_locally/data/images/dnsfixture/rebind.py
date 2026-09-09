@@ -3,12 +3,17 @@
 
 from __future__ import annotations
 
+import ipaddress
+import os
 import signal
 import socket
+import socketserver
+import ssl
 import struct
 import subprocess
 import sys
 import threading
+import time
 
 # Mounted fixture settings are required; defaults could silently invalidate probes.
 FIXTURE_ENV = "/fixture/fixture.env"
@@ -50,6 +55,8 @@ def _required(name: str) -> str:
 REBIND_ZONE = _required("REBIND_ZONE")
 # The public half of every first answer, and of the mixed-answer records.
 PUBLIC_ANSWER = _required("PUBLIC_ANSWER")
+# Public-numbered address assigned on the internal Docker lab network.
+ORIGIN_ADDRESS = os.environ.get("IPL_ORIGIN_ADDRESS", "")
 
 # A public IP claims an allowlisted PTR to isolate hostname-policy enforcement.
 PTR_ADDRESS = _required("PTR_ADDRESS")
@@ -64,7 +71,7 @@ DNSMASQ = [
     # fixture records are the only local source.
     "--no-hosts",
     "--log-queries",
-    "--addn-hosts=/fixture/hosts",
+    "--addn-hosts=/tmp/fixture-hosts",
     # Delegate the rebinding zone to the responder below.
     f"--server=/{REBIND_ZONE}/127.0.0.1#{RESPONDER_PORT}",
     # A cache would defeat the whole fixture: the second lookup has to
@@ -199,13 +206,15 @@ class Responder:
                 pass
 
 
-def serve_trap(address: str) -> None:
+def serve_trap(address: str, ready: threading.Event | None = None) -> None:
     """Accept and log connections that should never arrive."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", TRAP_PORT))
+    sock.bind((address, TRAP_PORT))
     sock.listen(16)
     log(f"trap listening on {address}:{TRAP_PORT}")
+    if ready is not None:
+        ready.set()
     while True:
         try:
             conn, peer = sock.accept()
@@ -218,15 +227,127 @@ def serve_trap(address: str) -> None:
             pass
 
 
+def local_hosts(source: str, nominal: str, actual: str, trap: str) -> str:
+    """Replace public/private roles with the local origin/trap, retaining order."""
+    rows = []
+    for line in source.splitlines():
+        fields = line.split()
+        if fields and not fields[0].startswith("#"):
+            address = actual if fields[0] == nominal else trap
+            if fields[0] != nominal and not ipaddress.ip_address(fields[0]).is_private:
+                raise RuntimeError(
+                    "fixture public records must all use the configured control"
+                )
+            line = " ".join([address, *fields[1:]])
+        rows.append(line)
+    return "\n".join(rows) + "\n"
+
+
+class Origin(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+    def __init__(self, address: str, cert: str, key: str, port: int = 443):
+        self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        self.context.load_cert_chain(cert, key)
+        super().__init__((address, port), OriginHandler)
+
+
+class OriginHandler(socketserver.BaseRequestHandler):
+    server: Origin
+
+    def handle(self) -> None:
+        try:
+            self.request.settimeout(5)
+            with self.server.context.wrap_socket(self.request, server_side=True) as tls:
+                data = b""
+                while b"\r\n\r\n" not in data and len(data) < 16384:
+                    chunk = tls.recv(4096)
+                    if not chunk:
+                        return
+                    data += chunk
+                if b"\r\n\r\n" not in data:
+                    return
+                headers = data.decode("latin-1").split("\r\n")
+                host = next(
+                    (
+                        line.split(":", 1)[1].strip()
+                        for line in headers
+                        if line.lower().startswith("host:")
+                    ),
+                    "unknown",
+                )
+                log(f"origin request host={host} from={self.client_address[0]}")
+                body = b"IPL fixture origin\n"
+                tls.sendall(
+                    f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+                    + body
+                )
+        except (OSError, ssl.SSLError):
+            return
+
+
 def main() -> int:
+    global PUBLIC_ANSWER
     trap_address = own_address()
+    actual = ORIGIN_ADDRESS
+    if not actual or not ipaddress.ip_address(actual).is_global:
+        raise RuntimeError(
+            "IPL_ORIGIN_ADDRESS must be the lab's public-numbered IPv4 address"
+        )
+    if not ipaddress.ip_address(trap_address).is_private or trap_address == actual:
+        raise RuntimeError(
+            "fixture requires separate private trap and public origin interfaces"
+        )
+    with open("/fixture/hosts") as source:
+        hosts = local_hosts(source.read(), PUBLIC_ANSWER, actual, trap_address)
+    with open("/tmp/fixture-hosts", "w") as target:
+        target.write(hosts)
+    PUBLIC_ANSWER = actual
+    origin = Origin(actual, "/fixture/origin.pem", "/fixture/origin-key.pem")
+    threading.Thread(target=origin.serve_forever, daemon=True).start()
     log(f"starting address={trap_address} public={PUBLIC_ANSWER}")
+    log(f"origin listening on {actual}:443")
 
     responder = Responder(trap_address)
     threading.Thread(target=responder.serve, daemon=True).start()
-    threading.Thread(target=serve_trap, args=(trap_address,), daemon=True).start()
+    trap_ready = threading.Event()
+    threading.Thread(
+        target=serve_trap, args=(trap_address, trap_ready), daemon=True
+    ).start()
+    if not trap_ready.wait(5):
+        raise RuntimeError("private trap failed to listen")
 
     dnsmasq = subprocess.Popen(DNSMASQ)
+    # Probe a static control through dnsmasq itself before advertising readiness.
+    control = next(
+        line.split()[1] for line in hosts.splitlines() if line.startswith(actual + " ")
+    )
+    question = (
+        b"".join(bytes([len(label)]) + label.encode() for label in control.split("."))
+        + b"\0"
+    )
+    packet = (
+        b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+        + question
+        + struct.pack("!HH", TYPE_A, 1)
+    )
+    deadline = time.monotonic() + 5
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.settimeout(0.2)
+        while time.monotonic() < deadline and dnsmasq.poll() is None:
+            probe.sendto(packet, ("127.0.0.1", 53))
+            try:
+                response, _ = probe.recvfrom(4096)
+                if response[:2] == packet[:2] and socket.inet_aton(actual) in response:
+                    log("ready")
+                    break
+            except OSError:
+                pass
+        else:
+            dnsmasq.terminate()
+            dnsmasq.wait(timeout=5)
+            raise RuntimeError("fixture DNS control did not become ready")
 
     def forward(signum, _frame):
         dnsmasq.send_signal(signum)

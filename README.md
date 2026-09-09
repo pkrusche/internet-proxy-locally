@@ -7,7 +7,8 @@ One stable endpoint — `http://127.0.0.1:18080` — backed by
 [Pipelock](https://github.com/luckyPipewrench/pipelock) (default),
 [Smokescreen](https://github.com/stripe/smokescreen) or
 [Squid](https://www.squid-cache.org/). Docker and Apple `container` are
-both first-class. No Docker Compose.
+both supported for operational setups. The lab uses Docker for all fixtures
+and measured proxies. No Docker Compose.
 
 ## Quick start
 

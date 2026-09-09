@@ -40,6 +40,26 @@ class ProbeUncertaintyTest(unittest.TestCase):
         ):
             self.assertEqual(dns_mixed.test_dns_mixed(self.client).outcome, "error")
 
+    def test_mixed_private_trap_hit_is_not_hidden_by_tls_errors(self) -> None:
+        control = Attempt(0, "control:443", [], "established", 200, 1, "HTTP 200")
+        previous = ["IPL-FIXTURE trap connect from=172.17.0.3:1234"]
+        for new_hits in ([], ["IPL-FIXTURE trap connect from=172.17.0.3:5678"]):
+            with (
+                self.subTest(new_hits=new_hits),
+                patch.object(
+                    dns_mixed,
+                    "_connect_attempt",
+                    side_effect=[control, self.error, self.error],
+                ),
+                patch.object(
+                    dns_mixed.fixture_log,
+                    "FIXTURE_LOG_SOURCE",
+                    side_effect=[previous, previous + new_hits],
+                ),
+            ):
+                raw = dns_mixed.test_dns_mixed(self.client)
+                self.assertEqual(raw.outcome, "allowed" if new_hits else "error")
+
     def test_ptr_error_is_not_a_denial(self) -> None:
         with (
             patch.object(ptr_allowlist, "_connect_attempt", return_value=self.error),

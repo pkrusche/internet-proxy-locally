@@ -6,11 +6,12 @@ import hashlib
 import sys
 from pathlib import Path
 
-from internet_proxy_locally import ca, net
+from internet_proxy_locally import ca, net, paths
 from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.constants import (
     DNS_FIXTURE,
     ENGINES,
+    FIXTURE_NETWORK_NAME,
     HEALTH_WAIT_SECONDS,
 )
 from internet_proxy_locally.errors import Fail
@@ -88,6 +89,8 @@ def start_engine(
     tls_interception: bool = False,
 ) -> None:
     """Recreate one engine container on `config_path` and health-check it."""
+    if keep_fixture and backend.name != "docker":
+        raise Fail("the lab requires Docker")
     engine = spec.engine
     host, port = endpoint()
     image = spec.image
@@ -104,10 +107,18 @@ def start_engine(
         ca.validate_ca()
         mounts += spec.ca_mounts()
 
+    if keep_fixture:
+        mounts += [
+            (paths.fixture_tls_dir() / "ca.pem", "/fixture/ca.pem"),
+        ]
+
     # Engines share one endpoint; also remove stale fixtures from operational runs.
     for name in owned_containers(include_fixture=not keep_fixture):
         if remove_owned(backend, name):
             print(f"removed existing container {name}")
+
+    if not keep_fixture:
+        backend.remove_lab_network(FIXTURE_NETWORK_NAME, ownership_labels())
 
     if port_listening(host, port):
         raise Fail(
@@ -123,6 +134,8 @@ def start_engine(
         mounts=mounts,
         publish=(host, port),
         dns=dns,
+        lab_network=FIXTURE_NETWORK_NAME if keep_fixture else "",
+        environment={"SSL_CERT_FILE": "/fixture/ca.pem"} if keep_fixture else None,
         labels=ownership_labels(
             "lab" if keep_fixture else "operational", tls_interception=tls_interception
         ),

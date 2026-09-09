@@ -31,6 +31,13 @@ sslcrtd_children 8
 http_port 3128
 {% endif %}
 
+{% if test_policy %}
+# Lab origin trust only; system roots and hostname verification stay enabled.
+tls_outgoing_options cafile=/fixture/ca.pem
+# TTL-zero rebinding must cross the positive-cache floor during the probe.
+negative_dns_ttl 1 seconds
+
+{% endif %}
 visible_hostname internet-proxy-locally
 httpd_suppress_version_string on
 # Client address stays internal. `via` is left at its RFC 9110 default.

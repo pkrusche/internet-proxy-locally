@@ -4,8 +4,16 @@ from __future__ import annotations
 
 from internet_proxy_locally import net
 from internet_proxy_locally.backend import Backend
-from internet_proxy_locally.constants import DNS_FIXTURE, HEALTH_WAIT_SECONDS
+from internet_proxy_locally.constants import (
+    DNS_FIXTURE,
+    FIXTURE_NETWORK_NAME,
+    FIXTURE_PUBLIC_ADDRESS,
+    FIXTURE_PUBLIC_SUBNET,
+    HEALTH_WAIT_SECONDS,
+)
 from internet_proxy_locally.errors import Fail
+from internet_proxy_locally.lab import tls
+from internet_proxy_locally.lab.fixtures import load_lab_config
 from internet_proxy_locally.lifecycle import ownership_labels, remove_owned
 from internet_proxy_locally.spec import ServiceSpec
 
@@ -26,6 +34,8 @@ def start_dns_fixture(backend: Backend) -> str:
     No host port is published: the fixture is reachable from the engine
     container and from nothing else.
     """
+    if backend.name != "docker":
+        raise Fail("the lab requires Docker")
     spec = fixture_spec()
     image = spec.image
     if not backend.image_present(image):
@@ -35,18 +45,31 @@ def start_dns_fixture(backend: Backend) -> str:
             "(docs/lab.md)."
         )
     remove_owned(backend, spec.container_name)
+    backend.ensure_lab_network(
+        FIXTURE_NETWORK_NAME, FIXTURE_PUBLIC_SUBNET, ownership_labels("lab-fixture")
+    )
+    tls.generate(load_lab_config().fixture)
     backend.run_detached(
         name=spec.container_name,
         image=image,
         internal_port=spec.internal_port,
-        mounts=spec.mounts(),
+        mounts=spec.mounts()
+        + [
+            (tls.directory() / "origin.pem", "/fixture/origin.pem"),
+            (tls.directory() / "origin-key.pem", "/fixture/origin-key.pem"),
+        ],
+        lab_network=FIXTURE_NETWORK_NAME,
+        lab_address=FIXTURE_PUBLIC_ADDRESS,
+        environment={"IPL_ORIGIN_ADDRESS": FIXTURE_PUBLIC_ADDRESS},
         labels=ownership_labels("lab-fixture"),
     )
 
     def addressed():
         """The fixture's address, "" if it died, None while still starting."""
         address = backend.container_ip(spec.container_name)
-        if address:
+        if address and "IPL-FIXTURE ready" in backend.tail_logs(
+            spec.container_name, 100
+        ):
             return address
         return None if backend.container_state(spec.container_name) == "running" else ""
 

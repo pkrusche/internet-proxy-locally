@@ -119,10 +119,16 @@ class Backend:
         entry = self._inspect_entry("inspect", name)
         settings = entry.get("NetworkSettings")
         if isinstance(settings, dict):
+            networks = settings.get("Networks") or {}
+            # The lab also has a public-shaped origin network. DNS must use
+            # the private bridge address, independent of inspect key ordering.
+            address = (networks.get("bridge") or {}).get("IPAddress")
+            if isinstance(address, str) and address:
+                return address
             address = settings.get("IPAddress")
             if isinstance(address, str) and address:
                 return address
-            for network in (settings.get("Networks") or {}).values():
+            for network in networks.values():
                 address = (network or {}).get("IPAddress")
                 if isinstance(address, str) and address:
                     return address
@@ -201,6 +207,46 @@ class Backend:
             raise Fail(f"runtime reported success but container {name} still exists")
         return True
 
+    def ensure_lab_network(
+        self, name: str, subnet: str, labels: dict[str, str]
+    ) -> None:
+        if self.name != "docker":
+            raise Fail(
+                "the lab requires Docker; Apple container is supported by ipl only"
+            )
+        entry = self._inspect_entry("network", "inspect", name)
+        if entry:
+            actual = entry.get("Labels") or {}
+            subnets = [
+                c.get("Subnet") for c in (entry.get("IPAM") or {}).get("Config", [])
+            ]
+            if (
+                any(actual.get(k) != v for k, v in labels.items())
+                or not entry.get("Internal")
+                or subnets != [subnet]
+            ):
+                raise Fail(f"refusing to reuse foreign or incompatible network {name}")
+            return
+        args = ["network", "create", "--internal", "--subnet", subnet]
+        for key, value in sorted(labels.items()):
+            args += ["--label", f"{key}={value}"]
+        self._run(*args, name)
+
+    def remove_lab_network(self, name: str, labels: dict[str, str]) -> None:
+        if self.name != "docker":
+            return
+        entry = self._inspect_entry("network", "inspect", name)
+        if not entry:
+            return
+        actual = entry.get("Labels") or {}
+        for key in (
+            "io.internet-proxy-locally.managed",
+            "io.internet-proxy-locally.workspace",
+        ):
+            if actual.get(key) != labels.get(key):
+                raise Fail(f"refusing to remove foreign network {name}")
+        self._run("network", "rm", name)
+
     def run_detached(
         self,
         *,
@@ -215,6 +261,9 @@ class Backend:
         publish: tuple[str, int] | None = None,
         dns: str = "",
         labels: dict[str, str] | None = None,
+        lab_network: str = "",
+        lab_address: str = "",
+        environment: dict[str, str] | None = None,
     ) -> None:
         cmd: list[str] = ["run", "--detach", "--name", name]
         for key, value in sorted((labels or {}).items()):
@@ -228,6 +277,15 @@ class Backend:
             # Apple `container` has no equivalent and a hosts entry cannot
             # carry a multi-address answer anyway (docs/lab.md).
             cmd += ["--dns", dns]
+        if lab_network:
+            if self.name != "docker":
+                raise Fail("the lab requires Docker")
+            attachment = f"name={lab_network}"
+            if lab_address:
+                attachment += f",ip={lab_address}"
+            cmd += ["--network", "bridge", "--network", attachment]
+        for key, value in sorted((environment or {}).items()):
+            cmd += ["--env", f"{key}={value}"]
         for src, dst in mounts:
             cmd += ["--volume", f"{src}:{dst}:ro"]
         # No trailing arguments: how a service is launched is its

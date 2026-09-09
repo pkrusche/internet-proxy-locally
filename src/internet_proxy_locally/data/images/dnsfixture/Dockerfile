@@ -37,7 +37,7 @@ COPY rebind.py /usr/local/bin/rebind.py
 LABEL org.opencontainers.image.licenses="GPL-2.0-or-later"
 LABEL org.opencontainers.image.source="https://thekelleys.org.uk/dnsmasq/"
 
-# 53: DNS, served by dnsmasq. 443: the rebinding trap, served by rebind.py.
+# 53: DNS. 443: HTTPS origin on the lab public interface, trap on the private one.
 # Neither is published to the host — the fixture is reachable only from the
 # container network, by the engine under test.
 EXPOSE 53/udp 53/tcp 443/tcp

@@ -174,3 +174,9 @@ detects this from the running container's own ownership label rather than
 needing it repeated on the command line, so it stays right even when `check`
 is invoked separately from the `up` that started the engine. `docs/findings.md`'s
 conditions table has a matching "TLS interception" row per engine.
+
+The lab now uses Docker for every engine and a local HTTPS origin whose
+certificate covers the fixture names. Its separate `.test`-constrained CA is
+trusted only by lab engines; see [lab fixture setup](lab.md#the-dns-fixture).
+The default one-minute Squid DNS cache floor is shortened only in lab configs
+so the repeat lookup can exercise rebinding.

@@ -34,7 +34,10 @@ rebind_zone = "rebind.fixture.test"
 ptr_address = "1.0.0.1"
 ptr_claims = "pypi.org"
 
+# Address values define public/private roles. At startup, the fixture replaces
+# the public value with its local HTTPS interface and private values with its trap.
+# No connection is made to these nominal addresses.
 [fixture.records]
-"public-only.fixture.test" = ["9.9.9.9"]
-"mixed-public-first.fixture.test" = ["9.9.9.9", "10.0.0.1"]
-"mixed-private-first.fixture.test" = ["10.0.0.1", "9.9.9.9"]
+"public-only.fixture.test" = ["11.203.0.2"]
+"mixed-public-first.fixture.test" = ["11.203.0.2", "10.0.0.1"]
+"mixed-private-first.fixture.test" = ["10.0.0.1", "11.203.0.2"]

@@ -131,7 +131,12 @@ class LabCliTest(RunPyCliTest):
         self.assertTrue(host_paths, engine)
         for host_path in host_paths:
             self.assertTrue(
-                host_path.endswith("lab/config/pipelock.test.yaml"),
+                host_path.endswith(
+                    (
+                        "lab/config/pipelock.test.yaml",
+                        "state/fixture-tls/ca.pem",
+                    )
+                ),
                 f"mounted {host_path}, not the test policy",
             )
 
@@ -446,11 +451,13 @@ class LabUnitTest(unittest.TestCase):
     # -- rendering -----------------------------------------------------------
 
     def test_shipped_lab_configs_match_the_sources(self) -> None:
-        for path, body in render_test_policies().items():
-            self.assertEqual(
+        # Either invocation mode is a valid generated artifact.
+        off, on = render_test_policies(), render_test_policies(tls_interception=True)
+        for path in off:
+            self.assertIn(
                 path.read_text(encoding="utf-8"),
-                body,
-                f"run `ipl-lab up` and commit {path.name}",
+                (off[path], on[path]),
+                f"regenerate {path.name} from the templates",
             )
 
     def test_test_policy_is_a_strict_superset(self) -> None:

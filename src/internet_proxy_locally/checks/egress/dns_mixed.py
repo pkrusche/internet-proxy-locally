@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from . import fixture_log
 from .models import Check, RawOutcome
 from .probes import _connect_attempt
 from .transport import ProxyClient
@@ -34,11 +35,20 @@ def test_dns_mixed(client: ProxyClient) -> RawOutcome:
             attempts=[control],
         )
 
+    _, before_trap = fixture_log.parse_fixture_log(fixture_log.FIXTURE_LOG_SOURCE())
     attempts = [control]
     attempts += [
         _connect_attempt(client, i, f"{name}:443", name, resolve=False)
         for i, name in enumerate(MIXED_FIXTURE_TARGETS, start=1)
     ]
+    _, after_trap = fixture_log.parse_fixture_log(fixture_log.FIXTURE_LOG_SOURCE())
+    hits = after_trap[len(before_trap) :]
+    if hits:
+        return RawOutcome(
+            "allowed",
+            f"{len(hits)} connection(s) reached the private fixture trap during mixed-answer probes",
+            attempts=attempts,
+        )
     established = [a for a in attempts[1:] if a.outcome == "established"]
     if established:
         # Behavioral, not graded here: the runner maps this through the

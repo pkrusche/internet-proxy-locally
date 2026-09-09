@@ -12,6 +12,7 @@
 {% for record in fixture_records %}
 
 {% if record.role == "control" %}
+# Nominal addresses: the fixture substitutes its public HTTPS IP and private trap.
 # Control: one public address, nothing else — must be reachable through
 # the proxy or the mixed-answer rows below cannot be attributed.
 {% else %}

@@ -443,11 +443,13 @@ def measure_all(
     (pipelock, squid); smokescreen doesn't, so it is still measured in
     tunnel mode rather than failing the whole run.
     """
+    if backend not in (None, "docker"):
+        raise Fail("the lab requires Docker; use ipl for Apple container setups")
     results_dir = paths.results_dir() if results_dir is None else results_dir
     out = paths.findings_file() if out is None else out
     results_dir.mkdir(parents=True, exist_ok=True)
     lab_cli = [sys.executable, "-m", CLI_MODULE["ipl-lab"]]
-    common = ["--backend", backend] if backend else []
+    common = ["--backend", "docker"]
     tls_flag = ["--tls-interception"] if tls_interception else []
     try:
         try:
