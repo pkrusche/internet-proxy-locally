@@ -1,32 +1,7 @@
-# The allowlist — the single source of truth for what this proxy permits.
-#
-# `ipl` renders this file, through data/templates/, into the engine
-# configurations: config/pipelock.yaml, config/smokescreen.yaml and
-# config/squid.conf. Those files are generated; do not edit them by hand.
-# `setup`, `up` and `restart` regenerate them automatically.
-#
-# The rules the allowlist sits on top of — default deny, the IP-layer SSRF
-# floors — are NOT configurable here. They live in the templates as literal
-# text and are covered by the policy and end-to-end tests. See docs/policy.md.
-# The one exception is
-# `tls_interception` below: opt-in TLS interception for pipelock/squid,
-# off by default. See docs/tls-interception.md before turning it on.
-#
-# The adversarial test policy and its DNS fixture live in data/lab/fixtures.toml
-# and never touch this file (docs/lab.md).
+# Global configuration. See docs/policy.md and docs/lab.md.
 
 [policy]
-# Two forms, and only these two (docs/policy.md):
-#
-#     d      matches that host exactly
-#     *.d    matches subdomains of d, never the apex
-#
-# Deliberately small. Expand only from demonstrated requirements, one
-# reviewed change at a time. AI provider domains (OpenAI, Anthropic, ...)
-# are intentionally absent: AI API traffic goes through Agentgateway, not
-# this proxy.
 allow = [
-    # git clone/fetch
     "api.anthropic.com",
     "claude.ai",
     "code.claude.com",
@@ -36,18 +11,32 @@ allow = [
     "chatgpt.com",
     "github.com",
     "*.github.com",
-    # raw file access
     "*.githubusercontent.com",
-    # Python packages
     "pypi.org",
     "files.pythonhosted.org",
-    # npm packages
     "registry.npmjs.org",
 ]
 
-# Opt-in TLS interception for pipelock/squid — off by default. Turning this
-# on makes the engine the real TLS endpoint for allowlisted HTTPS
-# destinations instead of an opaque CONNECT tunnel; read
-# docs/tls-interception.md before flipping it, and run `ipl ca init` first
-# (`up` refuses to start with this on and no CA generated).
 tls_interception = false
+
+# Lab-only additions; operational startup uses [policy] above.
+[policy.test]
+allow = [
+    "*.nip.io",
+    "*.sslip.io",
+    "public-only.fixture.test",
+    "mixed-public-first.fixture.test",
+    "mixed-private-first.fixture.test",
+    "*.rebind.fixture.test",
+]
+
+[fixture]
+control = "public-only.fixture.test"
+rebind_zone = "rebind.fixture.test"
+ptr_address = "1.0.0.1"
+ptr_claims = "pypi.org"
+
+[fixture.records]
+"public-only.fixture.test" = ["9.9.9.9"]
+"mixed-public-first.fixture.test" = ["9.9.9.9", "10.0.0.1"]
+"mixed-private-first.fixture.test" = ["10.0.0.1", "9.9.9.9"]

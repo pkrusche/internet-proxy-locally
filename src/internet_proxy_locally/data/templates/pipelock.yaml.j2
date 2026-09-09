@@ -1,7 +1,7 @@
 {% include "_banner.j2" %}
 {% if test_policy %}
 # TEST POLICY — NEVER use for normal operation. config/pipelock.yaml plus
-# the `[policy.test]` fixtures from data/lab/fixtures.toml. See docs/lab.md.
+# the `[policy.test]` fixtures from config.toml. See docs/lab.md.
 #
 # Activate with:  ipl-lab --engine pipelock up
 # Deactivate with `ipl up` (recreates with the real policy).
@@ -24,7 +24,7 @@ api_allowlist:
   - {{ domain | yaml_scalar }}
 {% endfor %}
 {% if test_policy %}
-  # --- [policy.test] in data/lab/fixtures.toml: adversarial fixtures only ---
+  # --- [policy.test] in config.toml: adversarial fixtures only ---
 {% for domain in allow_test %}
   - {{ domain | yaml_scalar }}
 {% endfor %}

@@ -45,5 +45,5 @@ EXPOSE 53/udp 53/tcp 443/tcp
 # rebind.py is PID 1 and starts dnsmasq itself. Nothing about what this
 # fixture serves is in the image: the records are bind-mounted read-only at
 # /fixture/hosts and the rebinding zone, public answer and PTR claim at
-# /fixture/fixture.env, both rendered from data/lab/fixtures.toml.
+# /fixture/fixture.env, both rendered from config.toml.
 ENTRYPOINT ["/usr/bin/python3", "-u", "/usr/local/bin/rebind.py"]

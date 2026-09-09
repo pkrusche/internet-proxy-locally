@@ -1,9 +1,8 @@
-"""data/lab/fixtures.toml: the test allowlist and the DNS fixture records."""
+"""config.toml: the test allowlist and the DNS fixture records."""
 
 from __future__ import annotations
 
 import ipaddress
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,14 +11,15 @@ from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.policy.config import (
     ALLOW_ENTRY,
     allow_list,
-    load_policy_config,
+    load_config_data,
+    parse_policy_config,
     reject_unknown,
 )
 
 
 @dataclass(frozen=True)
 class FixtureConfig:
-    """The local DNS fixture's records, from `[fixture]` in data/lab/fixtures.toml.
+    """The local DNS fixture's records, from `[fixture]` in config.toml.
 
     `lab/config/dns-fixture.hosts` is rendered from this, so the records the
     fixture serves and the `[policy.test]` allowlist that has to cover them
@@ -286,28 +286,12 @@ class LabConfig:
 
 
 def load_lab_config(path: Path | None = None) -> LabConfig:
-    """Read data/lab/fixtures.toml, cross-checked against the real allowlist."""
-    path = paths.fixture_file() if path is None else path
-    if not path.is_file():
-        raise Fail(
-            f"missing the test policy source {path} "
-            "(it holds [policy.test] and the DNS fixture records)"
-        )
-    operational = load_policy_config()
+    """Read config.toml, cross-checked against the real allowlist."""
+    path = paths.policy_file() if path is None else path
+    data = load_config_data(path)
+    operational = parse_policy_config(data, path)
     allow = list(operational.allow)
-    with path.open("rb") as fh:
-        data = tomllib.load(fh)
-    reject_unknown(data, {"policy", "fixture"}, path, "top-level table(s)")
-    policy = data.get("policy")
-    if not isinstance(policy, dict):
-        raise Fail(f"{path}: missing the [policy.test] table")
-    reject_unknown(
-        policy,
-        {"test"},
-        path,
-        "key(s) in [policy]",
-        hint=". The operational allowlist lives in config.toml.",
-    )
+    policy = data["policy"]
     test = policy.get("test", {})
     if not isinstance(test, dict):
         raise Fail(f"{path}: [policy.test] must be a table")
@@ -322,7 +306,7 @@ def load_lab_config(path: Path | None = None) -> LabConfig:
     if overlap:
         raise Fail(
             f"{path}: policy.test.allow repeats {', '.join(overlap)}, "
-            "which config.toml already permits everywhere"
+            "which [policy].allow already permits everywhere"
         )
     fixture = _fixture_config(data.get("fixture"), path, allow, allow_test)
     return LabConfig(

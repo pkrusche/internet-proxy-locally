@@ -125,7 +125,7 @@ SERVICES = {
         config_file="lab/config/dns-fixture.hosts",
         config_mount="/fixture/hosts",
         # What the responder serves — the rebinding zone, the public answer
-        # and the PTR claim — rendered from `[fixture]` in fixtures.toml
+        # and the PTR claim — rendered from `[fixture]` in config.toml
         # alongside the hosts file, so an edit there takes effect on the
         # next `up` rather than on the next rebuild.
         extra_config_file="lab/config/fixture.env",

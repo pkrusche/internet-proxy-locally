@@ -10,7 +10,7 @@ from internet_proxy_locally.errors import Fail
 
 
 def data_root() -> Path:
-    """Files that ship with the package: templates, images, fixture data."""
+    """Files that ship with the package: templates, images, and starter configuration."""
     override = os.environ.get("IPL_DATA_ROOT")
     if override:
         return Path(override)
@@ -56,19 +56,6 @@ def image_dir() -> Path:
 def squid_error_dir() -> Path:
     """The `ERR_IPL_*` denial pages baked into the Squid image."""
     return image_dir() / "squid" / "errors"
-
-
-def lab_dir() -> Path:
-    """The lab lane's own data: fixtures.toml, what the fixture serves.
-
-    How its image is built is in `data/images/dnsfixture/`, with every
-    other build context; how it is run is in `spec.SERVICES`.
-    """
-    return data_root() / "lab"
-
-
-def fixture_file() -> Path:
-    return lab_dir() / "fixtures.toml"
 
 
 def policy_file() -> Path:

@@ -83,34 +83,21 @@ def allow_list(raw: object, path: Path, key: str) -> list[str]:
     return entries
 
 
-def load_policy_config(path: Path | None = None) -> PolicyConfig:
-    """Read and validate config.toml. Fails closed on anything ambiguous."""
-    path = paths.policy_file() if path is None else path
+def load_config_data(path: Path) -> dict:
     if not path.is_file():
-        raise Fail(f"missing the policy source {path} (it holds the allowlist)")
+        raise Fail(f"missing configuration: {path}")
     with path.open("rb") as fh:
         data = tomllib.load(fh)
-    reject_unknown(
-        data,
-        {"policy"},
-        path,
-        "top-level table(s)",
-        hint="\n[fixture] and [policy.test] belong in data/lab/fixtures.toml, "
-        "which only ipl-lab reads (docs/lab.md)."
-        if "fixture" in data
-        else "",
-    )
+    reject_unknown(data, {"policy", "fixture"}, path, "top-level table(s)")
+    return data
+
+
+def parse_policy_config(data: dict, path: Path) -> PolicyConfig:
     policy = data.get("policy")
     if not isinstance(policy, dict):
         raise Fail(f"{path}: missing the [policy] table")
     reject_unknown(
-        policy,
-        {"allow", "tls_interception"},
-        path,
-        "key(s) in [policy]",
-        hint="\nThe test allowlist belongs in data/lab/fixtures.toml (docs/lab.md)."
-        if "test" in policy
-        else "",
+        policy, {"allow", "tls_interception", "test"}, path, "key(s) in [policy]"
     )
     allow = allow_list(policy.get("allow", []), path, "policy.allow")
     if not allow:
@@ -122,3 +109,9 @@ def load_policy_config(path: Path | None = None) -> PolicyConfig:
     if not isinstance(tls_interception, bool):
         raise Fail(f"{path}: policy.tls_interception must be a boolean")
     return PolicyConfig(tuple(allow), tls_interception)
+
+
+def load_policy_config(path: Path | None = None) -> PolicyConfig:
+    """Read operational settings; lab-only tables do not extend this policy."""
+    path = paths.policy_file() if path is None else path
+    return parse_policy_config(load_config_data(path), path)

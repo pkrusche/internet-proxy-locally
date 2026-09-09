@@ -22,7 +22,7 @@ def _fixture_env() -> dict[str, str]:
     except OSError as exc:
         raise SystemExit(
             f"cannot read {FIXTURE_ENV} ({exc}) — it is bind-mounted by "
-            "`ipl-lab up`, which renders it from data/lab/fixtures.toml."
+            "`ipl-lab up`, which renders it from config.toml."
         ) from exc
     values = {}
     for line in text.splitlines():

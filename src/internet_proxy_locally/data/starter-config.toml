@@ -1,4 +1,26 @@
 [policy]
 # Exact hosts and wildcard subdomains. Wildcards exclude their apex.
-allow = ["github.com", "*.github.com"]
+allow = ["github.com", "*.github.com", "pypi.org"]
 tls_interception = false
+
+# Lab-only additions. See docs/lab.md.
+[policy.test]
+allow = [
+    "*.nip.io",
+    "*.sslip.io",
+    "public-only.fixture.test",
+    "mixed-public-first.fixture.test",
+    "mixed-private-first.fixture.test",
+    "*.rebind.fixture.test",
+]
+
+[fixture]
+control = "public-only.fixture.test"
+rebind_zone = "rebind.fixture.test"
+ptr_address = "1.0.0.1"
+ptr_claims = "pypi.org"
+
+[fixture.records]
+"public-only.fixture.test" = ["9.9.9.9"]
+"mixed-public-first.fixture.test" = ["9.9.9.9", "10.0.0.1"]
+"mixed-private-first.fixture.test" = ["10.0.0.1", "9.9.9.9"]

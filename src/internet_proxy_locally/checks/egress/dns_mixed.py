@@ -6,7 +6,7 @@ from .models import Check, RawOutcome
 from .probes import _connect_attempt
 from .transport import ProxyClient
 
-# Served from lab/config/dns-fixture.hosts (data/lab/fixtures.toml). The
+# Served from lab/config/dns-fixture.hosts (config.toml). The
 # control resolves to one public address; the others resolve to the same
 # public address *and* a private one, in both orderings, so an engine that
 # validates only the first answer fails one of them.

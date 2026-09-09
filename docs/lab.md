@@ -4,11 +4,10 @@
 local DNS fixture, the full egress suite, and reports the comparison
 in [findings.md](findings.md).
 
-Testing / measurement requires a different policy from production,
-this is defined in `data/lab/fixtures.toml`, the fixture names live 
-under `.test` (RFC 6761, can never resolve publicly), and 
-any `ipl up` removes the fixture
-container.
+`config.toml` contains both operational and lab settings. Only `ipl-lab`
+adds `[policy.test].allow` to `[policy].allow` and starts the DNS fixture.
+Fixture names use the reserved `.test` domain; `ipl up` removes any running
+fixture container.
 
 ```bash
 ipl-lab setup     # all three engines + the DNS fixture image
@@ -22,13 +21,13 @@ ipl-lab measure   # all three engines end to end, then rewrite findings.md
 
 ## The test policy
 
-`data/lab/fixtures.toml` holds `[policy.test]` — domains added **on top of**
-`config.toml`'s allowlist — and `[fixture]`, the DNS records. `ipl-lab up`
+`config.toml` holds `[policy.test]` — domains added **on top of**
+`[policy].allow` — and `[fixture]`, the DNS records. `ipl-lab up`
 renders both through the shared policy templates into `lab/config/`:
 
 | generated | from |
 | --- | --- |
-| `lab/config/{pipelock,smokescreen}.test.yaml`, `squid.test.conf` | `config.toml` + `[policy.test]` |
+| `lab/config/{pipelock,smokescreen}.test.yaml`, `squid.test.conf` | `[policy]` + `[policy.test]` |
 | `lab/config/dns-fixture.hosts` | `[fixture.records]` |
 
 `ipl-lab up` regenerates these files before starting the fixture and engine.
@@ -38,13 +37,17 @@ Extra domains: `*.nip.io` and `*.sslip.io` resolve to
 caller-chosen addresses, and the fixture zones resolve in a controlled
 manner (in an adversarial setting). 
 
+`ipl init` creates a config with both sets of settings. Existing operational-only
+configs still work with `ipl`; add `[policy.test]` and `[fixture]` before using
+`ipl-lab`. Missing lab settings fail validation instead of using packaged defaults.
+
 ## The fixture records
 
 One edit must not half-land, so `load_lab_config()` refuses to render when
 the two halves disagree. It rejects a record the test policy does not
 allowlist (the fixture would be denied by name and grade nothing), a
 `.test` entry in `[policy.test]` with no record behind it (NXDOMAIN, so the
-check silently skips), a fixture name `config.toml` also allows, a control
+check silently skips), a fixture name `[policy].allow` also allows, a control
 record with more than one address or a private one, a mixed record that is
 not one public plus one private, a record set that does not cover both
 orderings, and a `ptr_address` that collides with a record address.
@@ -165,7 +168,7 @@ The dnsmasq and python3 apk versions are literals in
 Engine pins work the same way (README, "Pins").
 
 What the fixture *serves* is not in the image at all: `[fixture]` in
-`data/lab/fixtures.toml` is rendered into `lab/config/dns-fixture.hosts`
+`config.toml` is rendered into `lab/config/dns-fixture.hosts`
 and `lab/config/fixture.env`, both bind-mounted read-only, so an edit
 there takes effect on the next `ipl-lab up` rather than on the next
 rebuild.

@@ -8,7 +8,7 @@ from internet_proxy_locally.backend import Backend
 PIPELOCK_IMAGE = "internet-proxy-locally/pipelock:3.3.0"
 SMOKESCREEN_IMAGE = "internet-proxy-locally/smokescreen:131fba29ce1e"
 SQUID_IMAGE = "internet-proxy-locally/squid:6.12-r0-build1"
-DNSFIXTURE_IMAGE = "internet-proxy-locally/dnsfixture:2.91-r1-build1"
+DNSFIXTURE_IMAGE = "internet-proxy-locally/dnsfixture:2.91-r1-build2"
 
 IMAGES = {
     "pipelock": PIPELOCK_IMAGE,

@@ -32,7 +32,7 @@ from internet_proxy_locally.lab.render import (
 )
 from internet_proxy_locally.lifecycle import owned_containers
 from internet_proxy_locally.policy.config import load_policy_config
-from internet_proxy_locally.policy.render import _squid_wild
+from internet_proxy_locally.policy.render import _squid_wild, render_policies
 from internet_proxy_locally.spec import SERVICES, ServiceSpec
 from tests.test_runpy import PACKAGE_DATA, REPO_ROOT, RunPyCliTest
 
@@ -206,7 +206,7 @@ class LabCliTest(RunPyCliTest):
 
 
 class LabUnitTest(unittest.TestCase):
-    """In-process tests for data/lab/fixtures.toml validation and rendering.
+    """In-process tests for config.toml validation and rendering.
 
     `Fail` is imported straight from `errors` here. It used to have to be
     reached through the lab CLI's own reference to the run one, because loading a
@@ -217,7 +217,7 @@ class LabUnitTest(unittest.TestCase):
     # -- one source of truth for what the fixture serves ---------------------
 
     def test_the_fixture_facts_have_exactly_one_source(self) -> None:
-        """data/lab/fixtures.toml, `checks.egress` and data/images/dnsfixture/rebind.py
+        """config.toml, `checks.egress` and data/images/dnsfixture/rebind.py
         used to state the same names three times, each with a "keep in
         sync" comment and nothing enforcing it.
 
@@ -266,14 +266,10 @@ class LabUnitTest(unittest.TestCase):
             self.assertIn(f'_required("{key}")', rebind)
             self.assertRegex(rendered[env_path], rf"(?m)^{key}={re.escape(value)}$")
 
-    # -- data/lab/fixtures.toml ---------------------------------------------------
+    # -- config.toml ---------------------------------------------------
 
     def fixture_config(self, **overrides) -> Path:
-        """A complete data/lab/fixtures.toml whose `[fixture]` can be perturbed.
-
-        The real allowlist is read from the checkout's config.toml, so these
-        exercise the same cross-file check the CLI does.
-        """
+        """A complete config.toml with overridable fixture settings."""
         tmp = Path(tempfile.mkdtemp(prefix="ipl-fixture-toml-test-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         table = {
@@ -294,7 +290,8 @@ class LabUnitTest(unittest.TestCase):
             ],
         }
         table.update(overrides)
-        body = "[policy.test]\nallow = [\n"
+        body = "[policy]\nallow = " + repr(list(load_policy_config().allow)) + "\n\n"
+        body += "[policy.test]\nallow = [\n"
         body += "".join(f'    "{entry}",\n' for entry in table["allow_test"])
         body += "]\n\n[fixture]\n"
         for key in ("control", "rebind_zone", "ptr_address", "ptr_claims"):
@@ -303,7 +300,7 @@ class LabUnitTest(unittest.TestCase):
         body += "\n[fixture.records]\n"
         for name, addresses in table["records"].items():
             body += f'"{name}" = {addresses}\n'
-        path = tmp / "fixtures.toml"
+        path = tmp / "config.toml"
         path.write_text(body)
         return path
 
@@ -408,7 +405,7 @@ class LabUnitTest(unittest.TestCase):
     def test_rejects_a_test_entry_the_real_policy_already_allows(self) -> None:
         real = load_policy_config().allow[0]
         self.assertRefused(
-            "config.toml already permits",
+            "[policy].allow already permits",
             allow_test=[
                 "public-only.fixture.test",
                 "mixed-public-first.fixture.test",
@@ -424,7 +421,9 @@ class LabUnitTest(unittest.TestCase):
         path = self.fixture_config()
         body = path.read_text()
         path.write_text(
-            "[policy.test]\nallow = []\n" + body[body.index("\n[fixture]") :]
+            body[: body.index("[policy.test]")]
+            + "[policy.test]\nallow = []\n"
+            + body[body.index("\n[fixture]") :]
         )
         with self.assertRaises(Fail) as caught:
             load_lab_config(path)
@@ -596,21 +595,32 @@ class LabUnitTest(unittest.TestCase):
             proc.stdout.strip(), "[]", "the operational lane imported the lab lane"
         )
 
-    def test_config_toml_rejects_the_test_tables(self) -> None:
-        """A `[fixture]` or `[policy.test]` left in config.toml is a mistake
-        with a specific fix, so it gets a specific message."""
-        tmp = Path(tempfile.mkdtemp(prefix="ipl-split-test-"))
-        self.addCleanup(shutil.rmtree, tmp, True)
-        path = tmp / "config.toml"
-        path.write_text('[policy]\nallow = ["pypi.org"]\n\n[fixture]\ncontrol = "x"\n')
-        with self.assertRaises(Fail) as caught:
-            load_policy_config(path)
-        self.assertIn("data/lab/fixtures.toml", str(caught.exception))
+    def test_operational_policy_excludes_lab_additions(self) -> None:
+        path = self.fixture_config()
+        operational = load_policy_config(path)
+        lab = load_lab_config(path)
+        self.assertEqual(operational.allow, lab.allow)
+        for body in render_policies(operational).values():
+            self.assertNotIn("fixture.test", body)
+        self.assertTrue(lab.allow_test)
 
-        path.write_text('[policy]\nallow = ["pypi.org"]\n\n[policy.test]\nallow = []\n')
-        with self.assertRaises(Fail) as caught:
-            load_policy_config(path)
-        self.assertIn("data/lab/fixtures.toml", str(caught.exception))
+    def test_lab_uses_operational_settings_from_the_supplied_file(self) -> None:
+        path = self.fixture_config()
+        body = path.read_text()
+        body = body.replace("[policy]", "[policy]\ntls_interception = true")
+        body = body.replace("pypi.org", "packages.example.com")
+        path.write_text(body)
+        config = load_lab_config(path)
+        self.assertIn("packages.example.com", config.allow)
+        self.assertEqual(config.fixture.ptr_claims, "packages.example.com")
+        self.assertTrue(config.tls_interception)
+
+    def test_starter_config_supports_both_modes(self) -> None:
+        path = PACKAGE_DATA / "starter-config.toml"
+        operational = load_policy_config(path)
+        lab = load_lab_config(path)
+        self.assertEqual(operational.allow, lab.allow)
+        self.assertTrue(lab.fixture.records)
 
 
 if __name__ == "__main__":

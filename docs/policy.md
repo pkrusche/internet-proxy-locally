@@ -11,8 +11,9 @@ container runs is always the one `config.toml` states. `config.toml` is
 parsed and validated before rendering, so a bad source fails without
 replacing a working config.
 
-The adversarial test policy is a separate file in a separate lane
-(`data/lab/fixtures.toml`, [lab.md](lab.md)); `ipl` never reads it.
+Lab-only `[policy.test]` and `[fixture]` settings also live in `config.toml`.
+`ipl` uses only `[policy].allow` and `[policy].tls_interception`; `ipl-lab`
+adds the test domains and validates the fixture settings ([lab.md](lab.md)).
 
 ## Mode
 
