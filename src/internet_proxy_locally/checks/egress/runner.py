@@ -8,6 +8,8 @@ import socket
 import subprocess
 import time
 
+from internet_proxy_locally.backend import log_command
+
 from . import fixture_log
 from .catalogue import TESTS
 from .denial import aggregate_cause, classify_denial
@@ -54,18 +56,29 @@ def _log_delta(before: list[str], after: list[str]) -> list[str]:
     return after
 
 
-def _fetch_logs(backend_bin: str | None, container: str | None) -> list[str]:
+def _fetch_logs(
+    backend_bin: str | None, container: str | None, *, required: bool = False
+) -> list[str]:
     if not backend_bin or not container:
         return []
     try:
         proc = subprocess.run(
-            [backend_bin, "logs", "--tail", "200", "--timestamps", container],
+            log_command(backend_bin, container, None if required else 200),
             capture_output=True,
             text=True,
             timeout=5,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        if required:
+            raise RuntimeError(
+                f"cannot read fixture logs for {container}: {exc}"
+            ) from exc
+        return []
+    if proc.returncode:
+        if required:
+            detail = (proc.stderr or proc.stdout or "").strip()
+            raise RuntimeError(f"cannot read fixture logs for {container}: {detail}")
         return []
     return ((proc.stdout or "") + (proc.stderr or "")).splitlines()
 
@@ -92,7 +105,7 @@ def run_suite(
     old_fixture_source = fixture_log.FIXTURE_LOG_SOURCE
     if backend_bin and fixture_container:
         fixture_log.FIXTURE_LOG_SOURCE = lambda: _fetch_logs(
-            backend_bin, fixture_container
+            backend_bin, fixture_container, required=True
         )
 
     have_fixtures = None

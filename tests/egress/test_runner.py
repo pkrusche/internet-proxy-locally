@@ -5,10 +5,13 @@ log-window capture) — not any single check's behavior."""
 from __future__ import annotations
 
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.checks import egress
 from internet_proxy_locally.checks.egress import catalogue, runner, transport
 from tests import mock_proxy
@@ -146,6 +149,60 @@ class EgressSuiteTest(unittest.TestCase):
         )
         client = transport.ProxyClient("127.0.0.1", port)
         self.assertTrue(runner.fixtures_active(client))
+
+
+class LogFetchTest(unittest.TestCase):
+    def test_backend_log_flags_and_fixture_history(self) -> None:
+        for binary, flags in [
+            ("/usr/local/bin/container", ["-n", "200"]),
+            ("docker", ["--tail", "200", "--timestamps"]),
+        ]:
+            with (
+                self.subTest(binary=binary),
+                patch(
+                    "subprocess.run",
+                    return_value=subprocess.CompletedProcess([], 0, "log\n", ""),
+                ) as run,
+            ):
+                self.assertEqual(runner._fetch_logs(binary, "engine"), ["log"])
+                self.assertEqual(
+                    run.call_args.args[0], [binary, "logs", *flags, "engine"]
+                )
+                runner._fetch_logs(binary, "fixture", required=True)
+                expected = [] if binary.endswith("container") else ["--timestamps"]
+                self.assertEqual(
+                    run.call_args.args[0], [binary, "logs", *expected, "fixture"]
+                )
+
+    def test_failed_fixture_fetch_is_an_error_not_a_transcript(self) -> None:
+        with patch(
+            "subprocess.run",
+            return_value=subprocess.CompletedProcess(
+                [], 1, "", "Unknown option '--timestamps'"
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "cannot read fixture logs.*Unknown option"
+            ):
+                runner._fetch_logs("container", "fixture", required=True)
+            self.assertEqual(runner._fetch_logs("container", "engine"), [])
+
+    def test_fixture_fetch_timeout_is_explicit(self) -> None:
+        with (
+            patch("subprocess.run", side_effect=subprocess.TimeoutExpired("logs", 5)),
+            self.assertRaisesRegex(RuntimeError, "cannot read fixture logs"),
+        ):
+            runner._fetch_logs("container", "fixture", required=True)
+
+    def test_backend_tail_uses_apple_flags(self) -> None:
+        with patch(
+            "subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, "one\ntwo\n", ""),
+        ) as run:
+            self.assertEqual(Backend("container").tail_logs("fixture", 1), "two")
+            self.assertEqual(
+                run.call_args.args[0], ["container", "logs", "-n", "1", "fixture"]
+            )
 
 
 class LogDeltaTest(unittest.TestCase):

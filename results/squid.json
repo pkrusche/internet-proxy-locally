@@ -7,7 +7,7 @@
   "image": "internet-proxy-locally/squid:6.12-r0-build1",
   "policy": "test",
   "host": "Darwin 25.6.0 arm64",
-  "generated_at": "2026-09-09T14:18:02Z",
+  "generated_at": "2026-09-09T14:57:44Z",
   "exit_code": 1,
   "results": [
     {
@@ -18,7 +18,7 @@
       "detail": "reached pypi.org (HTTP/1.1 301 Moved Permanently)",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 27.5,
+      "elapsed_ms": 48.4,
       "attempts": [],
       "headers": {
         "Content-Length": "0",
@@ -26,11 +26,11 @@
         "Retry-After": "0",
         "Location": "https://pypi.org/",
         "Accept-Ranges": "bytes",
-        "Date": "Wed, 09 Sep 2026 14:17:59 GMT",
-        "X-Served-By": "cache-fra-etou8220143-FRA",
+        "Date": "Wed, 09 Sep 2026 14:57:42 GMT",
+        "X-Served-By": "cache-fra-etou8220140-FRA",
         "X-Cache": "HIT",
         "X-Cache-Hits": "0",
-        "X-Timer": "S1788963480.939993,VS0,VE0",
+        "X-Timer": "S1788965862.171477,VS0,VE0",
         "X-Frame-Options": "deny",
         "X-XSS-Protection": "1; mode=block",
         "X-Content-Type-Options": "nosniff",
@@ -40,7 +40,9 @@
         "Via": "1.1 internet-proxy-locally (squid)",
         "Connection": "close"
       },
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.178     45 192.168.64.1 TCP_MISS/301 1137 GET http://pypi.org/ - HIER_DIRECT/151.101.192.223 -"
+      ]
     },
     {
       "name": "allowed-https",
@@ -50,10 +52,12 @@
       "detail": "tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 33.4,
+      "elapsed_ms": 32.3,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.238     30 192.168.64.1 TCP_TUNNEL/200 4713 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
+      ]
     },
     {
       "name": "blocked-host-connect",
@@ -63,10 +67,12 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: the destination is not in the allowlist.",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 10.1,
+      "elapsed_ms": 13.8,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.278     11 192.168.64.1 TCP_DENIED/403 461 CONNECT example.com:443 - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "blocked-host-http",
@@ -76,10 +82,12 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: the destination is not in the allowlist.",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 2.3,
+      "elapsed_ms": 2.5,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.306      0 192.168.64.1 TCP_DENIED/403 456 GET http://example.com/ - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "direct-ip-connect",
@@ -89,10 +97,12 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: the destination is a bare IP address, and this proxy allowlists destinations by hostname only.",
       "cause": "ip-literal-destination",
       "observed": null,
-      "elapsed_ms": 2.0,
+      "elapsed_ms": 2.4,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.332      0 192.168.64.1 TCP_DENIED/403 510 CONNECT 1.1.1.1:443 - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "loopback-ipv4",
@@ -102,10 +112,12 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
       "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 2.0,
+      "elapsed_ms": 2.2,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.358      0 192.168.64.1 TCP_DENIED/403 522 CONNECT 127.0.0.1:80 - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "rfc1918-ipv4",
@@ -115,10 +127,14 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.; denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.; denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
       "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 5.4,
+      "elapsed_ms": 5.8,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.383      0 192.168.64.1 TCP_DENIED/403 522 CONNECT 10.0.0.1:80 - HIER_NONE/- text/html",
+        "1788965862.385      0 192.168.64.1 TCP_DENIED/403 522 CONNECT 192.168.1.1:80 - HIER_NONE/- text/html",
+        "1788965862.386      0 192.168.64.1 TCP_DENIED/403 522 CONNECT 172.16.0.1:80 - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "link-local-ipv4",
@@ -128,10 +144,12 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
       "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 2.1,
+      "elapsed_ms": 2.2,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.412      0 192.168.64.1 TCP_DENIED/403 522 CONNECT 169.254.1.1:80 - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "metadata-endpoint",
@@ -141,10 +159,13 @@
       "detail": "denied for CONNECT and GET (CONNECT: denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.; GET: denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.)",
       "cause": "metadata",
       "observed": null,
-      "elapsed_ms": 3.7,
+      "elapsed_ms": 4.0,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.437      0 192.168.64.1 TCP_DENIED/403 482 CONNECT 169.254.169.254:80 - HIER_NONE/- text/html",
+        "1788965862.439      0 192.168.64.1 TCP_DENIED/403 477 GET http://169.254.169.254/latest/meta-data/ - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "loopback-ipv6",
@@ -154,10 +175,12 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
       "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 1.9,
+      "elapsed_ms": 2.1,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.464      0 192.168.64.1 TCP_DENIED/403 522 CONNECT [::1]:80 - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "private-ipv6",
@@ -167,10 +190,13 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.; denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
       "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 3.6,
+      "elapsed_ms": 4.0,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.490      0 192.168.64.1 TCP_DENIED/403 522 CONNECT [fd00::1]:80 - HIER_NONE/- text/html",
+        "1788965862.492      0 192.168.64.1 TCP_DENIED/403 522 CONNECT [fe80::1]:80 - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "dns-private-ipv4",
@@ -180,7 +206,7 @@
       "detail": "allowlisted hostnames resolving to private/loopback/metadata IPv4 all denied; resolved IPs recorded per attempt",
       "cause": "metadata+private-ip",
       "observed": null,
-      "elapsed_ms": 23.8,
+      "elapsed_ms": 24.5,
       "attempts": [
         {
           "n": 0,
@@ -190,7 +216,7 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 4.9,
+          "elapsed_ms": 5.0,
           "detail": "HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
           "cause": "private-ip"
         },
@@ -202,7 +228,7 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 4.8,
+          "elapsed_ms": 4.0,
           "detail": "HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
           "cause": "private-ip"
         },
@@ -214,7 +240,7 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 4.0,
+          "elapsed_ms": 4.8,
           "detail": "HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
           "cause": "private-ip"
         },
@@ -226,13 +252,18 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 4.2,
+          "elapsed_ms": 4.5,
           "detail": "HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.",
           "cause": "metadata"
         }
       ],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.538      2 192.168.64.1 TCP_DENIED/403 522 CONNECT 10.0.0.1.nip.io:80 - HIER_NONE/- text/html",
+        "1788965862.544      2 192.168.64.1 TCP_DENIED/403 522 CONNECT 192.168.1.1.nip.io:80 - HIER_NONE/- text/html",
+        "1788965862.550      3 192.168.64.1 TCP_DENIED/403 522 CONNECT 127.0.0.1.nip.io:80 - HIER_NONE/- text/html",
+        "1788965862.555      2 192.168.64.1 TCP_DENIED/403 482 CONNECT 169.254.169.254.nip.io:80 - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "dns-private-ipv6",
@@ -242,7 +273,7 @@
       "detail": "allowlisted hostnames resolving to private/loopback IPv6 all denied; resolved IPs recorded per attempt",
       "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 18.7,
+      "elapsed_ms": 17.7,
       "attempts": [
         {
           "n": 0,
@@ -252,7 +283,7 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 6.2,
+          "elapsed_ms": 4.9,
           "detail": "HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
           "cause": "private-ip"
         },
@@ -264,7 +295,7 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 4.2,
+          "elapsed_ms": 4.4,
           "detail": "HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
           "cause": "private-ip"
         },
@@ -276,38 +307,58 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 4.3,
+          "elapsed_ms": 4.1,
           "detail": "HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
           "cause": "private-ip"
         }
       ],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.588      2 192.168.64.1 TCP_DENIED/403 522 CONNECT 0--1.sslip.io:80 - HIER_NONE/- text/html",
+        "1788965862.594      2 192.168.64.1 TCP_DENIED/403 522 CONNECT fe80--1.sslip.io:80 - HIER_NONE/- text/html",
+        "1788965862.599      2 192.168.64.1 TCP_DENIED/403 522 CONNECT fd00--1.sslip.io:80 - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "dns-rebinding",
       "group": "full",
       "expectation": "deny",
-      "outcome": "skip",
-      "detail": "the DNS fixture reported no lookups for *.rebind.fixture.test \u2014 it is not running, the engine is not resolving through it, or its log stream is not readable from here. Run `ipl-lab up` and `ipl-lab check`, which wires the fixture's container through automatically",
+      "outcome": "error",
+      "detail": "no connection reached the trap. 0/3 names were resolved more than once and so were handed the private address (3 lookups total); of the 3 repeat probes, 0 were denied and 3 established \u2014 but the engine resolved each name only once, so it was never offered the rebind and this run did not exercise one",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 1628.6,
+      "elapsed_ms": 1632.9,
       "attempts": [
         {
           "n": 0,
-          "target": "a0-ab285b.rebind.fixture.test:443",
-          "local_resolved": [],
+          "target": "a0-605a55.rebind.fixture.test:443",
+          "local_resolved": [
+            "9.9.9.9"
+          ],
           "outcome": "established",
           "status": 200,
-          "elapsed_ms": 12.6,
+          "elapsed_ms": 11.4,
           "detail": "HTTP/1.1 200 Connection established",
           "cause": null
         },
         {
           "n": 1,
-          "target": "a1-ab285b.rebind.fixture.test:443",
-          "local_resolved": [],
+          "target": "a1-605a55.rebind.fixture.test:443",
+          "local_resolved": [
+            "9.9.9.9"
+          ],
+          "outcome": "established",
+          "status": 200,
+          "elapsed_ms": 10.6,
+          "detail": "HTTP/1.1 200 Connection established",
+          "cause": null
+        },
+        {
+          "n": 2,
+          "target": "a2-605a55.rebind.fixture.test:443",
+          "local_resolved": [
+            "9.9.9.9"
+          ],
           "outcome": "established",
           "status": 200,
           "elapsed_ms": 10.7,
@@ -315,48 +366,51 @@
           "cause": null
         },
         {
-          "n": 2,
-          "target": "a2-ab285b.rebind.fixture.test:443",
-          "local_resolved": [],
-          "outcome": "established",
-          "status": 200,
-          "elapsed_ms": 8.8,
-          "detail": "HTTP/1.1 200 Connection established",
-          "cause": null
-        },
-        {
           "n": 3,
-          "target": "a0-ab285b.rebind.fixture.test:443",
-          "local_resolved": [],
+          "target": "a0-605a55.rebind.fixture.test:443",
+          "local_resolved": [
+            "9.9.9.9"
+          ],
           "outcome": "established",
           "status": 200,
-          "elapsed_ms": 14.4,
+          "elapsed_ms": 15.8,
           "detail": "HTTP/1.1 200 Connection established",
           "cause": null
         },
         {
           "n": 4,
-          "target": "a1-ab285b.rebind.fixture.test:443",
-          "local_resolved": [],
+          "target": "a1-605a55.rebind.fixture.test:443",
+          "local_resolved": [
+            "9.9.9.9"
+          ],
           "outcome": "established",
           "status": 200,
-          "elapsed_ms": 14.4,
+          "elapsed_ms": 11.1,
           "detail": "HTTP/1.1 200 Connection established",
           "cause": null
         },
         {
           "n": 5,
-          "target": "a2-ab285b.rebind.fixture.test:443",
-          "local_resolved": [],
+          "target": "a2-605a55.rebind.fixture.test:443",
+          "local_resolved": [
+            "9.9.9.9"
+          ],
           "outcome": "established",
           "status": 200,
-          "elapsed_ms": 11.7,
+          "elapsed_ms": 15.6,
           "detail": "HTTP/1.1 200 Connection established",
           "cause": null
         }
       ],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965862.650      9 192.168.64.1 TCP_TUNNEL/200 39 CONNECT a0-605a55.rebind.fixture.test:443 - HIER_DIRECT/9.9.9.9 -",
+        "1788965862.660      9 192.168.64.1 TCP_TUNNEL/200 39 CONNECT a1-605a55.rebind.fixture.test:443 - HIER_DIRECT/9.9.9.9 -",
+        "1788965862.671      9 192.168.64.1 TCP_TUNNEL/200 39 CONNECT a2-605a55.rebind.fixture.test:443 - HIER_DIRECT/9.9.9.9 -",
+        "1788965864.192     13 192.168.64.1 TCP_TUNNEL/200 39 CONNECT a0-605a55.rebind.fixture.test:443 - HIER_DIRECT/9.9.9.9 -",
+        "1788965864.204      9 192.168.64.1 TCP_TUNNEL/200 39 CONNECT a1-605a55.rebind.fixture.test:443 - HIER_DIRECT/9.9.9.9 -",
+        "1788965864.224     18 192.168.64.1 TCP_TUNNEL/200 39 CONNECT a2-605a55.rebind.fixture.test:443 - HIER_DIRECT/9.9.9.9 -"
+      ]
     },
     {
       "name": "dns-mixed-answers",
@@ -366,7 +420,7 @@
       "detail": "control public-only.fixture.test established, and both mixed-answer names (public-first and private-first) were denied \u2014 every address in the answer set is validated, not only the first one or the routable one",
       "cause": "private-ip",
       "observed": "denied",
-      "elapsed_ms": 20.9,
+      "elapsed_ms": 20.6,
       "attempts": [
         {
           "n": 0,
@@ -374,7 +428,7 @@
           "local_resolved": [],
           "outcome": "established",
           "status": 200,
-          "elapsed_ms": 13.2,
+          "elapsed_ms": 11.7,
           "detail": "HTTP/1.1 200 Connection established",
           "cause": null
         },
@@ -384,7 +438,7 @@
           "local_resolved": [],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 3.9,
+          "elapsed_ms": 4.6,
           "detail": "HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
           "cause": "private-ip"
         },
@@ -394,26 +448,43 @@
           "local_resolved": [],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 3.7,
+          "elapsed_ms": 4.2,
           "detail": "HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.",
           "cause": "private-ip"
         }
       ],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965864.306     10 192.168.64.1 TCP_TUNNEL/200 39 CONNECT public-only.fixture.test:443 - HIER_DIRECT/9.9.9.9 -",
+        "1788965864.309      2 192.168.64.1 TCP_DENIED/403 522 CONNECT mixed-public-first.fixture.test:443 - HIER_NONE/- text/html",
+        "1788965864.314      2 192.168.64.1 TCP_DENIED/403 522 CONNECT mixed-private-first.fixture.test:443 - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "ptr-allowlist",
       "group": "full",
       "expectation": "deny",
-      "outcome": "skip",
-      "detail": "the local DNS fixture is not observable from here, so the PTR claim for 1.0.0.1 cannot be known to be live. Run `ipl-lab up` and `ipl-lab check`, which wires the fixture's container through automatically",
-      "cause": null,
+      "outcome": "pass",
+      "detail": "denied: HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: the destination is a bare IP address, and this proxy allowlists destinations by hostname only.; the engine performed no reverse lookup, so the allowlist was never offered the PTR name",
+      "cause": "ip-literal-destination",
       "observed": null,
-      "elapsed_ms": 14.4,
-      "attempts": [],
+      "elapsed_ms": 28.5,
+      "attempts": [
+        {
+          "n": 0,
+          "target": "1.0.0.1:443",
+          "local_resolved": [],
+          "outcome": "denied",
+          "status": 403,
+          "elapsed_ms": 2.6,
+          "detail": "HTTP/1.1 403 Forbidden \u2014 403 Forbidden internet-proxy-locally denied this request: the destination is a bare IP address, and this proxy allowlists destinations by hostname only.",
+          "cause": "ip-literal-destination"
+        }
+      ],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965864.356      0 192.168.64.1 TCP_DENIED/403 510 CONNECT 1.0.0.1:443 - HIER_NONE/- text/html"
+      ]
     },
     {
       "name": "connect-sni-mismatch",
@@ -423,10 +494,12 @@
       "detail": "mismatched SNI accepted: tunnel established, TLSv1.3 handshake OK (SNI=files.pythonhosted.org)",
       "cause": "sni-mismatch",
       "observed": "allowed",
-      "elapsed_ms": 29.0,
+      "elapsed_ms": 28.4,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965864.425     27 192.168.64.1 TCP_TUNNEL/200 4699 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
+      ]
     },
     {
       "name": "connect-raw-tunnel",
@@ -436,10 +509,12 @@
       "detail": "raw bytes traversed the tunnel; response: type=alert(21) version=TLS1.2 length=2 -> alert level=fatal(2) description=decode_error(50); type=alert(21) version=TLS1.2 length=2 -> alert level=warning(1) description=close_notify(0)",
       "cause": "non-tls-in-tunnel",
       "observed": "allowed",
-      "elapsed_ms": 22.8,
+      "elapsed_ms": 24.3,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965864.474     22 192.168.64.1 TCP_TUNNEL/200 53 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
+      ]
     },
     {
       "name": "concurrency-sanity",
@@ -449,10 +524,21 @@
       "detail": "10 concurrent CONNECTs to an allowed host: 10 established, 0 denied/failed",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 23.8,
+      "elapsed_ms": 17.2,
       "attempts": [],
       "headers": {},
-      "engine_logs": []
+      "engine_logs": [
+        "1788965864.514     11 192.168.64.1 TCP_TUNNEL/200 39 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -",
+        "1788965864.514     12 192.168.64.1 TCP_TUNNEL/200 39 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -",
+        "1788965864.516     13 192.168.64.1 TCP_TUNNEL/200 39 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -",
+        "1788965864.516     12 192.168.64.1 TCP_TUNNEL/200 39 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -",
+        "1788965864.516     12 192.168.64.1 TCP_TUNNEL/200 39 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -",
+        "1788965864.517     13 192.168.64.1 TCP_TUNNEL/200 39 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -",
+        "1788965864.517     12 192.168.64.1 TCP_TUNNEL/200 39 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -",
+        "1788965864.517     13 192.168.64.1 TCP_TUNNEL/200 39 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -",
+        "1788965864.518     12 192.168.64.1 TCP_TUNNEL/200 39 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -",
+        "1788965864.518     12 192.168.64.1 TCP_TUNNEL/200 39 CONNECT pypi.org:443 - HIER_DIRECT/151.101.192.223 -"
+      ]
     }
   ]
 }

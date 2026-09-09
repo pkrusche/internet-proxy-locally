@@ -15,6 +15,17 @@ COMMAND_TIMEOUT = 30
 BUILD_TIMEOUT = 1800
 
 
+def log_command(binary: str, name: str, lines: int | None = None) -> list[str]:
+    """Build log arguments for Docker or Apple's container CLI."""
+    cmd = [binary, "logs"]
+    apple = Path(binary).name == "container"
+    if lines is not None:
+        cmd += ["-n" if apple else "--tail", str(lines)]
+    if not apple:
+        cmd.append("--timestamps")
+    return cmd + [name]
+
+
 class Backend:
     """Thin wrapper over the docker / Apple `container` CLIs.
 
@@ -233,7 +244,7 @@ class Backend:
         return subprocess.run(cmd, check=False).returncode
 
     def tail_logs(self, name: str, lines: int = 40) -> str:
-        proc = self._run("logs", "--tail", str(lines), name, check=False)
+        proc = self._run(*log_command(self.bin, name, lines)[1:])
         out = ((proc.stdout or "") + (proc.stderr or "")).strip().splitlines()
         return "\n".join(out[-lines:])
 
