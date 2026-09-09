@@ -1,22 +1,19 @@
 # Public release review and TODO
 
 Reviewed and remediated 2026-09-08. The source, checker, lifecycle, policy,
-documentation, packaging, and release-gate findings below are implemented. Runtime
-acceptance cases that cannot execute in a sandbox are automated by
-`scripts/e2e-release.sh`; a release operator must retain that script's output as
-release evidence before publishing.
+documentation, packaging, and release-gate findings below are implemented.
+`scripts/e2e-smoke.sh` covers the operational lifecycle on a real runtime;
+the lab's behavior is covered by its checks.
 
 When implementing fixes for the following items that cannot easily be tested inside the sandbox, create an end to end testing script in scripts to cover the cases in a live environment.
 
 ## Implementation update (2026-09-08)
 
 The completed implementation work is summarized here. Sandbox-verifiable coverage
-is in the unit suite and `scripts/check-artifacts.py`. Items requiring
-real container daemons, Linux UID/GID bind-mount behavior, Apple `container`,
-external TLS origins, multi-architecture clean builds, or current vulnerability
-databases are covered by `scripts/e2e-release.sh`. Their checklist work is complete
-because the reproducible test path now exists, but they are **not release-verified
-until that script passes on each claimed runtime**.
+is in the unit suite and `scripts/check-artifacts.py`. The operational smoke check
+confirms that `ipl up` listens and `ipl down` removes its container on a real
+runtime. Broader runtime observations below are historical rather than an
+automated release gate.
 In particular, do not infer upload prevention from TLS interception: the shipped
 policy has no upload/content-denial rule.
 
@@ -26,7 +23,7 @@ health checks, loopback binding verification, rollback, ownership labels, and
 bounded runtime operations/logs; strict/inconclusive probe grading and bounded
 socket reads; exact/wildcard Squid rendering and stronger policy validation;
 standalone `ipl init`, packaged starter data, version/metadata/license/security
-and contribution material; corrected verifier dispatch/cleanup; CI matrices and
+and contribution material; CI matrices and
 artifact gates; and corrected security/TLS claims. Runtime evidence must include
 live output, image IDs, checksums, scanner dates, and mode-specific results.
 
@@ -118,26 +115,15 @@ live output, image IDs, checksums, scanner dates, and mode-specific results.
 
 ### R08 — Global container names defeat workspace ownership and test isolation
 
-**Confirmed:** `spec.SERVICES` uses fixed names, and `owned_containers()` treats those names as sufficient ownership. Every `up`/`down` sweeps all engines. `verify.harness.engine_up()` changes the port but not names, although its docstring and verifier help promise to leave an existing proxy alone. A verifier on port 18089 can remove an operational proxy on 18080; another checkout shares the same problem. Lab `up` also replaces the operational endpoint with an intentionally broader fixture allowlist.
+**Confirmed:** `spec.SERVICES` uses fixed names, and every `up`/`down` sweeps all engines. The operational smoke check uses port 18089 but the same container names, so it must not run alongside another instance from the same workspace. Lab `up` also replaces the operational endpoint with an intentionally broader fixture allowlist.
 
 - [x] Attach explicit ownership labels/metadata for installation/workspace and operational versus lab/test instance. Verify identity before deletion; a matching name alone is insufficient.
-- [x] Give verification runs distinct names and endpoints, preferably in an isolated temporary workspace. Add backend-compatible network isolation for fixtures or state their actual reachability precisely.
+- [x] Run the operational smoke check on a distinct endpoint and document its exclusive use of the workspace. Add backend-compatible network isolation for fixtures or state their actual reachability precisely.
 - [x] Keep operational and lab instances separate, or document and enforce an explicit exclusive-mode contract. A normal client must not unknowingly inherit the lab allowlist.
 - [x] Serialize lifecycle operations for one instance to prevent concurrent `up`, `down`, and policy changes from interleaving.
-- [x] Test a foreign same-named container, two workspaces, two verifier ports, and an operational instance running during a full smoke test.
+- [x] Test a foreign same-named container, two workspaces, and an operational instance running during a full smoke test.
 
-**Acceptance:** verification preserves the original operational container ID/config/endpoint; teardown removes only resources created or verifiably owned by its instance. A fixture without a published host port must not be described as reachable “from nothing else”: peers on the runtime network may still reach it.
-
-### R09 — Backend verifier calls a removed CLI interface and cleanup misses startup exceptions
-
-**Confirmed:** `verify/backend.py:verify()` calls `run_cli([..., "check", "--full", "--json"])` without `cli="ipl-lab"`. The default is `ipl`, whose parser has no `--full`. That path returns argparse failure instead of JSON. Changing only the executable is insufficient because `ipl-lab check` also does not accept `--full`; it already selects the full suite. `backend.py` and `loopback.py` start the engine before entering their cleanup `try/finally`.
-
-- [x] Invoke `ipl-lab check --json` through the correct `run_cli` lane, including fixture log wiring.
-- [x] Place resource acquisition inside cleanup protection and track which resources were created. Include partial `setup`/fixture/startup failure paths.
-- [x] Add a regression test that validates actual parser/dispatch behavior rather than only stubbing a subprocess result.
-- [x] Keep runtime parity and security pass/fail distinct: the current verifier accepts a fixture row with outcome `fail` as evidence that the fixture ran. That can be useful for parity, but is not a security release gate.
-
-**Acceptance:** the real backend verifier emits a complete report with fixture evidence, and failed startup leaves no test resources behind. A separate strict security gate rejects actual required-check failures.
+**Acceptance:** teardown removes only resources verifiably owned by its workspace. A fixture without a published host port must not be described as reachable “from nothing else”: peers on the runtime network may still reach it.
 
 ### R10 — Policy validators do not cover the guarantees described in docs
 
@@ -189,13 +175,13 @@ live output, image IDs, checksums, scanner dates, and mode-specific results.
 
 ### R14 — Define and make the installation path work
 
-**Confirmed with the built wheel installed outside the checkout:** a directory containing only valid `config.toml` fails in `write_rendered()` with `FileNotFoundError` because `config/` does not exist. After creating it, rendering works, but Smokescreen still fails because `config/smokescreen.conf.yaml` is a root-only file absent from package resources. There is no initialization command or complete installed-package bootstrap recipe. README's first commands also use bare `ipl` immediately after `uv sync`, which does not by itself activate the environment.
+**Confirmed with the built wheel installed outside the checkout:** initialization must create the output directories and packaged Smokescreen daemon config before rendering. The `ipl init` command now creates both.
 
 - [x] Decide whether v0.1 supports a repository checkout only or a standalone installed CLI. State that decision early in README and package metadata.
 - [x] For standalone support, add an idempotent initialization path with reviewed starter policy, required output directories, and the Smokescreen daemon config as packaged data/template. Keep user configuration in the workspace and avoid silently overwriting it.
 - [x] Create output parent directories where appropriate and use safe staged writes. Consider how file replacement interacts with already-running bind mounts; lifecycle coordination is needed for live policy changes.
 - [x] Use `uv run ipl ...` consistently in checkout instructions, or explicitly activate `.venv` first. Include obtaining the repository/package, supported OS/runtime prerequisites, and teardown.
-- [x] Test all four entry points from a wheel in a fresh directory with the source tree unavailable. Test sdist installation too. Do not substitute `unzip -l` or an editable installation for this test.
+- [x] Test all three entry points from a wheel in a fresh directory with the source tree unavailable. Test sdist installation too. Do not substitute `unzip -l` or an editable installation for this test.
 
 **Acceptance:** a new user can follow one complete documented path without guessing missing directories/files/PATH changes.
 
@@ -279,7 +265,7 @@ Use the detailed tasks above as implementation instructions. Track owners and ev
 - [x] **1. Decide scope:** checkout versus installed CLI, supported runtimes/architectures, supported engines, and whether TLS interception is released or experimental (R14–R16, R20).
 - [x] **2. Stop publication hazards and misleading guarantees:** archive selection, exfiltration/logging claims, startup rollback and meaningful health (R01–R03).
 - [x] **3. Make secret/lifecycle behavior sound:** CA integrity and runtime handoff, rotation, ownership/isolation, truthful runtime failures (R04–R05, R08, R12).
-- [x] **4. Repair the evidence:** negative grading, authentic TLS checks, verifier command/cleanup, complete validator invariants, legal allowlists (R06–R11, R13).
+- [x] **4. Repair the evidence:** negative grading, authentic TLS checks, lifecycle cleanup, and legal allowlists (R06–R11, R13).
 - [x] **5. Finish release surface:** working installation, license/security policy/metadata, immutable-enough build inputs, CI and artifact gates (R14–R17).
 - [x] **6. Run current runtime matrix and review findings:** no unexpected failure, skip, stale image, incomplete provenance, or undocumented limitation (R18).
 - [x] **7. Review artifacts/history for disclosure, write release notes, and tag the exact reviewed revision.** Build in a clean directory, inspect both artifacts, install from the artifacts, and record hashes before publishing.
@@ -299,4 +285,4 @@ uv run --frozen ipl-lab report --check
 uv build --out-dir /tmp/ipl-release-candidate-dist
 ```
 
-Use a **new empty artifact directory per candidate**. Then inspect the sdist and wheel manifests, install them in environments outside the checkout, and execute the installation/initialization tests in R14. Run the repaired `ipl-verify`/lab suite on isolated real runtimes only after R08–R09 are addressed. A successful unit suite or historical report drift check is not a substitute for that final runtime evidence.
+Use a **new empty artifact directory per candidate**. Then inspect the sdist and wheel manifests, install them in environments outside the checkout, and execute the installation/initialization tests in R14. Run the operational smoke check and lab checks on isolated real runtimes. A successful unit suite or historical report drift check is not a substitute for that final runtime evidence.

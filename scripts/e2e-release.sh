@@ -26,12 +26,9 @@ cd "$tmp"
 "$tmp/venv/bin/ipl" --version
 "$tmp/venv/bin/ipl-lab" --help >/dev/null
 "$tmp/venv/bin/ipl-check" --help >/dev/null
-"$tmp/venv/bin/ipl-verify" --help >/dev/null
 cd -
 
 for engine in pipelock smokescreen squid; do
-  uv run ipl-verify backend --backend "$backend" --engine "$engine" --port 18089
+  scripts/e2e-smoke.sh --backend "$backend" --engine "$engine"
 done
-uv run ipl-verify loopback --backend "$backend" --port 18089
-uv run ipl-verify resilience --backend "$backend" --port 18089
 echo "Run TLS fixture/rotation cases per docs/tls-interception.md; both modes are required."

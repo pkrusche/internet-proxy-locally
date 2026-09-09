@@ -20,8 +20,7 @@ from pathlib import Path
 
 from internet_proxy_locally.checks.egress import dns_mixed, dns_rebind, ptr_allowlist
 
-# Run from the repository root, so everything imports by name. See the
-# comment in `verify.harness`.
+# Run from the repository root, so everything imports by package name.
 from internet_proxy_locally.constants import DNS_FIXTURE, ENGINES
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.images import IMAGES

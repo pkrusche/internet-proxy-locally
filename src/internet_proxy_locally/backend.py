@@ -141,11 +141,8 @@ class Backend:
         """(host address, host port, container port) for each published port.
 
         The endpoint is supposed to be loopback-only, and `--publish
-        ip:host:container` is the whole of that guarantee — a release that
-        quietly ignored the address half would widen it to every interface
-        with no error and no visible change. This reads the binding back out
-        of the runtime so that ipl-verify loopback can assert it
-        rather than trust it (docs/lab.md).
+        ip:host:container` is the whole of that guarantee. Reading the
+        runtime's binding back lets startup confirm it was honored.
 
         Docker:          HostConfig.PortBindings {"8888/tcp": [{HostIp, HostPort}]}
         Apple container: configuration.publishedPorts [{hostAddress, hostPort,
@@ -267,29 +264,6 @@ class Backend:
     def image_present(self, ref: str) -> bool:
         proc = self._image("inspect", ref, check=False)
         return proc.returncode == 0
-
-    def image_size(self, ref: str) -> int:
-        """On-disk size of a local image in bytes; 0 when it cannot be read.
-
-        Reported by `ipl-verify resilience` rather than enforced —
-        image size is one of the operational numbers the engine choice is
-        weighed on, and it was never collected. Docker puts it at `Size`;
-        Apple `container` reports the manifest's layer sizes instead, so
-        the two are summed to something comparable rather than equal.
-        """
-        entry = self._inspect_entry("image", "inspect", ref)
-        for key in ("Size", "size", "VirtualSize"):
-            value = entry.get(key)
-            if isinstance(value, (int, float)) and value > 0:
-                return int(value)
-        variants = entry.get("variants") or entry.get("manifests") or []
-        total = 0
-        for variant in variants if isinstance(variants, list) else []:
-            for layer in (variant or {}).get("layers") or []:
-                value = (layer or {}).get("size")
-                if isinstance(value, (int, float)):
-                    total += int(value)
-        return total
 
     def build(self, *, tag: str, dockerfile: Path, context: Path) -> None:
         """Build one image. No `--build-arg`: a Dockerfile that took one

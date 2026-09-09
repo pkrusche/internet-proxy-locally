@@ -111,9 +111,8 @@ def wait_until(probe: Callable[[], object], timeout: float, interval: float = 0.
     out a budget it already knows the answer to. On timeout the return is
     `None`, which is how the caller tells "gave up" from "decided".
 
-    This was three loops before: the engine health check, the DNS fixture's
-    address poll, and the resilience script's settle wait. They had three
-    different sleep intervals and no reason for any of them to differ.
+    The engine health check and DNS fixture address poll share this so
+    their timeout behavior stays consistent.
     """
     deadline = time.monotonic() + timeout
     while True:

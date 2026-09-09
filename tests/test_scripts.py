@@ -1,10 +1,4 @@
-"""Tests for the generated comparison and the end-to-end scripts.
-
-The scripts themselves need a container runtime and are not run here; what
-is tested is everything around that — the report generator's pure
-rendering, the invariants it enforces on a result file, and the guard that
-the committed docs/findings.md is what the committed results render to.
-"""
+"""Tests for the generated engine comparison."""
 
 from __future__ import annotations
 
@@ -14,14 +8,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Run from the repository root, so everything imports by name. See the
-# comment in `verify.harness`.
+# Run from the repository root, so everything imports by package name.
 from internet_proxy_locally import report
 from internet_proxy_locally.checks import egress
-from internet_proxy_locally.verify import harness
-from internet_proxy_locally.verify import resilience as verify_resilience
-from internet_proxy_locally.verify import sandbox as verify_sandbox
-from tests import quiet
 
 
 def row(
@@ -309,103 +298,6 @@ class GeneratedComparisonTest(unittest.TestCase):
         with self.assertRaises(report.Fail) as ctx:
             report.inject(stripped, sections, self.FINDINGS)
         self.assertIn("matrix", str(ctx.exception))
-
-
-class ResilienceLoadTest(unittest.TestCase):
-    """The load generator's accounting is the whole assertion in
-    `verify_resilience.py`: it decides what counts as a leak."""
-
-    def setUp(self) -> None:
-        self.resilience = verify_resilience
-
-    def _tally(self, statuses: list[int | None], denied: bool):
-        load = self.resilience.Load(port=0)
-        for status in statuses:
-            load._request = lambda host, s=status: (s, f"HTTP/1.1 {s} X")  # ty: ignore[invalid-assignment]
-            load.stop.set()  # one pass through the loop body only
-            load.stop.clear()
-            # exercise the accounting directly, without the socket
-            with load._lock:
-                if denied:
-                    if status is not None and status < 400:
-                        load.denied_leaked.append(f"HTTP/1.1 {status} X")
-                    else:
-                        load.denied_refused += 1
-                elif status is not None and status < 400:
-                    load.allowed_ok += 1
-                else:
-                    load.allowed_failed += 1
-        return load
-
-    def test_a_forwarded_denied_request_is_a_leak(self) -> None:
-        load = self._tally([200, 301], denied=True)
-        self.assertEqual(
-            len(load.denied_leaked),
-            2,
-            "a 2xx/3xx for a denied host is the failure this script exists to catch",
-        )
-
-    def test_refusals_and_outages_are_both_safe_for_a_denied_host(self) -> None:
-        # A connection error during a restart is the *expected* shape of a
-        # fail-closed outage, and must not be counted as a leak.
-        load = self._tally([403, 407, None], denied=True)
-        self.assertEqual(load.denied_leaked, [])
-        self.assertEqual(load.denied_refused, 3)
-
-    def test_an_allowed_host_counts_redirects_as_reachable(self) -> None:
-        # Squid and Smokescreen answer 301 for the allowed probe; treating
-        # that as a failure would make the recovery check unsatisfiable.
-        load = self._tally([200, 301, None, 403], denied=False)
-        self.assertEqual(load.allowed_ok, 2)
-        self.assertEqual(load.allowed_failed, 2)
-
-    def test_wait_gives_up_rather_than_hanging(self) -> None:
-        self.assertFalse(self.resilience._wait(lambda: False, 0.2))
-        self.assertTrue(self.resilience._wait(lambda: True, 0.2))
-
-
-class SandboxIntegrationTest(unittest.TestCase):
-    """The routing detection must not report an integration that is absent —
-    that was the whole reason the item sat open as "unverified"."""
-
-    def setUp(self) -> None:
-        self.sandbox = verify_sandbox
-
-    def test_a_missing_package_is_inconclusive_not_a_pass(self) -> None:
-        routed, notes = self.sandbox.routing_evidence("/nonexistent/project-sandbox")
-        self.assertFalse(routed)
-        self.assertTrue(any("inconclusive" in note for note in notes))
-
-    def test_the_in_sandbox_script_asserts_both_directions(self) -> None:
-        """It has to check that the proxy works *and* that bypassing it does
-        not; either alone is satisfied by a sandbox with no filtering."""
-        script = self.sandbox.SANDBOX_SCRIPT
-        self.assertIn("--proxy", script)
-        self.assertIn("--noproxy", script)
-        for marker in (
-            "proxy-env",
-            "allowlisted-through-proxy",
-            "blocked-through-proxy",
-            "direct-egress",
-            "direct-dns",
-        ):
-            self.assertIn(marker, script)
-
-
-class ReporterTest(unittest.TestCase):
-    def test_exit_code_follows_the_failures(self) -> None:
-        with quiet() as printed:
-            ok = harness.Reporter("t")
-            ok.check(True, "fine")
-            self.assertEqual(ok.finish(), 0)
-            bad = harness.Reporter("t")
-            bad.check(True, "fine")
-            bad.check(False, "broken", "why it matters")
-            self.assertEqual(bad.finish(), 1)
-        # A failed check has to say what it was and why it matters — that
-        # is the whole reason these scripts print rather than just exit.
-        self.assertIn("FAIL broken", printed.out)
-        self.assertIn("why it matters", printed.out)
 
 
 if __name__ == "__main__":

@@ -127,29 +127,13 @@ To compare two runs directly rather than re-reading the tables:
 uv run ipl-check --diff results/pipelock.json results/smokescreen.json
 ```
 
-## The end-to-end scripts
+## Operational smoke check
 
-The unit suite drives a fake backend: it pins down the CLI arguments
-`ipl` emits and the JSON it parses, but cannot tell whether a real
-runtime *acts* on them. These scripts assert the rest, each printing a
-named check per claim so a run can be pasted as evidence rather than
-summarized from memory.
-
-| | |
-| --- | --- |
-| `ipl-verify loopback` | the endpoint is bound to loopback and nothing else — structurally (the runtime reports the binding) and behaviorally (it refuses on every non-loopback address) |
-| `ipl-verify backend` | one backend end to end, fixture included: image, start, published port, fixture address read from *this* runtime's JSON shape, the engine resolving through it, and `down` removing both |
-| `ipl-verify resilience` | crash and `restart` under continuous load: not one request for a denied host may ever succeed |
-| `ipl-verify sandbox` | whether `project-sandbox` on this machine actually routes through this proxy (as of 2026-08-28: it does not) |
-
-Pass `--port 18081` to leave a proxy already serving 18080 alone.
-
-**Re-run `ipl-verify loopback` after every backend upgrade.** The
-endpoint being loopback-only is one `--publish` argument, and a release that
-stopped honouring the address half would widen it to every interface with no
-error and no visible change in `ipl`'s output. If a release fails it,
-**do not substitute a broader binding** — a backend that cannot express a
-loopback-only publication is one this repository cannot use.
+`scripts/e2e-smoke.sh --backend docker` exercises the real `ipl` lifecycle.
+It starts the operational proxy, confirms its TCP endpoint is listening,
+runs `ipl down`, and confirms the engine container is gone. Pass `--engine`
+to select an engine. The lab needs no separate lifecycle smoke check because
+`ipl-lab check` exercises the running engine and fixture directly.
 
 ## Running the unit suite
 
@@ -171,24 +155,15 @@ The tests do not copy the code into a temporary directory. They copy the
 `IPL_ROOT` for the workspace `up` regenerates `config/` in — so what runs
 is always the checkout's code against an isolated repository.
 
-The end-to-end scripts above are **not** part of this suite: they need a
-real container runtime, and the unit suite runs against a fake backend and
-a mock proxy with no network egress at all.
+The operational smoke check is **not** part of this suite: it needs a real
+container runtime, while the unit suite uses a fake backend and mock proxy.
 
 ## Backend parity
 
-Both backends are verified end to end for `setup`, image build, `up`,
-loopback publication, `status`/`logs`/`check`/`down`, and the DNS
-fixture. The fixture is the one place a real backend difference is
-load-bearing: the fixture container's address has to be read out of
-`inspect`, which Docker reports under `NetworkSettings` and Apple
-`container` under `status.networks[]` as a CIDR.
-
-| When | Backend and release | What |
-| --- | --- | --- |
-| 2026-08-25 | Apple `container` | Squid, and the DNS fixture on all three engines |
-| 2026-08-28 | Docker 29.7.2 (build a7dcaa6) | `verify_backend.py --engine squid`: 13/13 including the fixture chain; `verify_loopback.py`: 5/5; the full engine matrix |
-| 2026-08-28 | Apple `container` CLI 1.2.0 (commit 6e65319) | `verify_loopback.py --running`: 5/5 — `--publish ip:host:container` still honoured |
+Both backends use the same `setup`, image build, `up`,
+`status`/`logs`/`check`/`down`, and DNS fixture paths. The fixture container's
+address is read from `inspect`, which Docker reports under `NetworkSettings`
+and Apple `container` under `status.networks[]` as a CIDR.
 
 ## Upgrading the fixture
 

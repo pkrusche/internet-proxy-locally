@@ -463,8 +463,7 @@ paired with `ssl_bump bump all`, never one without the other.
 
 ## Operational numbers
 
-Measured 2026-08-28 on Docker by `ipl-verify resilience`. Reported,
-not graded: they are inputs to a judgement, not a pass or a fail.
+Measured 2026-08-28 on Docker. These are reported observations, not grades.
 
 | | Pipelock | Smokescreen | Squid |
 | --- | --- | --- | --- |

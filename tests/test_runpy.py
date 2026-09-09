@@ -850,8 +850,7 @@ class RunPyUnitTest(unittest.TestCase):
 
     def test_published_ports_parses_docker_and_apple_shapes(self) -> None:
         """The loopback binding is one `--publish` argument, and reading it
-        back is how ipl-verify loopback asserts it instead of
-        trusting it (docs/lab.md, "Backend parity")."""
+        back lets startup confirm the runtime honored it."""
 
         def fake(payload, returncode=0):
             backend = Backend("docker")

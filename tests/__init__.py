@@ -34,10 +34,9 @@ class Captured:
 def quiet():
     """Capture stdout and stderr from an entry point called in-process.
 
-    `checks.egress`, `verify.harness` and `run.fail_on` are CLIs:
-    printing a result table, or every configuration problem before failing
-    closed, is their contract rather than a side effect to suppress in the
-    code under test. But a test that calls one writes that output into the
+    `checks.egress` is a CLI: printing a result table is its contract rather
+    than a side effect to suppress in the code under test. But a test that
+    calls one writes that output into the
     middle of the suite's own, and enough of them buried the `Ran N tests`
     line entirely.
 

@@ -6,7 +6,7 @@
 #     uv run ty check
 #
 # Nothing here starts a container or touches the network, so it is the fast
-# gate; the container-backed suites (`ipl-verify`, `ipl-lab`) are not run
+# gate; the container-backed lab suite is not run
 # from CI because they need a real container runtime.
 #
 # The `tests` job runs the unittest suite (`tests/`), which per CLAUDE.md
@@ -62,7 +62,7 @@ jobs:
           enable-cache: true
 
       # No --only-group here, unlike ruff: ty resolves imports, so it needs
-      # jinja2 and pyyaml actually installed. Without them it reports four
+      # the runtime dependencies installed. Without them it reports
       # unresolved-import errors instead of checking anything.
       - name: ty check
         run: uv run --frozen ty check
@@ -82,7 +82,7 @@ jobs:
           python-version: ${{ matrix.python }}
 
       # No --only-group here either: the suite imports the package itself,
-      # so it needs jinja2 and pyyaml installed the same way `ty check` does.
+      # so it needs the runtime dependencies installed the same way `ty check` does.
       - name: run tests
         run: uv run --frozen python -m unittest discover -s tests -t .
 

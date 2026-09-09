@@ -220,10 +220,9 @@ def main(argv: list[str] | None = None) -> int:
     return common.main(build_parser(), argv)
 
 
-# `python -m internet_proxy_locally.cli.lab` as well as the console
-# script: the subprocess callers (the egress checker, the verify
-# scripts) use the module form, which does not depend on the wrapper
-# being on PATH.
+# `python -m internet_proxy_locally.cli.lab` as well as the console script:
+# subprocess callers can use the module form without depending on the
+# wrapper being on PATH.
 if __name__ == "__main__":
     import sys
 

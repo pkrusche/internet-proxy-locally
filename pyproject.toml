@@ -33,14 +33,11 @@ Issues = "https://github.com/internet-proxy-locally/internet-proxy-locally/issue
 
 # `ipl` is the operational lane and `ipl-lab` the measurement one; the
 # split between them is described in the package docstring. `ipl-check` is
-# the egress checker, which `ipl check` also invokes as a subprocess, and
-# `ipl-verify` runs the end-to-end scripts that need a real container
-# runtime.
+# the egress checker, which `ipl check` also invokes as a subprocess.
 [project.scripts]
 ipl = "internet_proxy_locally.cli.run:main"
 ipl-lab = "internet_proxy_locally.cli.lab:main"
 ipl-check = "internet_proxy_locally.checks.egress:main"
-ipl-verify = "internet_proxy_locally.verify.cli:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -27,7 +27,7 @@ Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and Docker or Apple
 `container`. A wheel installation can initialize an empty working directory
 with `ipl init`; it never overwrites an existing policy. Teardown is `ipl down`.
 `uv sync` installs this repository as a package and puts `ipl`, `ipl-lab`,
-`ipl-check` and `ipl-verify` in the environment; `uv run ipl ...` picks up
+and `ipl-check` in the environment; `uv run ipl ...` picks up
 the interpreter from `.python-version` and the dependencies from
 `pyproject.toml`. There is no bare-interpreter path to keep
 working, so nothing is imported lazily to preserve one.
@@ -138,5 +138,4 @@ Smokescreen cannot do this at all; see
 Separately: `project-sandbox` does **not** currently route sandboxes through
 this proxy. It sets no `HTTP_PROXY` and filters egress with its own
 allowlist, so exporting the variables by hand is what puts a client behind
-this proxy today. `ipl-verify sandbox` checks that against the
-installed tool rather than assuming it.
+this proxy today.

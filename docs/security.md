@@ -42,9 +42,8 @@ an engine other than the default.
   that page before relying on it. Smokescreen cannot do this at all; the
   gap is unconditional there.
 * Anything reachable without traversing the proxy. Preventing direct egress
-  is `project-sandbox`'s iptables responsibility — and
-  `ipl-verify sandbox` records that, as installed here, it does not
-  yet route through this proxy at all.
+  is `project-sandbox`'s iptables responsibility. The installed sandbox does
+  not currently route through this proxy.
 * Malicious content in allowed responses.
 
 ## Non-goals
@@ -94,17 +93,18 @@ different policies. v1 has one.
   allowlist is consulted, because Squid would otherwise retry the miss as a
   reverse lookup and match whatever name the address's PTR record claims —
   a bypass measured and then closed ([findings.md](findings.md) §5).
-  `ptr-allowlist` guards it, and `up` refuses a policy that drops the rule.
+  `ptr-allowlist` guards the behavior, and the deny rule is fixed in the
+  Squid template.
 * For Squid, where the SSRF floors are configuration rather than engine
-  code, `up` additionally refuses a policy that has lost a required deny
-  range or that places the allowlist above those denies — `http_access` is
-  first-match-wins, so rule order *is* the policy.
+  code, the fixed template places the required deny ranges above the
+  allowlist — `http_access` is first-match-wins, so rule order *is* the
+  policy. The lab checks exercise the resulting behavior.
 * If the proxy container dies, nothing listens on `127.0.0.1:18080` — the
   sandbox loses Internet rather than gaining unfiltered access. There is no
   automatic restart policy; restarts are explicit.
 
-  **Measured 2026-08-28** (`ipl-verify resilience`, all three
-  engines): with two request streams running continuously — one for an
+  **Measured 2026-08-28** on all three engines: with two request streams
+  running continuously — one for an
   allowlisted host, one for a denied host — the container was removed
   mid-load and then restarted. The endpoint stopped accepting the moment
   the engine died, the allowed stream broke and recovered, and across the
@@ -157,13 +157,10 @@ The container publishes `127.0.0.1:18080` only. That is a convenience
 boundary, not the security boundary: the policy remains enforced even for
 traffic reaching the engine's internal address from another local container.
 
-That binding is one `--publish 127.0.0.1:…` argument, and a backend release
-that stopped honouring the address half would widen the endpoint to every
-interface silently. `ipl-verify loopback` re-checks it against each
-installed runtime — from the runtime's own report of the binding *and* by
-confirming the endpoint refuses every non-loopback address this host has —
-and is meant to be re-run after a backend upgrade ([lab.md](lab.md)). If a
-release ever fails it, the binding must not be widened to compensate.
+That binding is one `--publish 127.0.0.1:…` argument. During startup, `ipl`
+reads the published binding back from the runtime and refuses a result that
+does not match the configured loopback endpoint. The operational smoke check
+also confirms the endpoint accepts a TCP connection ([lab.md](lab.md)).
 
 ## Logging
 
