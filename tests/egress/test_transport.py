@@ -44,6 +44,63 @@ class SummarizeBodyTest(unittest.TestCase):
         )
 
 
+class TunnelCarriedTest(unittest.TestCase):
+    """A refusal that arrives after the `200` can only tear the tunnel
+    down, so "was anything carried?" is what the deny checks grade on
+    (transport.ProxyClient.tunnel_carried)."""
+
+    def _pair(self, close: str) -> transport.ProxyClient:
+        """A server that accepts and then either holds the connection open,
+        closes it cleanly (FIN), or resets it (RST). Returns a client whose
+        grace period is short enough not to slow the suite down."""
+        server = socket.socket()
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        self.addCleanup(server.close)
+        held: list[socket.socket] = []
+
+        def accept() -> None:
+            conn, _ = server.accept()
+            if close == "reset":
+                conn.setsockopt(
+                    socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
+                )
+                conn.close()
+            elif close == "fin":
+                conn.close()
+            else:
+                held.append(conn)  # keep the tunnel open past the grace period
+
+        thread = threading.Thread(target=accept, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 2.0)
+        self.addCleanup(lambda: [c.close() for c in held])
+        return transport.ProxyClient(
+            "127.0.0.1", server.getsockname()[1], timeout=2.0, tunnel_grace=0.2
+        )
+
+    def _carried(self, close: str) -> tuple[bool, str]:
+        client = self._pair(close)
+        sock = socket.create_connection((client.host, client.port), timeout=2.0)
+        self.addCleanup(sock.close)
+        return client.tunnel_carried(sock)
+
+    def test_an_open_tunnel_counts_as_carried(self) -> None:
+        carried, detail = self._carried("hold")
+        self.assertTrue(carried, detail)
+
+    def test_a_clean_close_counts_as_a_refusal(self) -> None:
+        carried, detail = self._carried("fin")
+        self.assertFalse(carried, detail)
+        self.assertEqual(denial.classify_denial(detail), "aborted-after-connect")
+
+    def test_a_reset_counts_as_a_refusal(self) -> None:
+        carried, detail = self._carried("reset")
+        self.assertFalse(carried, detail)
+        self.assertEqual(denial.classify_denial(detail), "aborted-after-connect")
+
+
 class ProxyClientConnectTest(unittest.TestCase):
     def test_a_failed_connect_does_not_orphan_its_socket(self) -> None:
         """`connect()` opens the socket itself, so it owns it on the error

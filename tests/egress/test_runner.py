@@ -78,6 +78,31 @@ class EgressSuiteTest(unittest.TestCase):
                 results[name].outcome, "pass", f"{name}: {results[name].detail}"
             )
 
+    def test_quick_suite_grades_a_late_denying_proxy_the_same_as_a_prompt_one(
+        self,
+    ) -> None:
+        """The regression that made 13 of Squid's rows fail at once.
+
+        On an `ssl-bump` port Squid answers every CONNECT `200` before
+        policy runs, so a denial can only abort the tunnel afterwards
+        (`TCP_DENIED_ABORTED/200 … HIER_NONE/-` — denied, no upstream
+        connection, nothing carried). It enforces exactly as it does in
+        tunnel mode; only the signal is worse. Reading the status line
+        alone reported that as an open proxy, which is the opposite of
+        what happened, so every deny row grades on the tunnel instead.
+        """
+        prompt = self.run_suite("pipelock", "strict", full=False)
+        late = self.run_suite("squid", "bumping", full=False)
+        self.assertEqual(
+            {name: r.outcome for name, r in late.items()},
+            {name: r.outcome for name, r in prompt.items()},
+        )
+        # Still distinguishable: only one of the two says why it refused.
+        self.assertEqual(late["blocked-host-connect"].cause, "aborted-after-connect")
+        self.assertEqual(
+            prompt["blocked-host-connect"].cause, "hostname-not-allowlisted"
+        )
+
     def test_open_proxy_is_reported_as_failure(self) -> None:
         # A mock that allows everything must make the deny tests fail.
         _, port = support.start_mock(
@@ -105,15 +130,18 @@ class EgressSuiteTest(unittest.TestCase):
         # pipelock is just a representative engine name here — grading no
         # longer varies by engine, only by what the mock actually did.
         results = self.run_suite("pipelock", "strict", full=True)
-        # A close alone cannot attribute policy without an origin trap.
+        # Both rows ask whether the illegitimate exchange happened, not
+        # what status came back: the mismatched handshake never completed
+        # (and the matching-SNI control did, which attributes it), and the
+        # plaintext request drew no response at all.
         self.assertEqual(
             results["connect-sni-mismatch"].outcome,
-            "error",
+            "pass",
             results["connect-sni-mismatch"].detail,
         )
         self.assertEqual(
             results["connect-raw-tunnel"].outcome,
-            "error",
+            "pass",
             results["connect-raw-tunnel"].detail,
         )
         # Fixture-dependent tests skip: *.nip.io is not in the mock allowlist.

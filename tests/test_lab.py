@@ -93,7 +93,7 @@ class LabCliTest(RunPyCliTest):
             proc = self.lab_cli(*args)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             policy = (self.tmp / "lab/config/squid.test.conf").read_text()
-            self.assertEqual("ssl_bump bump all" in policy, enabled)
+            self.assertEqual("ssl_bump bump bumpable" in policy, enabled)
             self.assertEqual(":/etc/squid/ca-key.pem:ro" in self.backend_log(), enabled)
 
     def test_up_starts_the_dns_fixture_and_points_the_engine_at_it(self) -> None:
@@ -482,7 +482,7 @@ class LabUnitTest(unittest.TestCase):
         rendered = render_test_policies(tls_interception=True)
         spec = ServiceSpec.load("squid")
         squid_text = rendered[test_config_path(spec)]
-        self.assertIn("ssl_bump peek step1", squid_text)
+        self.assertIn("ssl_bump peek step1 bumpable", squid_text)
 
     def test_fixture_hosts_is_generated_from_the_fixture_table(self) -> None:
         spec = fixture_spec()

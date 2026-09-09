@@ -548,7 +548,7 @@ class RunPyCliTest(unittest.TestCase):
             proc = self.run_cli(*args)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             policy = (self.tmp / "config" / "squid.conf").read_text()
-            self.assertEqual("ssl_bump bump all" in policy, enabled)
+            self.assertEqual("ssl_bump bump bumpable" in policy, enabled)
             self.assertEqual(":/etc/squid/ca-key.pem:ro" in self.backend_log(), enabled)
 
     def test_ca_init_status_rotate_export(self) -> None:
@@ -850,8 +850,21 @@ class RunPyUnitTest(unittest.TestCase):
         pipelock_text = rendered[REPO_ROOT / "config" / "pipelock.yaml"]
         self.assertIn("enabled: true", pipelock_text)
         squid_text = rendered[REPO_ROOT / "config" / "squid.conf"]
-        self.assertIn("ssl_bump peek step1", squid_text)
-        self.assertIn("ssl_bump bump all", squid_text)
+        self.assertIn("ssl_bump peek step1 bumpable", squid_text)
+        self.assertIn("ssl_bump bump bumpable", squid_text)
+
+    def test_the_peek_is_gated_by_the_floors_it_sits_below(self) -> None:
+        """Only destinations `http_access` would allow may be peeked."""
+        squid_text = render_policies(tls_interception=True)[
+            REPO_ROOT / "config" / "squid.conf"
+        ]
+        gate = "bumpable TLS_ports !metadata_ip !private_ip !ip_literal"
+        self.assertIn(f"ssl_bump peek step1 {gate}", squid_text)
+        self.assertIn(f"ssl_bump bump {gate}", squid_text)
+        # The fallback must be an ordinary tunnel, which http_access denies
+        # with a page — never `terminate`, which aborts just like a peek.
+        rules = [l for l in squid_text.splitlines() if l.startswith("ssl_bump ")]
+        self.assertEqual(rules[-1], "ssl_bump splice all")
 
     def test_squid_wildcard_filter_renders_an_anchored_suffix(self) -> None:
         for entry in ("*.github.com", "*.rebind.fixture.test", "*.io"):

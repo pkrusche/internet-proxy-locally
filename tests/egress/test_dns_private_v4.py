@@ -18,6 +18,16 @@ class DnsPrivateV4Test(unittest.TestCase):
         self.assertEqual(raw.outcome, "pass", raw.detail)
         self.assertEqual(len(raw.attempts), 4)
 
+    def test_records_a_late_denial_as_aborted_rather_than_established(self) -> None:
+        """Per-attempt evidence has to keep a 200-then-abort distinguishable
+        from a legible 4xx: both refuse, only one says why."""
+        _, port = support.start_mock(self, mode="bumping")
+        client = transport.ProxyClient("127.0.0.1", port, tunnel_grace=0.3)
+        raw = dns_private_v4.test_dns_private_v4(client)
+        self.assertEqual(raw.outcome, "pass", raw.detail)
+        self.assertEqual({a.outcome for a in raw.attempts}, {"aborted"})
+        self.assertEqual({a.cause for a in raw.attempts}, {"aborted-after-connect"})
+
     def test_fails_when_any_target_is_wrongly_allowed(self) -> None:
         _, port = support.start_mock(
             self, mode="strict", host_allowed=lambda host: True

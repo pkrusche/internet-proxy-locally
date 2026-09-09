@@ -16,6 +16,12 @@ from .tls import annotate_tls_bytes
 
 TIMEOUT = 8.0
 MAX_HEADER_BYTES = 64 * 1024
+# How long a tunnel is watched for a teardown before it counts as usable.
+# A proxy that refuses after answering CONNECT does so at once — Squid's
+# ssl-bump abort lands in the same millisecond as its own `200` — so this
+# only has to outlast scheduling jitter. A live tunnel pays it in full,
+# which is why nothing on the allow path calls tunnel_carried().
+TUNNEL_GRACE = 0.5
 
 
 @dataclass
@@ -57,10 +63,17 @@ def summarize_body(body: str, limit: int = 600) -> str:
 
 
 class ProxyClient:
-    def __init__(self, host: str, port: int, timeout: float = TIMEOUT):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        timeout: float = TIMEOUT,
+        tunnel_grace: float = TUNNEL_GRACE,
+    ):
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.tunnel_grace = tunnel_grace
 
     def _sock(self) -> socket.socket:
         sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
@@ -131,6 +144,44 @@ class ProxyClient:
             f"{first} — {body}" if body else (first or "(connection closed, no data)")
         )
         return None, status, detail
+
+    def tunnel_carried(self, sock: socket.socket) -> tuple[bool, str]:
+        """Is this tunnel usable, or did the proxy tear it down straight
+        after answering `200 Connection established`?
+
+        A proxy that decides against a CONNECT only *after* acknowledging
+        it cannot send an error page — the `200` is already on the wire —
+        so it closes or resets the tunnel instead. Squid does exactly this
+        on an `ssl-bump` port: it has to answer the CONNECT to obtain the
+        ClientHello it means to peek at, and a later `http_access` denial
+        can then only abort. Its own log is explicit —
+        `TCP_DENIED_ABORTED/200 … HIER_NONE/-`: denied, no upstream
+        connection, nothing carried.
+
+        Grading such a row on the status line alone reads an enforcing
+        proxy as a failure, so the deny checks ask this question instead:
+        did anything actually get through? A refusal that arrives late is
+        still a refusal — it is a worse *signal*, which is a finding of its
+        own (docs/tls-interception.md), not a hole.
+
+        Returns (False, detail) when the tunnel was torn down without
+        carrying anything, (True, detail) when it is open and usable.
+        Consumes nothing a caller needs: a live tunnel to an origin that
+        speaks second has nothing to read, which is the timeout case.
+        """
+        try:
+            sock.settimeout(self.tunnel_grace)
+            data = sock.recv(2048)
+        except TimeoutError:
+            return True, "tunnel stayed open"
+        except OSError as exc:
+            return False, f"tunnel reset immediately after CONNECT: {exc}"
+        if not data:
+            return False, "tunnel closed immediately after CONNECT, nothing carried"
+        return True, (
+            "tunnel stayed open and the far end spoke first: "
+            f"{annotate_tls_bytes(data)}"
+        )
 
     def _recv_headers(self, sock: socket.socket) -> bytes:
         data = b""

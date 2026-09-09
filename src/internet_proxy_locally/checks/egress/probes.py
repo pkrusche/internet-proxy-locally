@@ -20,13 +20,25 @@ def resolve_locally(host: str) -> list[str]:
 
 
 def _classify_deny_connect(client: ProxyClient, target: str) -> tuple[str, str]:
+    """Was the destination reached? — not "what status came back?".
+
+    A refusal states itself two ways. A proxy that decides before
+    acknowledging the tunnel answers 4xx, and the body says why. A proxy
+    that decides afterwards has already sent `200` and can only abort
+    (ProxyClient.tunnel_carried). Both refuse; only the first is legible.
+    Grading the second a failure would report an enforcing proxy as a hole,
+    so the tunnel itself is the evidence and the status line is not.
+    """
     sock, status, detail = client.connect(target)
-    if sock is not None:
-        sock.close()
-        return "fail", f"tunnel to {target} was ESTABLISHED: {detail}"
-    if status is None:
-        return "error", f"inconclusive transport failure: {detail}"
-    return "pass", f"denied: {detail}"
+    if sock is None:
+        if status is None:
+            return "error", f"inconclusive transport failure: {detail}"
+        return "pass", f"denied: {detail}"
+    carried, why = client.tunnel_carried(sock)
+    sock.close()
+    if not carried:
+        return "pass", f"denied after CONNECT: {why}"
+    return "fail", f"tunnel to {target} was ESTABLISHED: {detail}"
 
 
 def _classify_deny_http(client: ProxyClient, url: str) -> tuple[str, str]:
@@ -70,11 +82,18 @@ def _connect_attempt(
     local = resolve_locally(host_for_resolution) if resolve else []
     t0 = time.monotonic()
     sock, status, detail = client.connect(target)
+    # Timed to the CONNECT response, so the grace period tunnel_carried()
+    # spends on a live tunnel never lands in the recorded latency.
     elapsed = round((time.monotonic() - t0) * 1000, 1)
-    established = sock is not None
-    if established:
+    if sock is None:
+        outcome = "error" if status is None else "denied"
+    else:
+        carried, why = client.tunnel_carried(sock)
         sock.close()
-    outcome = (
-        "established" if established else ("error" if status is None else "denied")
-    )
-    return Attempt(n, target, local, outcome, status, elapsed, detail)
+        outcome = "established" if carried else "aborted"
+        if not carried:
+            detail = f"{detail} — {why}"
+    # An aborted tunnel is a denial the engine stated no reason for, so the
+    # cause is set here rather than left to the runner's text classifier.
+    cause = "aborted-after-connect" if outcome == "aborted" else None
+    return Attempt(n, target, local, outcome, status, elapsed, detail, cause)

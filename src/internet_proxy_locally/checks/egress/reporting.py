@@ -9,6 +9,15 @@ from dataclasses import asdict
 from .models import Result
 from .runner import policy_in_use
 
+# The version tracks the document's *shape*, which is what `report` has to
+# be able to read. Deny rows are now graded on whether the tunnel carried
+# traffic rather than on the CONNECT status line, and per-attempt outcomes
+# gained `aborted` (docs/tls-interception.md) — a change to the verdicts,
+# not to any key, so it is deliberately not a bump: refusing to render
+# every committed result until a container is available to re-measure buys
+# nothing. Re-run `ipl-lab measure` after changing how a check grades;
+# `generated_at` says which runs predate it.
+#
 # 3: adds `tls_interception` to the run's conditions (was 2: the envelope
 # carries the run's conditions — engine image, backend, which policy was
 # mounted, host, timestamp — so that `report` can generate

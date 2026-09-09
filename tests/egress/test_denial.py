@@ -30,6 +30,21 @@ class ClassifyDenialTest(unittest.TestCase):
         text = "denied by mock policy: destination resolves to a loopback address"
         self.assertEqual(denial.classify_denial(text), "private-ip")
 
+    def test_aborted_after_connect(self) -> None:
+        text = "denied after CONNECT: tunnel closed immediately after CONNECT, nothing carried"
+        self.assertEqual(denial.classify_denial(text), "aborted-after-connect")
+
+    def test_a_stated_reason_outranks_an_aborted_tunnel(self) -> None:
+        """metadata-endpoint probes CONNECT *and* GET. On a bumping Squid
+        only the GET half gets a page, and that half is the informative
+        one — so the abort must never displace it."""
+        text = (
+            "CONNECT: denied after CONNECT: tunnel closed immediately after CONNECT, "
+            "nothing carried; GET: denied: HTTP/1.1 403 Forbidden — SSRF blocked, the "
+            "destination resolves to a cloud metadata endpoint."
+        )
+        self.assertEqual(denial.classify_denial(text), "metadata")
+
     def test_timeout(self) -> None:
         self.assertEqual(
             denial.classify_denial("connection error: timed out"), "timeout"

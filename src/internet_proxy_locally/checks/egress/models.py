@@ -14,7 +14,12 @@ class Attempt:
     n: int
     target: str
     local_resolved: list[str]  # IPs the checker itself resolved, if any
-    outcome: str  # "established" | "denied" | "error"
+    # "established" | "denied" | "aborted" | "error". `aborted` is a
+    # denial the engine only reached after answering `200`, so it could
+    # not send a reason and tore the tunnel down instead — the deny checks
+    # count it as a refusal, and it keeps its own name so a row cannot be
+    # read as a legible 4xx (probes.py, ProxyClient.tunnel_carried).
+    outcome: str
     status: int | None
     elapsed_ms: float
     detail: str

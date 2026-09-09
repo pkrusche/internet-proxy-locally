@@ -98,12 +98,22 @@ packages (this should be part of the sandbox image build process).
 
 Full `ssl_bump ... bump` with a CA-backed listener. In interception
 mode, `http_port` carries the certificate options and
-`generate-host-certificates=on`, an `sslcrtd_program` is configured, and
-`ssl_bump peek step1` and `ssl_bump bump all` are emitted together. 
+`generate-host-certificates=on`, an `sslcrtd_program` is configured, and a
+gated `ssl_bump peek step1` / `ssl_bump bump` pair is emitted together with
+an `ssl_bump splice all` fallback.
 
 ### Smokescreen
 
 Smokescreen doesn't support TLS interception.
+
+## Late denials, and how the suite grades them
+
+A deny check asks whether the destination was reached, not what status came
+back. `ProxyClient.tunnel_carried()` watches a tunnel that was answered
+`200`: if it is torn down without carrying anything, the row passes with
+cause `aborted-after-connect`, and only a tunnel that stays open and usable
+fails. Grading the status line alone reported a correctly-enforcing Squid
+as an open proxy — 13 rows at once, every one of them a refusal.
 
 ## Verifying interception end to end
 
@@ -117,6 +127,13 @@ curl --cacert ca.pem https://github.com   # allowlisted: succeeds, and
                                            # `ipl logs` shows the decrypted request
 curl --cacert ca.pem https://example.com  # denied: a real 4xx, not a hung tunnel
 ```
+
+That second line is the one that catches an ungated peek on Squid: a
+`curl: (56) Recv failure` or an empty reply where a 403 page belongs means
+the CONNECT is being acknowledged before policy runs, and the peek is
+covering destinations the floors deny (see [Squid](#squid) above). The
+egress suite still passes such a run — the tunnel carries nothing either
+way — so this is the check that sees it.
 
 `ipl-lab up --tls-interception && ipl-lab check` runs the adversarial suite
 against the intercepting configuration. `ipl-lab measure --tls-interception`

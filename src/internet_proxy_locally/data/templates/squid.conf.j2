@@ -19,10 +19,10 @@
 # TLS interception is opt-in (the `--tls-interception` CLI switch,
 # docs/tls-interception.md). Off, this is a plain CONNECT tunnel — peeking
 # the ClientHello without a signing CA crashes Squid the first time a
-# peeked connection must be force-closed (docs/findings.md, "Rejected:
-# tunnel peeking on Squid"). On, Squid becomes the real TLS endpoint with a
-# CA-backed `ssl_bump ... bump`, a structurally different mode from the
-# rejected one.
+# peeked connection must be force-closed (docs/tls-interception.md,
+# "Rejected: tunnel peeking without a CA"). On, Squid becomes the real TLS
+# endpoint with a CA-backed `ssl_bump ... bump`, a structurally different
+# mode from the rejected one.
 {% if tls_interception %}
 http_port 3128 ssl-bump tls-cert=/etc/squid/ca.pem tls-key=/etc/squid/ca-key.pem generate-host-certificates=on dynamic_cert_mem_cache_size=4MB
 sslcrtd_program /usr/lib/squid/security_file_certgen -s /var/lib/ssl_db -M 4MB
@@ -158,17 +158,39 @@ deny_info ERR_IPL_PORT_NOT_ALLOWED TLS_ports
 deny_info ERR_IPL_IP_LITERAL ip_literal
 deny_info ERR_IPL_NOT_ALLOWLISTED all
 {% if tls_interception %}
+{% set bump_acls = (["allowlist_exact"] if allow_exact or allow_test_exact else []) + (["allowlist_wild"] if allow_wild or allow_test_wild else []) %}
 
 # ---------------------------------------------------------------------------
 # TLS interception (opt-in — see the note on http_port above)
 # ---------------------------------------------------------------------------
 #
-# `peek step1` must always be paired with `bump all`: an orphaned peek with
-# no bump is exactly the crashing shape docs/findings.md records
-# ("Rejected: tunnel peeking on Squid"). Keep this fixed recipe together.
+# Only destinations the floors above would *allow* are peeked. Squid has to
+# answer a CONNECT with `200` before the client will send the ClientHello it
+# means to peek at, so anything peeked has already been told its tunnel is
+# up: a denial reached afterwards can no longer deliver a `deny_info` page
+# and can only abort the tunnel — `TCP_DENIED_ABORTED/200 … HIER_NONE/-` in
+# Squid's own log. Policy holds either way (nothing is forwarded), but the
+# refusal stops being legible to the caller.
+#
+# Gating the peek keeps that off the deny path entirely. A destination that
+# fails the gate matches no ClientHello-requiring action at step1, so Squid
+# never needs the early `200`, `http_access` decides it as it does in tunnel
+# mode, and the caller gets a real 4xx with the page that names the cause.
+# Bumping — and with it the inner-request enforcement interception is for —
+# still covers every destination that is allowed to carry traffic.
+#
+# The gate is the http_access floors above, written positively; keep it in
+# step with them. `peek step1` must always be paired with a `bump` over the
+# same set: an orphaned peek with no bump is the crashing shape recorded in
+# docs/tls-interception.md ("Rejected: tunnel peeking without a CA").
+{% if bump_acls %}
 acl step1 at_step SslBump1
-ssl_bump peek step1
-ssl_bump bump all
+acl bumpable any-of {{ bump_acls | join(" ") }}
+ssl_bump peek step1 bumpable TLS_ports !metadata_ip !private_ip !ip_literal
+ssl_bump bump bumpable TLS_ports !metadata_ip !private_ip !ip_literal
+{% endif %}
+# Everything else: an ordinary tunnel, refused by `http_access` above.
+ssl_bump splice all
 {% endif %}
 
 # ---------------------------------------------------------------------------

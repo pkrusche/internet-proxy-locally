@@ -17,6 +17,17 @@ class BlockedHostConnectTest(unittest.TestCase):
         outcome, detail = blocked_host_connect.test_blocked_host_connect(client)
         self.assertEqual(outcome, "pass", detail)
 
+    def test_passes_when_the_denial_only_arrives_after_the_200(self) -> None:
+        """A proxy that answers every CONNECT before it decides — Squid on
+        an `ssl-bump` port — refuses by aborting the tunnel. Nothing is
+        carried, so the row is a pass; grading the status line alone read
+        an enforcing proxy as a hole (docs/tls-interception.md)."""
+        _, port = support.start_mock(self, mode="bumping")
+        client = transport.ProxyClient("127.0.0.1", port, tunnel_grace=0.3)
+        outcome, detail = blocked_host_connect.test_blocked_host_connect(client)
+        self.assertEqual(outcome, "pass", detail)
+        self.assertIn("denied after CONNECT", detail)
+
     def test_fails_when_the_host_is_wrongly_allowed(self) -> None:
         _, port = support.start_mock(
             self, mode="strict", host_allowed=lambda host: True

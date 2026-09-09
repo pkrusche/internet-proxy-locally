@@ -12,7 +12,13 @@ any network egress:
     and a TLS ClientHello whose SNI differs from the CONNECT target
     aborts the handshake (unrecognized_name alert);
   - lenient mode (Smokescreen-like): non-TLS bytes get a fake origin
-    response, and any SNI is accepted.
+    response, and any SNI is accepted;
+  - bumping mode (Squid-with-ssl_bump-like): every CONNECT is answered
+    `200` before policy runs, because the ClientHello the proxy means to
+    inspect only arrives once the client believes it has a tunnel. A
+    denial reached afterwards can no longer send a page and aborts the
+    tunnel instead. Enforcement is identical to strict mode; only the
+    shape of the refusal differs.
 
 TLS termination requires a self-signed cert (see tests/egress/).
 Used two ways: imported and started in-process by tests, and spawned as
@@ -145,17 +151,25 @@ class Handler(socketserver.BaseRequestHandler):
 
     def _handle_connect(self, target: str) -> None:
         host, _, _port = target.rpartition(":")
-        if not self.server.host_allowed(host):
+        allowed = self.server.host_allowed(host)
+        # A bumping proxy commits to the tunnel before it decides, so its
+        # refusal arrives too late to carry a reason.
+        if not allowed and self.server.mode != "bumping":
             self._send(403, "Forbidden", self.server.deny_reason(host) + "\n")
             return
         self.request.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+        if not allowed:
+            return  # the 200 is already sent; aborting is the only refusal left
 
         first = self.request.recv(1, socket.MSG_PEEK)
         if not first:
             return
         if first != b"\x16":  # not a TLS handshake record
-            if self.server.mode == "strict":
-                return  # close immediately, Pipelock sni_require_tls-style
+            if self.server.mode != "lenient":
+                # Close immediately: Pipelock sni_require_tls-style, and
+                # equally what a bumping Squid does with bytes it cannot
+                # parse as TLS.
+                return
             self._read_head()
             self._send(400, "Bad Request", "plain HTTP request sent to HTTPS port\n")
             return
@@ -210,7 +224,9 @@ def start_in_thread(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
-    parser.add_argument("--mode", choices=("strict", "lenient"), default="strict")
+    parser.add_argument(
+        "--mode", choices=("strict", "lenient", "bumping"), default="strict"
+    )
     parser.add_argument("--allow", default=",".join(sorted(DEFAULT_ALLOWED)))
     parser.add_argument("--cert")
     parser.add_argument("--key")

@@ -82,7 +82,8 @@ See [lab.md](lab.md).
 Each result carries, where relevant: a best-effort denial-cause
 classification (`hostname-not-allowlisted`, `private-ip`, `metadata`,
 `sni-mismatch`, `non-tls-in-tunnel`, `port-not-allowed`, `dns-failure`,
-`unparseable-destination`, `timeout`, `unknown`), timing, per-attempt
+`unparseable-destination`, `timeout`, `aborted-after-connect`,
+`unknown`), timing, per-attempt
 evidence, response headers on the allow-path checks, decoded TLS alert
 records rather than raw bytes for the tunnel-abuse checks, and the engine's
 own log lines for that test's exact window.
@@ -96,6 +97,13 @@ reports `domain not in allowlist: 127.0.0.1`, so a pattern for a bare
 `private-ip`. Attempts are classified individually and then combined,
 because classifying concatenated text reports whichever bucket comes first
 in the taxonomy rather than what the set actually contained.
+
+`aborted-after-connect` is the one exception to the stated-reason rule, and
+it is one because there is no stated reason to read: an engine that refuses
+only after answering `200 Connection established` cannot deliver an error
+page and tears the tunnel down instead. The bucket sits last in the
+taxonomy so that anything the engine *did* manage to say still wins the
+row. See [tls-interception.md](tls-interception.md#late-denials-and-how-the-suite-grades-them).
 
 Measured results: [findings.md](findings.md).
 
