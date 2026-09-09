@@ -1,6 +1,0 @@
-listen-ip: 0.0.0.0
-listen-port: 4750
-deny-range: []
-allow-range: []
-acl-file: /etc/smokescreen/acl.yaml
-allow-missing-role: true

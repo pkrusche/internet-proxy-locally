@@ -30,13 +30,13 @@ See [policy.md](policy.md), [lab.md](lab.md), and
 
 ## Files and images
 
-The package's `data/` contains read-only templates, the starter config, and image
+The package's `data/` contains read-only templates and image
 build contexts, all included in the wheel. Container builds require an unpacked
 installation. `IPL_DATA_ROOT` overrides this location for isolated tests.
 
-The workspace's `config.toml` holds operational and lab settings. The starter
-config is copied only by `ipl init`; it is never a runtime fallback. Rendered
-configs, results, and findings also live in the workspace.
+The workspace's `config.toml` is the sole source of operational and lab
+settings and must already exist. Rendered configs, results, and findings
+also live in the workspace.
 `paths.workspace_root()` searches upward from the current directory for
 `config.toml`, falling back to the current directory. `IPL_ROOT` overrides it.
 

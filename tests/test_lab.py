@@ -615,13 +615,6 @@ class LabUnitTest(unittest.TestCase):
         self.assertEqual(config.fixture.ptr_claims, "packages.example.com")
         self.assertTrue(config.tls_interception)
 
-    def test_starter_config_supports_both_modes(self) -> None:
-        path = PACKAGE_DATA / "starter-config.toml"
-        operational = load_policy_config(path)
-        lab = load_lab_config(path)
-        self.assertEqual(operational.allow, lab.allow)
-        self.assertTrue(lab.fixture.records)
-
 
 if __name__ == "__main__":
     unittest.main()

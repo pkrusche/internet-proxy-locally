@@ -12,8 +12,7 @@ from .runner import policy_in_use
 # 2: the envelope carries the run's conditions (engine image, backend,
 # which policy was mounted, host, timestamp) so that `report` can
 # generate docs/findings.md from the result files alone, rather than from
-# a table somebody remembered to update. v1 files still diff against v2
-# ones — `--diff` only reads `results` — with a warning.
+# a table somebody remembered to update.
 SCHEMA_VERSION = 2
 
 

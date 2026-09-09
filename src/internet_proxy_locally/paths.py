@@ -10,7 +10,7 @@ from internet_proxy_locally.errors import Fail
 
 
 def data_root() -> Path:
-    """Files that ship with the package: templates, images, and starter configuration."""
+    """Files that ship with the package: templates and image build contexts."""
     override = os.environ.get("IPL_DATA_ROOT")
     if override:
         return Path(override)

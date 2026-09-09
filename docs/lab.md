@@ -37,35 +37,20 @@ Extra domains: `*.nip.io` and `*.sslip.io` resolve to
 caller-chosen addresses, and the fixture zones resolve in a controlled
 manner (in an adversarial setting). 
 
-`ipl init` creates a config with both sets of settings. Existing operational-only
-configs still work with `ipl`; add `[policy.test]` and `[fixture]` before using
-`ipl-lab`. Missing lab settings fail validation instead of using packaged defaults.
-
-## The fixture records
-
-One edit must not half-land, so `load_lab_config()` refuses to render when
-the two halves disagree. It rejects a record the test policy does not
-allowlist (the fixture would be denied by name and grade nothing), a
-`.test` entry in `[policy.test]` with no record behind it (NXDOMAIN, so the
-check silently skips), a fixture name `[policy].allow` also allows, a control
-record with more than one address or a private one, a mixed record that is
-not one public plus one private, a record set that does not cover both
-orderings, and a `ptr_address` that collides with a record address.
+Operational-only configs work with `ipl`;  `[policy.test]` and `[fixture]`
+in `config.toml` are read by `ipl-lab`. 
 
 ## The DNS fixture
 
-Public DNS cannot serve either fixture the suite needs — a mixed
-public+private answer set, or an answer that changes between lookups — so
-both run against a container this repository builds. `ipl-lab up` starts
-it, reads its address, and starts the engine with `--dns <that address>`.
-It publishes no host port.
+Public DNS cannot serve a mixed public+private answer set, or an 
+answer that changes between lookups. `ipl-lab up` starts
+a private DNS server, reads its address, and starts the engine with 
+`--dns <that address>`. It publishes no host port.
 
 **Mixed answers.** dnsmasq serves `lab/config/dns-fixture.hosts`: a control
 name with one public address, and two names carrying one public and one
 private address in both orderings, so an engine that validates only the
-first answer is distinguished from one that validates all of them. The
-control must establish before anything is graded; without it a denial could
-not be attributed to mixed-answer handling, and the row skips.
+first answer is distinguished from one that validates all of them.
 
 **Rebinding.** dnsmasq delegates `rebind.fixture.test` to a small stdlib
 responder (`data/images/dnsfixture/rebind.py`), which answers the *first* lookup of
@@ -75,26 +60,7 @@ pause between passes, so the second answer is actually handed out; two
 probes in the same second are served from one lookup by any resolver cache
 with second granularity, and the rebind never happens.
 
-That listener is the point. `dns-rebinding` grades on one thing: whether
-anything connected to the trap. "Did the engine reach a private address"
-stops being an inference from counts — which is what made the old
-`rbndr.us` row ungradable — and becomes an observation by the thing that
-would have received the connection. A repeat probe that succeeds while the
-trap stays silent is *not* a failure: it means the engine reused an address
-it had already validated, which is a legitimate defence. The engines split
-on exactly this ([findings.md](findings.md) §3).
-
-Two things to know before changing it:
-
-* **A bind-mounted `/etc/hosts` does not work**, though it looks like it
-  should. Duplicate names in a hosts file collapse to a single address —
-  musl's `getent hosts` returns the first, Squid's own parser keeps the
-  last — so the engine never sees more than one address and the check
-  silently measures which record survived. dnsmasq's `--addn-hosts`
-  aggregates them and returns both.
-* **`--host-record=name,addr1,addr2` does not give two IPv4 answers.** The
-  second slot is the IPv6 address; a second IPv4 there replaces the first
-  rather than adding to it (measured: the query returns only `10.0.0.1`).
+`dns-rebinding` then grades on whether anything connected to the trap. 
 
 ## Reproducing the comparison
 
@@ -115,12 +81,6 @@ re-derived, only believed.
 `<!-- BEGIN GENERATED <name> -->` and `<!-- END GENERATED <name> -->`. The
 narrative around them is copied through byte for byte, and a missing or
 duplicated marker is fatal rather than silently skipped.
-
-To compare two runs directly rather than re-reading the tables:
-
-```bash
-uv run ipl-check --diff results/pipelock.json results/smokescreen.json
-```
 
 ## Operational smoke check
 

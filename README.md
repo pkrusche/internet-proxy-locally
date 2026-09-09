@@ -24,8 +24,8 @@ curl https://example.com         # not allowlisted → denied by the proxy
 ```
 
 Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and Docker or Apple
-`container`. A wheel installation can initialize an empty working directory
-with `ipl init`; it never overwrites an existing policy. Teardown is `ipl down`.
+`container`. Run from a workspace containing `config.toml`. Teardown is
+`ipl down`.
 `uv sync` installs this repository as a package and puts `ipl`, `ipl-lab`,
 and `ipl-check` in the environment; `uv run ipl ...` picks up
 the interpreter from `.python-version` and the dependencies from
@@ -59,7 +59,6 @@ See
 | | |
 | --- | --- |
 | `ipl setup` | validate prerequisites, build the pinned images |
-| `ipl init` | initialize a standalone installed-package workspace |
 | `ipl up` | (re)create the container and health-check it |
 | `ipl status` | engine, backend, container state, image, live health |
 | `ipl logs` | engine logs |

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import argparse
 import platform
-import shutil
 from pathlib import Path
 
-from internet_proxy_locally import __version__, ca, paths
+from internet_proxy_locally import __version__, ca
 from internet_proxy_locally.backend import Backend, detect_backend
 from internet_proxy_locally.cli import common
 from internet_proxy_locally.constants import (
@@ -184,23 +183,6 @@ def cmd_ca_rotate(opts: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_init(opts: argparse.Namespace) -> int:
-    """Create a standalone workspace without overwriting user files."""
-    root = paths.workspace_root()
-    policy = root / "config.toml"
-    if not policy.exists():
-        shutil.copyfile(paths.data_root() / "starter-config.toml", policy)
-        print(f"created {policy}")
-    daemon = root / "config" / "smokescreen.conf.yaml"
-    daemon.parent.mkdir(parents=True, exist_ok=True)
-    if not daemon.exists():
-        shutil.copyfile(paths.data_root() / "smokescreen.conf.yaml", daemon)
-        print(f"created {daemon}")
-    sync_policies()
-    print("workspace initialized")
-    return 0
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ipl",
@@ -217,10 +199,6 @@ def build_parser() -> argparse.ArgumentParser:
         "status-dependent for logs/check)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
-
-    sub.add_parser("init", help="initialize a standalone workspace").set_defaults(
-        func=cmd_init
-    )
 
     p_setup = sub.add_parser(
         "setup", help="validate prerequisites, build the engine images"

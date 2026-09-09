@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 
-from .diff import cmd_diff
 from .reporting import envelope, print_text
 from .runner import run_suite
 
@@ -16,7 +15,7 @@ ENGINES = ("pipelock", "smokescreen", "squid")
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--proxy", default=DEFAULT_PROXY)
-    parser.add_argument("--engine", choices=ENGINES, default=None)
+    parser.add_argument("--engine", choices=ENGINES, required=True)
     parser.add_argument(
         "--backend-bin",
         default=None,
@@ -48,18 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="release gate: fail on skips, errors, missing required rows, or failures",
     )
-    parser.add_argument(
-        "--diff",
-        nargs=2,
-        metavar=("RESULTS_A", "RESULTS_B"),
-        help="compare two prior --json result files instead of running the suite",
-    )
     opts = parser.parse_args(argv)
-
-    if opts.diff:
-        return cmd_diff(opts.diff[0], opts.diff[1])
-    if not opts.engine:
-        parser.error("--engine is required unless --diff is given")
 
     results = run_suite(
         opts.proxy,
