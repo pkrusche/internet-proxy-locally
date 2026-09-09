@@ -45,6 +45,7 @@ def run(engine: str, rows: list[dict]) -> dict:
         "backend": "docker",
         "image": f"{engine}:test",
         "policy": "test",
+        "tls_interception": False,
         "host": "Darwin test",
         "generated_at": "2026-08-28T00:00:00Z",
         "exit_code": 0,

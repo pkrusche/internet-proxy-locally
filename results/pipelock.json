@@ -1,13 +1,14 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "engine": "pipelock",
   "proxy": "http://127.0.0.1:18080",
   "mode": "full",
   "backend": "container",
   "image": "internet-proxy-locally/pipelock:3.3.0",
   "policy": "test",
+  "tls_interception": true,
   "host": "Darwin 25.6.0 arm64",
-  "generated_at": "2026-09-09T14:57:33Z",
+  "generated_at": "2026-09-09T18:14:16Z",
   "exit_code": 1,
   "results": [
     {
@@ -18,33 +19,33 @@
       "detail": "reached pypi.org (HTTP/1.1 200 OK)",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 309.2,
+      "elapsed_ms": 416.0,
       "attempts": [],
       "headers": {
         "Accept-Ranges": "bytes",
         "Content-Security-Policy": "base-uri 'self'; connect-src 'self' https://api.github.com/repos/ https://api.github.com/search/issues https://gitlab.com/api/ https://analytics.python.org *.ethicalads.io https://api.pwnedpasswords.com https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/sre/mathmaps/ https://2p66nmmycsj3.statuspage.io; default-src 'none'; font-src 'self'; form-action 'self' https://checkout.stripe.com https://billing.stripe.com; frame-ancestors 'none'; frame-src 'none'; img-src 'self' https://pypi-camo.freetls.fastly.net/ *.ethicalads.io ethicalads.blob.core.windows.net; script-src 'self' https://analytics.python.org *.ethicalads.io 'sha256-U3hKDidudIaxBDEzwGJApJgPEf2mWk6cfMWghrAa6i0=' https://cdn.jsdelivr.net/npm/mathjax@3.2.2/ 'sha256-1CldwzdEg2k1wTmf7s5RWVd7NMXI/7nxxjJM2C4DqII='; style-src 'self' *.ethicalads.io 'sha256-2YHqZokjiizkHi1Zt+6ar0XJ0OeEy/egBnlm+MDMtrM=' 'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=' 'sha256-JLEjeN9e5dGsz5475WyRaoA4eQOdNPxDIeUhclnJDCE=' 'sha256-mQyxHEuwZJqpxCw3SLmc4YOySNKXunyu2Oiz1r3/wAE=' 'sha256-OCf+kv5Asiwp++8PIevKBYSgnNLNUZvxAp4a7wMLuKA=' 'sha256-h5LOiLhk6wiJrGsG5ItM0KimwzWQH/yAcmoJDJL//bY='",
         "Content-Type": "text/html; charset=UTF-8",
-        "Date": "Wed, 09 Sep 2026 14:57:30 GMT",
-        "Etag": "\"EHJNzHu5MOrEVBRHMkIFlg\"",
+        "Date": "Wed, 09 Sep 2026 18:14:13 GMT",
+        "Etag": "\"uzHGOhbBvTLMvzbYq8ZHaA\"",
         "Permissions-Policy": "publickey-credentials-create=(self),publickey-credentials-get=(self),accelerometer=(),ambient-light-sensor=(),autoplay=(),battery=(),camera=(),display-capture=(),document-domain=(),encrypted-media=(),execution-while-not-rendered=(),execution-while-out-of-viewport=(),fullscreen=(),gamepad=(),geolocation=(),gyroscope=(),hid=(),identity-credentials-get=(),idle-detection=(),local-fonts=(),magnetometer=(),microphone=(),midi=(),otp-credentials=(),payment=(),picture-in-picture=(),screen-wake-lock=(),serial=(),speaker-selection=(),storage-access=(),usb=(),web-share=(),xr-spatial-tracking=()",
         "Referrer-Policy": "origin-when-cross-origin",
         "Server": "gunicorn",
         "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
         "Vary": "Cookie, Accept-Encoding",
-        "X-Cache": "MISS, MISS, HIT",
-        "X-Cache-Hits": "0, 0, 1",
+        "X-Cache": "MISS, HIT, HIT",
+        "X-Cache-Hits": "0, 11, 1",
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "deny",
         "X-Permitted-Cross-Domain-Policies": "none",
-        "X-Served-By": "cache-iad-khef600045-IAD, cache-iad-khef600045-IAD, cache-iad-khef600051-IAD, cache-fra-etou8220144-FRA",
-        "X-Timer": "S1788965850.302341,VS0,VE3",
+        "X-Served-By": "cache-iad-khef600053-IAD, cache-iad-khef600053-IAD, cache-iad-khef600051-IAD, cache-fra-etou8220088-FRA",
+        "X-Timer": "S1788977653.045375,VS0,VE3",
         "X-Xss-Protection": "1; mode=block",
         "Connection": "close",
         "Transfer-Encoding": "chunked"
       },
       "engine_logs": [
-        "{\"level\":\"info\",\"component\":\"pipelock\",\"event\":\"redirect\",\"original_url\":\"http://pypi.org/\",\"redirect_url\":\"https://pypi.org/\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-2\",\"agent\":\"anonymous\",\"hop\":1,\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"redirect followed\"}",
-        "{\"level\":\"info\",\"component\":\"pipelock\",\"event\":\"forward_http\",\"method\":\"GET\",\"url\":\"http://pypi.org/\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-2\",\"agent\":\"anonymous\",\"status_code\":200,\"size_bytes\":27965,\"duration_ms\":306.643375,\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"forward proxy request\"}"
+        "{\"level\":\"info\",\"component\":\"pipelock\",\"event\":\"redirect\",\"original_url\":\"http://pypi.org/\",\"redirect_url\":\"https://pypi.org/\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-2\",\"agent\":\"anonymous\",\"hop\":1,\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"redirect followed\"}",
+        "{\"level\":\"info\",\"component\":\"pipelock\",\"event\":\"forward_http\",\"method\":\"GET\",\"url\":\"http://pypi.org/\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-2\",\"agent\":\"anonymous\",\"status_code\":200,\"size_bytes\":27965,\"duration_ms\":413.22425,\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"forward proxy request\"}"
       ]
     },
     {
@@ -55,14 +56,12 @@
       "detail": "tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 33.6,
+      "elapsed_ms": 21.0,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"info\",\"component\":\"pipelock\",\"event\":\"tunnel_open\",\"target\":\"pypi.org:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-3\",\"agent\":\"anonymous\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"tunnel opened\"}",
-        "{\"level\":\"info\",\"component\":\"pipelock\",\"event\":\"tunnel_close\",\"target\":\"pypi.org:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-3\",\"agent\":\"anonymous\",\"total_bytes\":4762,\"duration_ms\":40.196083,\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"tunnel closed\"}",
-        "{\"level\":\"error\",\"component\":\"pipelock\",\"event\":\"error\",\"method\":\"close\",\"error\":\"clientConn: close tcp 192.168.64.134:8888->192.168.64.1:51160: use of closed network connection\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request error\"}",
-        "{\"level\":\"error\",\"component\":\"pipelock\",\"event\":\"error\",\"method\":\"close\",\"error\":\"targetConn: close tcp 192.168.64.134:42274->151.101.192.223:443: use of closed network connection\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request error\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"anomaly\",\"method\":\"CONNECT\",\"target\":\"[redacted-url]\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-3\",\"agent\":\"anonymous\",\"scanner\":\"tls_intercept\",\"mitre_technique\":\"T1557\",\"reason\":\"TLS MITM interception active\",\"score\":0,\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"anomaly detected\"}",
+        "{\"level\":\"error\",\"component\":\"pipelock\",\"event\":\"error\",\"method\":\"close\",\"error\":\"clientConn: close tcp 192.168.64.160:8888->192.168.64.1:52919: use of closed network connection\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request error\"}"
       ]
     },
     {
@@ -77,7 +76,7 @@
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"example.com:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-4\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: example.com\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"example.com:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-4\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: example.com\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -88,11 +87,11 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 blocked: domain not in allowlist: example.com",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 1.5,
+      "elapsed_ms": 1.2,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"GET\",\"url\":\"http://example.com\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-5\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: example.com\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"GET\",\"url\":\"http://example.com\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-5\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: example.com\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -103,11 +102,11 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: domain not in allowlist: 1.1.1.1",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 1.7,
+      "elapsed_ms": 1.2,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"1.1.1.1:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-6\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 1.1.1.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"1.1.1.1:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-6\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 1.1.1.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -118,11 +117,11 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: domain not in allowlist: 127.0.0.1",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 2.0,
+      "elapsed_ms": 1.8,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"127.0.0.1:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-7\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 127.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"127.0.0.1:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-7\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 127.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -133,13 +132,13 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: domain not in allowlist: 10.0.0.1; denied: HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: domain not in allowlist: 192.168.1.1; denied: HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: domain not in allowlist: 172.16.0.1",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 5.8,
+      "elapsed_ms": 5.7,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"10.0.0.1:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-8\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 10.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"192.168.1.1:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-9\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 192.168.1.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"172.16.0.1:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-10\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 172.16.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"10.0.0.1:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-8\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 10.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"192.168.1.1:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-9\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 192.168.1.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"172.16.0.1:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-10\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 172.16.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -154,7 +153,7 @@
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"169.254.1.1:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-11\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 169.254.1.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"169.254.1.1:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-11\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 169.254.1.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -169,8 +168,8 @@
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"169.254.169.254:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-12\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 169.254.169.254\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"GET\",\"url\":\"http://169.254.169.254\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-13\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 169.254.169.254\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"169.254.169.254:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-12\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 169.254.169.254\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"GET\",\"url\":\"http://169.254.169.254\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-13\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 169.254.169.254\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -185,7 +184,7 @@
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"[::1]:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-14\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: ::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"[::1]:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-14\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: ::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -196,12 +195,12 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: domain not in allowlist: fd00::1; denied: HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: domain not in allowlist: fe80::1",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 3.9,
+      "elapsed_ms": 4.2,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"[fd00::1]:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-15\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: fd00::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"[fe80::1]:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-16\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: fe80::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"[fd00::1]:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-15\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: fd00::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"[fe80::1]:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-16\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: fe80::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:13Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -212,7 +211,7 @@
       "detail": "allowlisted hostnames resolving to private/loopback/metadata IPv4 all denied; resolved IPs recorded per attempt",
       "cause": "metadata+private-ip",
       "observed": null,
-      "elapsed_ms": 166.1,
+      "elapsed_ms": 186.3,
       "attempts": [
         {
           "n": 0,
@@ -222,7 +221,7 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 4.9,
+          "elapsed_ms": 3.2,
           "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: 10.0.0.1.nip.io resolves to internal IP 10.0.0.1",
           "cause": "private-ip"
         },
@@ -234,7 +233,7 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 4.5,
+          "elapsed_ms": 5.3,
           "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: 192.168.1.1.nip.io resolves to internal IP 192.168.1.1",
           "cause": "private-ip"
         },
@@ -246,7 +245,7 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 5.1,
+          "elapsed_ms": 6.5,
           "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: 127.0.0.1.nip.io resolves to internal IP 127.0.0.1",
           "cause": "private-ip"
         },
@@ -258,17 +257,17 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 5.8,
+          "elapsed_ms": 8.2,
           "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: 169.254.169.254.nip.io resolves to cloud metadata endpoint 169.254.169.254",
           "cause": "metadata"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"10.0.0.1.nip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-18\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: 10.0.0.1.nip.io resolves to internal IP 10.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"192.168.1.1.nip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-19\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: 192.168.1.1.nip.io resolves to internal IP 192.168.1.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"127.0.0.1.nip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-20\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: 127.0.0.1.nip.io resolves to internal IP 127.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T14:57:30Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"169.254.169.254.nip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-21\",\"scanner\":\"ssrf_metadata\",\"reason\":\"SSRF blocked: 169.254.169.254.nip.io resolves to cloud metadata endpoint 169.254.169.254\",\"agent\":\"anonymous\",\"remediation_hint\":\"Cloud instance-metadata endpoints are a non-overridable SSRF deny: `ssrf.ip_allowlist` and `trusted_domains` cannot exempt them (config validation rejects such entries and the scanner ignores them). There is no allow knob \u2014 if an agent legitimately needs instance data, expose it through a dedicated internal service on a different address rather than allowing metadata access.\",\"time\":\"2026-09-09T14:57:31Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"10.0.0.1.nip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-18\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: 10.0.0.1.nip.io resolves to internal IP 10.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T18:14:14Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"192.168.1.1.nip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-19\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: 192.168.1.1.nip.io resolves to internal IP 192.168.1.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T18:14:14Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"127.0.0.1.nip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-20\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: 127.0.0.1.nip.io resolves to internal IP 127.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T18:14:14Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"169.254.169.254.nip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-21\",\"scanner\":\"ssrf_metadata\",\"reason\":\"SSRF blocked: 169.254.169.254.nip.io resolves to cloud metadata endpoint 169.254.169.254\",\"agent\":\"anonymous\",\"remediation_hint\":\"Cloud instance-metadata endpoints are a non-overridable SSRF deny: `ssrf.ip_allowlist` and `trusted_domains` cannot exempt them (config validation rejects such entries and the scanner ignores them). There is no allow knob \u2014 if an agent legitimately needs instance data, expose it through a dedicated internal service on a different address rather than allowing metadata access.\",\"time\":\"2026-09-09T18:14:14Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -279,7 +278,7 @@
       "detail": "allowlisted hostnames resolving to private/loopback IPv6 all denied; resolved IPs recorded per attempt",
       "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 122.5,
+      "elapsed_ms": 222.7,
       "attempts": [
         {
           "n": 0,
@@ -289,7 +288,7 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 5.0,
+          "elapsed_ms": 9.1,
           "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: 0--1.sslip.io resolves to internal IP ::1",
           "cause": "private-ip"
         },
@@ -301,7 +300,7 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 5.9,
+          "elapsed_ms": 8.5,
           "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: fe80--1.sslip.io resolves to non-overridable internal IP fe80::1",
           "cause": "private-ip"
         },
@@ -313,16 +312,16 @@
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 5.4,
+          "elapsed_ms": 8.8,
           "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: fd00--1.sslip.io resolves to internal IP fd00::1",
           "cause": "private-ip"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"0--1.sslip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-22\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: 0--1.sslip.io resolves to internal IP ::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T14:57:31Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"fe80--1.sslip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-23\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: fe80--1.sslip.io resolves to non-overridable internal IP fe80::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"This is a non-overridable SSRF deny (link-local, multicast, or unspecified address): `ssrf.ip_allowlist` and `trusted_domains` cannot exempt it (config validation rejects such entries and the scanner ignores them). There is no allow knob \u2014 reach the intended service by its ordinary routable or private address instead.\",\"mitre_technique\":\"T1046\",\"time\":\"2026-09-09T14:57:31Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"fd00--1.sslip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-24\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: fd00--1.sslip.io resolves to internal IP fd00::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T14:57:31Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"0--1.sslip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-22\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: 0--1.sslip.io resolves to internal IP ::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T18:14:14Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"fe80--1.sslip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-23\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: fe80--1.sslip.io resolves to non-overridable internal IP fe80::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"This is a non-overridable SSRF deny (link-local, multicast, or unspecified address): `ssrf.ip_allowlist` and `trusted_domains` cannot exempt it (config validation rejects such entries and the scanner ignores them). There is no allow knob \u2014 reach the intended service by its ordinary routable or private address instead.\",\"mitre_technique\":\"T1046\",\"time\":\"2026-09-09T18:14:14Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"fd00--1.sslip.io:80\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-24\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: fd00--1.sslip.io resolves to internal IP fd00::1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T18:14:14Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -333,101 +332,101 @@
       "detail": "no connection reached the trap. 3/3 names were resolved more than once and so were handed the private address (9 lookups total); of the 3 repeat probes, 3 were denied and 0 established",
       "cause": "private-ip",
       "observed": null,
-      "elapsed_ms": 1585.5,
+      "elapsed_ms": 1575.2,
       "attempts": [
         {
           "n": 0,
-          "target": "a0-1e60ae.rebind.fixture.test:443",
+          "target": "a0-0cbae3.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9",
-            "192.168.64.133",
-            "192.168.64.133"
+            "192.168.64.159",
+            "192.168.64.159"
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 5.3,
-          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a0-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133",
+          "elapsed_ms": 6.7,
+          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a0-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159",
           "cause": "private-ip"
         },
         {
           "n": 1,
-          "target": "a1-1e60ae.rebind.fixture.test:443",
+          "target": "a1-0cbae3.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9",
-            "192.168.64.133",
-            "192.168.64.133"
+            "192.168.64.159",
+            "192.168.64.159"
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 4.2,
-          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a1-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133",
+          "elapsed_ms": 5.4,
+          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a1-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159",
           "cause": "private-ip"
         },
         {
           "n": 2,
-          "target": "a2-1e60ae.rebind.fixture.test:443",
+          "target": "a2-0cbae3.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9",
-            "192.168.64.133",
-            "192.168.64.133"
+            "192.168.64.159",
+            "192.168.64.159"
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 4.1,
-          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a2-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133",
+          "elapsed_ms": 4.8,
+          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a2-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159",
           "cause": "private-ip"
         },
         {
           "n": 3,
-          "target": "a0-1e60ae.rebind.fixture.test:443",
+          "target": "a0-0cbae3.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9",
-            "192.168.64.133",
-            "192.168.64.133"
-          ],
-          "outcome": "denied",
-          "status": 403,
-          "elapsed_ms": 7.1,
-          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a0-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133",
-          "cause": "private-ip"
-        },
-        {
-          "n": 4,
-          "target": "a1-1e60ae.rebind.fixture.test:443",
-          "local_resolved": [
-            "9.9.9.9",
-            "192.168.64.133",
-            "192.168.64.133"
+            "192.168.64.159",
+            "192.168.64.159"
           ],
           "outcome": "denied",
           "status": 403,
           "elapsed_ms": 5.7,
-          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a1-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133",
+          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a0-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159",
+          "cause": "private-ip"
+        },
+        {
+          "n": 4,
+          "target": "a1-0cbae3.rebind.fixture.test:443",
+          "local_resolved": [
+            "9.9.9.9",
+            "192.168.64.159",
+            "192.168.64.159"
+          ],
+          "outcome": "denied",
+          "status": 403,
+          "elapsed_ms": 3.7,
+          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a1-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159",
           "cause": "private-ip"
         },
         {
           "n": 5,
-          "target": "a2-1e60ae.rebind.fixture.test:443",
+          "target": "a2-0cbae3.rebind.fixture.test:443",
           "local_resolved": [
             "9.9.9.9",
-            "192.168.64.133",
-            "192.168.64.133"
+            "192.168.64.159",
+            "192.168.64.159"
           ],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 5.5,
-          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a2-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133",
+          "elapsed_ms": 2.8,
+          "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: a2-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159",
           "cause": "private-ip"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a0-1e60ae.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-25\",\"scanner\":\"ssrf\",\"reason\":\"ssrf_dns_rebind: SSRF blocked: a0-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"mitre_technique\":\"T1046\",\"time\":\"2026-09-09T14:57:31Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a1-1e60ae.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-26\",\"scanner\":\"ssrf\",\"reason\":\"ssrf_dns_rebind: SSRF blocked: a1-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"mitre_technique\":\"T1046\",\"time\":\"2026-09-09T14:57:31Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a2-1e60ae.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-27\",\"scanner\":\"ssrf\",\"reason\":\"ssrf_dns_rebind: SSRF blocked: a2-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"mitre_technique\":\"T1046\",\"time\":\"2026-09-09T14:57:31Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a0-1e60ae.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-28\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: a0-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T14:57:32Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a1-1e60ae.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-29\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: a1-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T14:57:32Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a2-1e60ae.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-30\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: a2-1e60ae.rebind.fixture.test resolves to internal IP 192.168.64.133\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T14:57:32Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a0-0cbae3.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-25\",\"scanner\":\"ssrf\",\"reason\":\"ssrf_dns_rebind: SSRF blocked: a0-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"mitre_technique\":\"T1046\",\"time\":\"2026-09-09T18:14:14Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a1-0cbae3.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-26\",\"scanner\":\"ssrf\",\"reason\":\"ssrf_dns_rebind: SSRF blocked: a1-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"mitre_technique\":\"T1046\",\"time\":\"2026-09-09T18:14:14Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a2-0cbae3.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-27\",\"scanner\":\"ssrf\",\"reason\":\"ssrf_dns_rebind: SSRF blocked: a2-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"mitre_technique\":\"T1046\",\"time\":\"2026-09-09T18:14:14Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a0-0cbae3.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-28\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: a0-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a1-0cbae3.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-29\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: a1-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"a2-0cbae3.rebind.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-30\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: a2-0cbae3.rebind.fixture.test resolves to internal IP 192.168.64.159\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -438,7 +437,7 @@
       "detail": "control public-only.fixture.test established, and both mixed-answer names (public-first and private-first) were denied \u2014 every address in the answer set is validated, not only the first one or the routable one",
       "cause": "private-ip",
       "observed": "denied",
-      "elapsed_ms": 23.7,
+      "elapsed_ms": 22.2,
       "attempts": [
         {
           "n": 0,
@@ -446,7 +445,7 @@
           "local_resolved": [],
           "outcome": "established",
           "status": 200,
-          "elapsed_ms": 15.8,
+          "elapsed_ms": 13.8,
           "detail": "HTTP/1.1 200 Connection Established",
           "cause": null
         },
@@ -456,7 +455,7 @@
           "local_resolved": [],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 4.1,
+          "elapsed_ms": 4.3,
           "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: mixed-public-first.fixture.test resolves to internal IP 10.0.0.1",
           "cause": "private-ip"
         },
@@ -466,16 +465,16 @@
           "local_resolved": [],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 3.8,
+          "elapsed_ms": 4.0,
           "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: SSRF blocked: mixed-private-first.fixture.test resolves to internal IP 10.0.0.1",
           "cause": "private-ip"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"public-only.fixture.test\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-31\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:32Z\",\"message\":\"SNI verification failed\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"mixed-public-first.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-32\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: mixed-public-first.fixture.test resolves to internal IP 10.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T14:57:32Z\",\"message\":\"request blocked\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"mixed-private-first.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-33\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: mixed-private-first.fixture.test resolves to internal IP 10.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T14:57:32Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"public-only.fixture.test\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-31\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"mixed-public-first.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-32\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: mixed-public-first.fixture.test resolves to internal IP 10.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"request blocked\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"mixed-private-first.fixture.test:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-33\",\"scanner\":\"ssrf\",\"reason\":\"SSRF blocked: mixed-private-first.fixture.test resolves to internal IP 10.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"If the destination is a trusted internal service, add the hostname to top-level `trusted_domains` (hostname-based) or the resolved range to `ssrf.ip_allowlist` (IP-based). Cloud-metadata, link-local, and multicast addresses are a non-overridable deny \u2014 neither knob exempts them (config validation rejects such entries). This verdict depends on DNS resolution at runtime; explain reports it without resolving.\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -486,7 +485,7 @@
       "detail": "denied: HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: domain not in allowlist: 1.0.0.1; the engine performed no reverse lookup, so the allowlist was never offered the PTR name",
       "cause": "hostname-not-allowlisted",
       "observed": null,
-      "elapsed_ms": 29.4,
+      "elapsed_ms": 27.2,
       "attempts": [
         {
           "n": 0,
@@ -494,14 +493,14 @@
           "local_resolved": [],
           "outcome": "denied",
           "status": 403,
-          "elapsed_ms": 2.2,
+          "elapsed_ms": 1.7,
           "detail": "HTTP/1.1 403 Forbidden \u2014 CONNECT blocked: domain not in allowlist: 1.0.0.1",
           "cause": "hostname-not-allowlisted"
         }
       ],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"1.0.0.1:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-34\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 1.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T14:57:32Z\",\"message\":\"request blocked\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"blocked\",\"method\":\"CONNECT\",\"target\":\"1.0.0.1:443\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-34\",\"scanner\":\"allowlist\",\"reason\":\"domain not in allowlist: 1.0.0.1\",\"agent\":\"anonymous\",\"remediation_hint\":\"Add the host to `api_allowlist`. In strict mode only allowlisted domains are reachable.\",\"mitre_technique\":\"T1071.001\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"request blocked\"}"
       ]
     },
     {
@@ -512,11 +511,11 @@
       "detail": "origin/TLS failure is not an attributable policy denial: tunnel established but TLS handshake failed (SNI=files.pythonhosted.org): [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1032)",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 20.0,
+      "elapsed_ms": 24.4,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"files.pythonhosted.org\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-35\",\"agent\":\"anonymous\",\"category\":\"mismatch\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"files.pythonhosted.org\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-35\",\"agent\":\"anonymous\",\"category\":\"mismatch\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}"
       ]
     },
     {
@@ -527,11 +526,11 @@
       "detail": "inconclusive after an established tunnel: tunnel established; connection closed with no response to raw (non-TLS) bytes \u2014 consistent with a non-TLS-in-tunnel policy check",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 17.0,
+      "elapsed_ms": 17.9,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-36\",\"agent\":\"anonymous\",\"category\":\"not_tls\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-36\",\"agent\":\"anonymous\",\"category\":\"not_tls\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}"
       ]
     },
     {
@@ -542,20 +541,20 @@
       "detail": "10 concurrent CONNECTs to an allowed host: 10 established, 0 denied/failed",
       "cause": null,
       "observed": null,
-      "elapsed_ms": 40.2,
+      "elapsed_ms": 105.5,
       "attempts": [],
       "headers": {},
       "engine_logs": [
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-44\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-37\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-40\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-43\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-42\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-41\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-46\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-38\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-39\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}",
-        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-45\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T14:57:33Z\",\"message\":\"SNI verification failed\"}"
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-37\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-39\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-44\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-38\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-43\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-45\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-42\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-46\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-41\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}",
+        "{\"level\":\"warn\",\"component\":\"pipelock\",\"event\":\"sni_mismatch\",\"connect_host\":\"pypi.org\",\"sni_host\":\"\",\"client_ip\":\"192.168.64.1\",\"request_id\":\"req-40\",\"agent\":\"anonymous\",\"category\":\"timeout\",\"remediation_hint\":\"Correct the CONNECT hostname or TLS client so the SNI name matches the requested authority. `forward_proxy.sni_verification: false` disables domain-fronting protection for every tunnel and is not a narrow remediation.\",\"mitre_technique\":\"T1090.004\",\"time\":\"2026-09-09T18:14:16Z\",\"message\":\"SNI verification failed\"}"
       ]
     }
   ]

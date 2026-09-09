@@ -41,12 +41,17 @@ def owned_containers(include_fixture: bool = True) -> list[str]:
     return names
 
 
-def ownership_labels(role: str = "operational") -> dict[str, str]:
+def ownership_labels(
+    role: str = "operational", tls_interception: bool = False
+) -> dict[str, str]:
     root = str(Path.cwd().resolve()).encode()
     return {
         "io.internet-proxy-locally.managed": "true",
         "io.internet-proxy-locally.workspace": hashlib.sha256(root).hexdigest()[:16],
         "io.internet-proxy-locally.role": role,
+        "io.internet-proxy-locally.tls-interception": "true"
+        if tls_interception
+        else "false",
     }
 
 
@@ -118,7 +123,9 @@ def start_engine(
         mounts=mounts,
         publish=(host, port),
         dns=dns,
-        labels=ownership_labels("lab" if keep_fixture else "operational"),
+        labels=ownership_labels(
+            "lab" if keep_fixture else "operational", tls_interception=tls_interception
+        ),
     )
 
     def settled():
@@ -175,7 +182,7 @@ def egress_command(backend: Backend, engine: str | None, cli: str) -> list[str]:
         )
     spec = ServiceSpec.load(active)
     host, port = endpoint()
-    return [
+    cmd = [
         sys.executable,
         "-m",
         "internet_proxy_locally.checks.egress",
@@ -190,3 +197,7 @@ def egress_command(backend: Backend, engine: str | None, cli: str) -> list[str]:
         "--image",
         spec.image,
     ]
+    labels = backend.container_labels(spec.container_name)
+    if labels.get("io.internet-proxy-locally.tls-interception") == "true":
+        cmd.append("--tls-interception")
+    return cmd

@@ -38,6 +38,12 @@ def main(argv: list[str] | None = None) -> int:
         help="the engine image reference, recorded in --json output so "
         "a result file says what it measured (`ipl check` passes it)",
     )
+    parser.add_argument(
+        "--tls-interception",
+        action="store_true",
+        help="the running engine was started with TLS interception on, "
+        "recorded in --json output (`ipl check` passes it)",
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--quick", action="store_true")
     mode.add_argument("--full", action="store_true")
@@ -67,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
                     full=opts.full,
                     backend=opts.backend_bin,
                     image=opts.image,
+                    tls_interception=opts.tls_interception,
                 ),
                 indent=2,
             )

@@ -94,22 +94,22 @@ case "$cmd" in
     done
     ;;
   run)
-    name=""; prev=""; published=""; label_managed=""; label_workspace=""
+    name=""; prev=""; published=""; label_managed=""; label_workspace=""; label_tls="false"
     for a in "$@"; do
       if [ "$prev" = "--name" ]; then name="$a"; fi
       if [ "$a" = "--publish" ]; then published=1; fi
       if [ "$prev" = "--publish" ]; then publication="$a"; fi
       if [ "$prev" = "--label" ]; then
-        case "$a" in io.internet-proxy-locally.managed=*) label_managed="${a#*=}";; io.internet-proxy-locally.workspace=*) label_workspace="${a#*=}";; esac
+        case "$a" in io.internet-proxy-locally.managed=*) label_managed="${a#*=}";; io.internet-proxy-locally.workspace=*) label_workspace="${a#*=}";; io.internet-proxy-locally.tls-interception=*) label_tls="${a#*=}";; esac
       fi
       prev="$a"
     done
     echo running > "$FAKE_STATE/container-$name"
     if [ -n "$published" ]; then
       host="${publication%%:*}"; rest="${publication#*:}"; hostport="${rest%%:*}"; containerport="${rest##*:}"
-      printf '[{"State":{"Status":"running"},"Config":{"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s"}},"NetworkSettings":{"IPAddress":"172.17.0.9"},"HostConfig":{"PortBindings":{"%s/tcp":[{"HostIp":"%s","HostPort":"%s"}]}}}]\n' "$label_managed" "$label_workspace" "$containerport" "$host" "$hostport" > "$FAKE_STATE/meta-$name"
+      printf '[{"State":{"Status":"running"},"Config":{"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s","io.internet-proxy-locally.tls-interception":"%s"}},"NetworkSettings":{"IPAddress":"172.17.0.9"},"HostConfig":{"PortBindings":{"%s/tcp":[{"HostIp":"%s","HostPort":"%s"}]}}}]\n' "$label_managed" "$label_workspace" "$label_tls" "$containerport" "$host" "$hostport" > "$FAKE_STATE/meta-$name"
     else
-      printf '[{"State":{"Status":"running"},"Config":{"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s"}},"NetworkSettings":{"IPAddress":"172.17.0.9"}}]\n' "$label_managed" "$label_workspace" > "$FAKE_STATE/meta-$name"
+      printf '[{"State":{"Status":"running"},"Config":{"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s","io.internet-proxy-locally.tls-interception":"%s"}},"NetworkSettings":{"IPAddress":"172.17.0.9"}}]\n' "$label_managed" "$label_workspace" "$label_tls" > "$FAKE_STATE/meta-$name"
     fi
     # Only the engine publishes a port; the DNS fixture must not also try
     # to bind the test endpoint.
@@ -520,6 +520,22 @@ class RunPyCliTest(unittest.TestCase):
                 )
                 self.assertIn(f":{cert_mount}:ro", run_line)
                 self.assertIn(f":{key_mount}:ro", run_line)
+
+    def test_check_reports_whether_tls_interception_was_on(self) -> None:
+        self.build_engine("squid")
+        self.assertEqual(self.run_cli("ca", "init").returncode, 0)
+        for enabled in (True, False):
+            self.log.write_text("")
+            args = ["--backend", "docker", "--engine", "squid", "up"]
+            if enabled:
+                args.append("--tls-interception")
+            up = self.run_cli(*args)
+            self.assertEqual(up.returncode, 0, up.stderr)
+
+            check = self.run_cli("--backend", "docker", "check", "--json")
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+            payload = json.loads(check.stdout)
+            self.assertEqual(payload["tls_interception"], enabled)
 
     def test_restart_without_switch_restores_tunnel_mode(self) -> None:
         self.build_engine("squid")

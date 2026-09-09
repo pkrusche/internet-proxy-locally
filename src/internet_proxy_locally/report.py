@@ -17,6 +17,7 @@ from internet_proxy_locally.cli import CLI_MODULE
 from internet_proxy_locally.constants import ENGINE_LABELS as LABELS
 from internet_proxy_locally.constants import ENGINES
 from internet_proxy_locally.errors import Fail
+from internet_proxy_locally.spec import ServiceSpec
 
 
 def result_path(results_dir: Path, engine: str) -> Path:
@@ -164,6 +165,7 @@ def conditions_table(runs: dict[str, dict]) -> list[str]:
                 "unknown": "?",
             }.get(r.get("policy"), "?"),
         ),
+        ("TLS interception", lambda r: "on" if r.get("tls_interception") else "off"),
         ("Endpoint", lambda r: f"`{r.get('proxy', '?')}`"),
         ("Result", counts),
         ("Exit code", lambda r: str(r.get("exit_code", "?"))),
@@ -428,6 +430,7 @@ def measure_all(
     engines: tuple[str, ...] = ENGINES,
     results_dir: Path | None = None,
     out: Path | None = None,
+    tls_interception: bool = False,
 ) -> int:
     """Measure every engine, then rewrite the generated blocks of findings.
 
@@ -435,19 +438,30 @@ def measure_all(
     sequential, and each `ipl-lab up` removes whatever the last one left.
     The final `down` matters: `ipl-lab up` starts a DNS fixture that must
     never outlive the run.
+
+    `tls_interception` is passed to `up` only for engines that support it
+    (pipelock, squid); smokescreen doesn't, so it is still measured in
+    tunnel mode rather than failing the whole run.
     """
     results_dir = paths.results_dir() if results_dir is None else results_dir
     out = paths.findings_file() if out is None else out
     results_dir.mkdir(parents=True, exist_ok=True)
     lab_cli = [sys.executable, "-m", CLI_MODULE["ipl-lab"]]
     common = ["--backend", backend] if backend else []
+    tls_flag = ["--tls-interception"] if tls_interception else []
     try:
         try:
             print("=== lab setup (all engines + the DNS fixture)", flush=True)
-            _run(lab_cli + common + ["setup"])
+            _run(lab_cli + common + ["setup"] + tls_flag)
             for engine in engines:
-                print(f"=== {engine}: up (test policy)", flush=True)
-                _run(lab_cli + common + ["--engine", engine, "up"])
+                engine_tls = (
+                    tls_flag
+                    if ServiceSpec.load(engine).supports_tls_interception
+                    else []
+                )
+                suffix = " (TLS interception)" if engine_tls else ""
+                print(f"=== {engine}: up (test policy){suffix}", flush=True)
+                _run(lab_cli + common + ["--engine", engine, "up"] + engine_tls)
                 print(f"=== {engine}: check --json", flush=True)
                 proc = subprocess.run(
                     lab_cli + common + ["check", "--json"],

@@ -119,4 +119,14 @@ curl --cacert ca.pem https://example.com  # denied: a real 4xx, not a hung tunne
 ```
 
 `ipl-lab up --tls-interception && ipl-lab check` runs the adversarial suite
-against the intercepting configuration.
+against the intercepting configuration. `ipl-lab measure --tls-interception`
+does this across all three engines and rewrites `docs/findings.md`: pipelock
+and squid are measured with interception on, and smokescreen — which doesn't
+support it — is still measured in tunnel mode rather than failing the run.
+
+Every `--json` result records whether the engine it measured was running
+with interception on (`tls_interception`, schema version 3+) — `check`
+detects this from the running container's own ownership label rather than
+needing it repeated on the command line, so it stays right even when `check`
+is invoked separately from the `up` that started the engine. `docs/findings.md`'s
+conditions table has a matching "TLS interception" row per engine.

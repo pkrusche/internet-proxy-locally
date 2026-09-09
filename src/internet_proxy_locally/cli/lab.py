@@ -103,8 +103,14 @@ def cmd_measure(opts: argparse.Namespace) -> int:
     Per engine: setup, `up` on the test policy with the fixture, the full
     suite as JSON into results/<engine>.json. Finishes with a `down`, so no
     engine and no fixture is left running on a test allowlist.
+
+    `--tls-interception` measures the engines that support it (pipelock,
+    squid) with interception on; smokescreen, which does not, is still
+    measured in tunnel mode.
     """
-    return report.measure_all(backend=opts.backend, engines=ENGINES)
+    return report.measure_all(
+        backend=opts.backend, engines=ENGINES, tls_interception=opts.tls_interception
+    )
 
 
 def cmd_report(opts: argparse.Namespace) -> int:
@@ -146,10 +152,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("--json", action="store_true", help="machine-readable results")
     p_check.set_defaults(func=cmd_check)
 
-    sub.add_parser(
+    p_measure = sub.add_parser(
         "measure",
         help="measure all three engines, write results/, regenerate docs/findings.md",
-    ).set_defaults(func=cmd_measure)
+    )
+    common.add_tls_option(p_measure)
+    p_measure.set_defaults(func=cmd_measure)
 
     p_report = sub.add_parser(
         "report", help="regenerate docs/findings.md's tables from results/"

@@ -9,11 +9,12 @@ from dataclasses import asdict
 from .models import Result
 from .runner import policy_in_use
 
-# 2: the envelope carries the run's conditions (engine image, backend,
-# which policy was mounted, host, timestamp) so that `report` can
-# generate docs/findings.md from the result files alone, rather than from
-# a table somebody remembered to update.
-SCHEMA_VERSION = 2
+# 3: adds `tls_interception` to the run's conditions (was 2: the envelope
+# carries the run's conditions — engine image, backend, which policy was
+# mounted, host, timestamp — so that `report` can generate
+# docs/findings.md from the result files alone, rather than from a table
+# somebody remembered to update).
+SCHEMA_VERSION = 3
 
 
 def envelope(
@@ -23,6 +24,7 @@ def envelope(
     full: bool,
     backend: str | None = None,
     image: str | None = None,
+    tls_interception: bool = False,
 ) -> dict:
     """The `--json` document: the results plus the conditions they were
     measured under, which is what `report` generates
@@ -35,6 +37,7 @@ def envelope(
         "backend": backend or None,
         "image": image or None,
         "policy": policy_in_use(results),
+        "tls_interception": tls_interception,
         "host": f"{platform.system()} {platform.release()} {platform.machine()}",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "exit_code": 1 if any(r.outcome in ("fail", "error") for r in results) else 0,
