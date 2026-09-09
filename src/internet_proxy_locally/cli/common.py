@@ -32,6 +32,14 @@ def add_global_options(parser: argparse.ArgumentParser, engine_help: str) -> Non
     parser.add_argument("--backend", choices=BACKENDS, default=None, help=BACKEND_HELP)
 
 
+def add_tls_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--tls-interception",
+        action="store_true",
+        help="enable TLS interception for this invocation (Pipelock or Squid only)",
+    )
+
+
 def main(parser: argparse.ArgumentParser, argv: list[str] | None = None) -> int:
     """Parse, dispatch, and turn `Fail` into one line instead of a traceback.
 

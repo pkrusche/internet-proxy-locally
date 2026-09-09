@@ -94,7 +94,7 @@ def start_engine(
         if not spec.supports_tls_interception:
             raise Fail(
                 f"{engine} does not support TLS interception "
-                "(pipelock and squid do; set tls_interception = false or switch engine)"
+                "(pipelock and squid do; omit --tls-interception or switch engine)"
             )
         ca.validate_ca()
         mounts += spec.ca_mounts()

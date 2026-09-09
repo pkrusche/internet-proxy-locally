@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from functools import partial
 
 from internet_proxy_locally import report
 from internet_proxy_locally.backend import Backend, detect_backend
@@ -12,7 +13,6 @@ from internet_proxy_locally.cli import run as run_cli
 from internet_proxy_locally.constants import DEFAULT_ENGINE, DNS_FIXTURE, ENGINES
 from internet_proxy_locally.images import prepare_image
 from internet_proxy_locally.lab.container import fixture_spec, start_dns_fixture
-from internet_proxy_locally.lab.fixtures import load_lab_config
 from internet_proxy_locally.lab.render import (
     sync_test_policies,
     test_config_path,
@@ -27,7 +27,7 @@ def cmd_setup(opts: argparse.Namespace) -> int:
     """
     backend = detect_backend(opts.backend)
     print(f"selected backend: {backend.name}")
-    sync_test_policies()
+    sync_test_policies(tls_interception=opts.tls_interception)
     for name in (*ENGINES, DNS_FIXTURE):
         prepare_image(backend, name, rebuild=opts.rebuild)
     print("lab setup complete")
@@ -50,14 +50,14 @@ def cmd_up(opts: argparse.Namespace) -> int:
     """`ipl up` for the lab lane: the test policy, next to the fixture."""
     return common.run_up_command(
         opts=opts,
-        sync=sync_test_policies,
+        sync=partial(sync_test_policies, tls_interception=opts.tls_interception),
         destination=test_config_path,
         notice="NOTE: starting with the TEST policy — an allowlist that "
         "includes *.nip.io, *.sslip.io and the local fixture zones, and a "
         "dnsmasq container answering them. This is not an operational "
         "proxy. Run `ipl up` for one.",
         prestart=_start_fixture,
-        tls_interception=load_lab_config().tls_interception,
+        tls_interception=opts.tls_interception,
     )
 
 
@@ -132,6 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="rebuild locally built images even if present",
     )
+    common.add_tls_option(p_setup)
     p_setup.set_defaults(func=cmd_setup)
 
     sub.add_parser(
@@ -159,6 +160,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="report drift as a diff and exit 1 instead of writing",
     )
     p_report.set_defaults(func=cmd_report)
+
+    common.add_tls_option(sub.choices["up"])
 
     return parser
 

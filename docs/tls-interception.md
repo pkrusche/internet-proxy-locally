@@ -1,10 +1,17 @@
 # TLS interception (opt-in)
 
-Off by default. `[policy].tls_interception = true` in `config.toml` turns
+Off by default. The `--tls-interception` CLI switch turns
 Pipelock or Squid into the real TLS endpoint for allowlisted HTTPS
 destinations instead of an opaque CONNECT tunnel.  Smokescreen does not 
-support this, starting smokescreen with `[policy].tls_interception = true`
+support this, starting smokescreen with `--tls-interception`
 fails.
+
+Pass the switch after the subcommand: `ipl up --tls-interception`,
+`ipl restart --tls-interception`, or `ipl-lab up --tls-interception`.
+It is also available on both CLIs' `setup` commands. The choice is per
+invocation: repeat it on restart; omitting it renders tunnel mode.
+Remove the old `[policy].tls_interception` key from existing TOML files;
+it is no longer accepted. For the lab, initialize the CA with `ipl ca init`.
 
 ## What changes
 
@@ -34,10 +41,9 @@ ipl ca export --out ca.pem   # write the PUBLIC cert only, never the key
 ipl ca rotate            # generate a new CA (same as init --rebuild)
 ```
 
-`ipl setup` also generates the CA automatically, but only when
-`tls_interception = true` in `config.toml` and no CA exists yet — a repo
-that never opts in gets zero new files under `state/`. `ipl up` refuses to
-start an engine with `tls_interception = true` and no CA present, telling
+`ipl setup --tls-interception` also generates the CA automatically
+when no CA exists yet — a repo that never opts in gets zero new files under `state/`. `ipl up` refuses to
+start an engine with `--tls-interception` and no CA present, telling
 you to run `ipl ca init` first, rather than starting a half-configured
 engine.
 
@@ -105,13 +111,12 @@ Run `scripts/e2e-release.sh` on each supported runtime. A focused manual check i
 
 ```bash
 ipl ca export --out ca.pem
-ipl --engine pipelock up   # or --engine squid, with tls_interception = true
+ipl --engine pipelock up --tls-interception   # or --engine squid
 export HTTP_PROXY=http://127.0.0.1:18080 HTTPS_PROXY=http://127.0.0.1:18080
 curl --cacert ca.pem https://github.com   # allowlisted: succeeds, and
                                            # `ipl logs` shows the decrypted request
 curl --cacert ca.pem https://example.com  # denied: a real 4xx, not a hung tunnel
 ```
 
-`ipl-lab up && ipl-lab check` with `tls_interception = true` in the test
-policy runs the adversarial suite against the intercepting
-configuration.
+`ipl-lab up --tls-interception && ipl-lab check` runs the adversarial suite
+against the intercepting configuration.

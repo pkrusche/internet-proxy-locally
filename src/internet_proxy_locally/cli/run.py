@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import platform
+from functools import partial
 from pathlib import Path
 
 from internet_proxy_locally import __version__, ca
@@ -24,7 +25,6 @@ from internet_proxy_locally.lifecycle import (
     running_engine,
 )
 from internet_proxy_locally.net import endpoint, port_listening, probe_proxy
-from internet_proxy_locally.policy.config import load_policy_config
 from internet_proxy_locally.policy.render import (
     config_destination,
     sync_policies,
@@ -35,9 +35,9 @@ from internet_proxy_locally.spec import ServiceSpec
 def cmd_setup(opts: argparse.Namespace) -> int:
     print(f"python: {platform.python_version()}")
 
-    sync_policies()
+    sync_policies(tls_interception=opts.tls_interception)
 
-    if load_policy_config().tls_interception and not ca.ca_present():
+    if opts.tls_interception and not ca.ca_present():
         ca.generate_ca()
         print(f"generated the TLS-interception CA at {ca.ca_cert_path()}")
 
@@ -66,9 +66,9 @@ def cmd_up(opts: argparse.Namespace) -> int:
     """
     return common.run_up_command(
         opts=opts,
-        sync=sync_policies,
+        sync=partial(sync_policies, tls_interception=opts.tls_interception),
         destination=config_destination,
-        tls_interception=load_policy_config().tls_interception,
+        tls_interception=opts.tls_interception,
     )
 
 
@@ -217,6 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="prepare every engine, not just the selected one",
     )
+    common.add_tls_option(p_setup)
     p_setup.set_defaults(func=cmd_setup)
 
     sub.add_parser(
@@ -280,6 +281,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="generate a new CA "
         "(invalidates trust everywhere the old cert was installed)",
     ).set_defaults(func=cmd_ca_rotate)
+
+    for command in ("up", "restart"):
+        common.add_tls_option(sub.choices[command])
 
     return parser
 

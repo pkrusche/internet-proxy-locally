@@ -33,7 +33,7 @@ RUN apk add --no-cache ca-certificates "squid=6.12-r0"
 # cannot silently fall back to a permissive stock configuration.
 RUN rm -f /etc/squid/squid.conf
 
-# The ssl_bump cert-DB, needed only when `[policy].tls_interception` is on
+# The ssl_bump cert-DB, needed only when `--tls-interception` is on
 # (docs/tls-interception.md). Unconditional and cheap: it lets this one
 # image serve both tls_interception states, so there is no tag fork for
 # that reason. `security_file_certgen`'s path (`/usr/lib/squid/`) was

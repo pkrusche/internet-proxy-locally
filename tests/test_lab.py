@@ -7,7 +7,6 @@ against the same emulated runtime or the reuse is untested.
 
 from __future__ import annotations
 
-import dataclasses
 import ipaddress
 import json
 import re
@@ -81,6 +80,21 @@ class LabCliTest(RunPyCliTest):
 
     def fake_dns_fixture_image(self) -> None:
         self.fake_image(IMAGES[DNS_FIXTURE])
+
+    def test_up_tls_switch_controls_lab_policy_and_ca_mounts(self) -> None:
+        self.build_engine("squid")
+        self.fake_dns_fixture_image()
+        self.assertEqual(self.run_cli("ca", "init").returncode, 0)
+        for enabled in (True, False):
+            self.log.write_text("")
+            args = ["--backend", "docker", "--engine", "squid", "up"]
+            if enabled:
+                args.append("--tls-interception")
+            proc = self.lab_cli(*args)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            policy = (self.tmp / "lab/config/squid.test.conf").read_text()
+            self.assertEqual("ssl_bump bump all" in policy, enabled)
+            self.assertEqual(":/etc/squid/ca-key.pem:ro" in self.backend_log(), enabled)
 
     def test_up_starts_the_dns_fixture_and_points_the_engine_at_it(self) -> None:
         self.build_engine()
@@ -464,10 +478,8 @@ class LabUnitTest(unittest.TestCase):
     def test_rendered_test_policy_agrees_with_operational_on_tls_interception(
         self,
     ) -> None:
-        """`LabConfig.tls_interception` comes from config.toml, the same way
-        `allow` does — the lab lane must not decide this independently."""
-        config = dataclasses.replace(load_lab_config(), tls_interception=True)
-        rendered = render_test_policies(config)
+        """Both lanes accept an explicit rendering option."""
+        rendered = render_test_policies(tls_interception=True)
         spec = ServiceSpec.load("squid")
         squid_text = rendered[test_config_path(spec)]
         self.assertIn("ssl_bump peek step1", squid_text)
@@ -607,13 +619,11 @@ class LabUnitTest(unittest.TestCase):
     def test_lab_uses_operational_settings_from_the_supplied_file(self) -> None:
         path = self.fixture_config()
         body = path.read_text()
-        body = body.replace("[policy]", "[policy]\ntls_interception = true")
         body = body.replace("pypi.org", "packages.example.com")
         path.write_text(body)
         config = load_lab_config(path)
         self.assertIn("packages.example.com", config.allow)
         self.assertEqual(config.fixture.ptr_claims, "packages.example.com")
-        self.assertTrue(config.tls_interception)
 
 
 if __name__ == "__main__":

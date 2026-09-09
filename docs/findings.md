@@ -455,7 +455,7 @@ mode: Squid becomes the real TLS endpoint, decrypts, evaluates
 instead of aborting an opaque tunnel — which is exactly what closes
 failure 1 (there is now a signing certificate to reach for) and failure 3
 (policy runs before the client is told anything succeeded). This mode
-ships as opt-in (`[policy].tls_interception = true`), off by default, with
+ships as opt-in (`--tls-interception`), off by default, with
 one template branch emitting the complete recipe — `ssl_bump peek step1`
 paired with `ssl_bump bump all`, never one without the other.
 

@@ -21,7 +21,6 @@ class PolicyConfig:
     """The shared logical policy, read from config.toml."""
 
     allow: tuple[str, ...]
-    tls_interception: bool = False
 
     @staticmethod
     def exact(entries: tuple[str, ...] | list[str]) -> list[str]:
@@ -96,19 +95,14 @@ def parse_policy_config(data: dict, path: Path) -> PolicyConfig:
     policy = data.get("policy")
     if not isinstance(policy, dict):
         raise Fail(f"{path}: missing the [policy] table")
-    reject_unknown(
-        policy, {"allow", "tls_interception", "test"}, path, "key(s) in [policy]"
-    )
+    reject_unknown(policy, {"allow", "test"}, path, "key(s) in [policy]")
     allow = allow_list(policy.get("allow", []), path, "policy.allow")
     if not allow:
         raise Fail(
             f"{path}: policy.allow must not be empty "
             "(default deny needs explicit allows)"
         )
-    tls_interception = policy.get("tls_interception", False)
-    if not isinstance(tls_interception, bool):
-        raise Fail(f"{path}: policy.tls_interception must be a boolean")
-    return PolicyConfig(tuple(allow), tls_interception)
+    return PolicyConfig(tuple(allow))
 
 
 def load_policy_config(path: Path | None = None) -> PolicyConfig:

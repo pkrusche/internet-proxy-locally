@@ -478,28 +478,21 @@ class RunPyCliTest(unittest.TestCase):
 
     # -- TLS interception (opt-in; docs/tls-interception.md) -----------------
 
-    def _enable_tls_interception(self) -> None:
-        config_toml = self.tmp / "config.toml"
-        config_toml.write_text(
-            config_toml.read_text(encoding="utf-8").replace(
-                "tls_interception = false", "tls_interception = true"
-            ),
-            encoding="utf-8",
-        )
-
     def test_up_fails_closed_on_smokescreen_with_tls_interception(self) -> None:
         self.build_engine("smokescreen")
-        self._enable_tls_interception()
         self.assertEqual(self.run_cli("ca", "init").returncode, 0)
-        proc = self.run_cli("--backend", "docker", "--engine", "smokescreen", "up")
+        proc = self.run_cli(
+            "--backend", "docker", "--engine", "smokescreen", "up", "--tls-interception"
+        )
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("does not support TLS interception", proc.stderr)
         self.assertNotIn("run --detach", self.backend_log())
 
     def test_up_fails_closed_with_tls_interception_and_no_ca(self) -> None:
         self.build_engine("squid")
-        self._enable_tls_interception()
-        proc = self.run_cli("--backend", "docker", "--engine", "squid", "up")
+        proc = self.run_cli(
+            "--backend", "docker", "--engine", "squid", "up", "--tls-interception"
+        )
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("no CA exists", proc.stderr)
         self.assertNotIn("run --detach", self.backend_log())
@@ -512,15 +505,35 @@ class RunPyCliTest(unittest.TestCase):
             with self.subTest(engine=engine):
                 self.log.write_text("")
                 self.build_engine(engine)
-                self._enable_tls_interception()
                 self.assertEqual(self.run_cli("ca", "init").returncode, 0)
-                proc = self.run_cli("--backend", "docker", "--engine", engine, "up")
+                proc = self.run_cli(
+                    "--backend",
+                    "docker",
+                    "--engine",
+                    engine,
+                    "up",
+                    "--tls-interception",
+                )
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 run_line = next(
                     l for l in self.backend_log().splitlines() if l.startswith("run ")
                 )
                 self.assertIn(f":{cert_mount}:ro", run_line)
                 self.assertIn(f":{key_mount}:ro", run_line)
+
+    def test_restart_without_switch_restores_tunnel_mode(self) -> None:
+        self.build_engine("squid")
+        self.assertEqual(self.run_cli("ca", "init").returncode, 0)
+        for enabled in (True, False):
+            self.log.write_text("")
+            args = ["--engine", "squid", "restart"]
+            if enabled:
+                args.append("--tls-interception")
+            proc = self.run_cli(*args)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            policy = (self.tmp / "config" / "squid.conf").read_text()
+            self.assertEqual("ssl_bump bump all" in policy, enabled)
+            self.assertEqual(":/etc/squid/ca-key.pem:ro" in self.backend_log(), enabled)
 
     def test_ca_init_status_rotate_export(self) -> None:
         status = self.run_cli("ca", "status")
@@ -807,9 +820,17 @@ class RunPyUnitTest(unittest.TestCase):
                 f"{rel} is stale — run `ipl up` and commit the result",
             )
 
+    def test_config_rejects_old_tls_setting(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.toml"
+            path.write_text(
+                '[policy]\nallow = ["github.com"]\ntls_interception = true\n'
+            )
+            with self.assertRaisesRegex(Fail, "unknown.*tls_interception"):
+                load_policy_config(path)
+
     def test_generated_policies_include_tls_interception_recipe(self) -> None:
-        config = PolicyConfig(allow=load_policy_config().allow, tls_interception=True)
-        rendered = render_policies(config)
+        rendered = render_policies(tls_interception=True)
         pipelock_text = rendered[REPO_ROOT / "config" / "pipelock.yaml"]
         self.assertIn("enabled: true", pipelock_text)
         squid_text = rendered[REPO_ROOT / "config" / "squid.conf"]

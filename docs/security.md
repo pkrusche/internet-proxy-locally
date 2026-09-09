@@ -15,7 +15,7 @@ that client can connect:
 * no CONNECT tunnel abuse **where the engine supports detecting it** — SNI
   ↔ CONNECT target mismatch (domain fronting) and non-TLS bytes inside a
   tunnel. Pipelock does unconditionally; Squid does too when
-  `tls_interception` is on ([tls-interception.md](tls-interception.md));
+  `--tls-interception` is on ([tls-interception.md](tls-interception.md));
   Smokescreen never does.
 
 ## What it does not defend against
@@ -25,7 +25,7 @@ that client can connect:
   not prohibit uploads or restrict an allowed service to a particular account. If
   `github.com` is allowed, data can be pushed to any reachable GitHub
   repository; this service controls destinations only. Turning on
-  `tls_interception` ([tls-interception.md](tls-interception.md)) enables inspection but does not
+  `--tls-interception` ([tls-interception.md](tls-interception.md)) enables inspection but does not
   itself close this gap, and requires the engine to custody a private key
   and every connected sandbox needing that CA in its trust store
 * Anything reachable without traversing the proxy. Preventing direct egress
@@ -48,10 +48,10 @@ that client can connect:
   denial; a DNS/origin 5xx is inconclusive and fails startup.
 * Open modes and private-range escape hatches are absent from the fixed
   templates. Pipelock is rendered in strict mode, Smokescreen in enforce
-  mode, and Squid ends in default deny. `tls_interception = true` selects
+  mode, and Squid ends in default deny. `--tls-interception` selects
   complete CA-backed recipes for Pipelock and Squid; partial states are not
   generated ([tls-interception.md](tls-interception.md)).
-* `up` refuses to start an engine with `tls_interception = true` and no CA
+* `up` refuses to start an engine with `--tls-interception` and no CA
   generated yet, and the CA's private key is written `0600` at creation
   time (never `chmod`ed after), so there is no window where it is
   world-readable.

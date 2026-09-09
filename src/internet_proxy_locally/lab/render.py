@@ -34,7 +34,9 @@ def test_config_path(spec: ServiceSpec) -> Path:
     return paths.lab_config_dir() / f"{stem}.test.{suffix}"
 
 
-def render_test_policies(config: LabConfig | None = None) -> dict[Path, str]:
+def render_test_policies(
+    config: LabConfig | None = None, *, tls_interception: bool = False
+) -> dict[Path, str]:
     """Render lab configs with the shared policy templates and fixture data."""
     config = load_lab_config() if config is None else config
     rendered = render_engine_policies(
@@ -42,7 +44,7 @@ def render_test_policies(config: LabConfig | None = None) -> dict[Path, str]:
         allow_test=config.allow_test,
         test_policy=True,
         destination=test_config_path,
-        tls_interception=config.tls_interception,
+        tls_interception=tls_interception,
     )
     env = jinja_env()
     rendered.update(_render_fixture_hosts(env, config.fixture))
@@ -86,6 +88,10 @@ def _render_fixture_env(env, fixture: FixtureConfig) -> dict[Path, str]:
     return {paths.workspace_root() / spec.extra_config_file: text}
 
 
-def sync_test_policies(config: LabConfig | None = None) -> list[Path]:
+def sync_test_policies(
+    config: LabConfig | None = None, *, tls_interception: bool = False
+) -> list[Path]:
     """Regenerate lab/config/; return what changed."""
-    return write_rendered(render_test_policies(config))
+    return write_rendered(
+        render_test_policies(config, tls_interception=tls_interception)
+    )

@@ -17,8 +17,6 @@ allow = [
     "registry.npmjs.org",
 ]
 
-tls_interception = false
-
 # Lab-only additions; operational startup uses [policy] above.
 [policy.test]
 allow = [

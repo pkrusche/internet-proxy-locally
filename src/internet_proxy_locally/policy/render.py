@@ -97,7 +97,9 @@ def render_engine_policies(
     return rendered
 
 
-def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
+def render_policies(
+    config: PolicyConfig | None = None, *, tls_interception: bool = False
+) -> dict[Path, str]:
     """Render every engine config from config.toml. Path -> file contents."""
     config = load_policy_config() if config is None else config
     return render_engine_policies(
@@ -105,13 +107,15 @@ def render_policies(config: PolicyConfig | None = None) -> dict[Path, str]:
         allow_test=[],
         test_policy=False,
         destination=config_destination,
-        tls_interception=config.tls_interception,
+        tls_interception=tls_interception,
     )
 
 
-def sync_policies(config: PolicyConfig | None = None) -> list[Path]:
+def sync_policies(
+    config: PolicyConfig | None = None, *, tls_interception: bool = False
+) -> list[Path]:
     """Regenerate the engine configs from config.toml; return what changed."""
-    return write_rendered(render_policies(config))
+    return write_rendered(render_policies(config, tls_interception=tls_interception))
 
 
 def write_rendered(rendered: dict[Path, str]) -> list[Path]:

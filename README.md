@@ -137,3 +137,6 @@ Separately: `project-sandbox` does **not** currently route sandboxes through
 this proxy. It sets no `HTTP_PROXY` and filters egress with its own
 allowlist, so exporting the variables by hand is what puts a client behind
 this proxy today.
+
+Enable TLS interception per run with `ipl up --tls-interception` or
+`ipl-lab up --tls-interception`; repeat the switch on `ipl restart`.
