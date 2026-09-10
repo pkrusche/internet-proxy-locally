@@ -6,6 +6,7 @@ import difflib
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # Marker names in docs/findings.md; only their contents are regenerated.
@@ -42,6 +43,9 @@ def result_path(results_dir: Path, engine: str) -> Path:
 
 
 def load_runs(results_dir: Path, engines: tuple[str, ...]) -> dict[str, dict]:
+    bundle = results_dir / "benchmark.json"
+    if bundle.is_file():
+        return load_benchmark(bundle, engines)
     runs: dict[str, dict] = {}
     for engine in engines:
         path = result_path(results_dir, engine)
@@ -49,26 +53,158 @@ def load_runs(results_dir: Path, engines: tuple[str, ...]) -> dict[str, dict]:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise Fail(f"{path}: cannot read result file: {exc}") from exc
-        version = data.get("schema_version")
-        if version != egress.SCHEMA_VERSION:
-            raise Fail(
-                f"{path}: schema_version {version}, but this checker writes "
-                f"{egress.SCHEMA_VERSION}. Re-run the suite for {engine}; an older "
-                "file does not carry the conditions this report states."
-            )
-        if data.get("engine") != engine:
-            raise Fail(
-                f"{path}: holds results for {data.get('engine')!r}, not {engine!r}"
-            )
-        if data.get("mode") != "full":
-            raise Fail(
-                f"{path}: is a `{data.get('mode')}` run. The comparison is "
-                "generated from `ipl-lab check`; a quick run has no fixture rows "
-                "and would report them as missing rather than as skipped."
-            )
+        validate_run(data, engine, path)
         runs[engine] = data
         runs[engine]["_path"] = path
     return runs
+
+
+def validate_run(data: dict, engine: str, path: Path) -> None:
+    version = data.get("schema_version")
+    if version != egress.SCHEMA_VERSION:
+        raise Fail(
+            f"{path}: schema_version {version}, but this checker writes "
+            f"{egress.SCHEMA_VERSION}. Re-run the suite for {engine}; an older "
+            "file does not carry the conditions this report states."
+        )
+    if data.get("engine") != engine:
+        raise Fail(f"{path}: holds results for {data.get('engine')!r}, not {engine!r}")
+    if data.get("mode") != "full":
+        raise Fail(
+            f"{path}: is a `{data.get('mode')}` run. The comparison is "
+            "generated from `ipl-lab check`; a quick run has no fixture rows "
+            "and would report them as missing rather than as skipped."
+        )
+
+
+def load_benchmark(path: Path, engines: tuple[str, ...]) -> dict[str, dict]:
+    """Load a complete paired measurement; never fill gaps from legacy files."""
+    try:
+        bundle = json.loads(path.read_text(encoding="utf-8"))
+        if bundle["benchmark_version"] != 1:
+            raise ValueError("unsupported benchmark_version")
+        runs = {}
+        for engine in engines:
+            modes = bundle["runs"][engine]
+            expected = (
+                {"off", "on"}
+                if ServiceSpec.load(engine).supports_tls_interception
+                else {"off"}
+            )
+            if set(modes) != expected:
+                raise ValueError(f"{engine}: expected modes {sorted(expected)}")
+            for mode, data in modes.items():
+                validate_run(data, engine, path)
+                if data.get("tls_interception") is not (mode == "on"):
+                    raise ValueError(
+                        f"{engine}: TLS mode disagrees with {mode} results"
+                    )
+                data["_path"] = path
+            run = modes["off"]
+            run["_paired"] = True
+            if "on" in modes:
+                run["_tls_run"] = modes["on"]
+            runs[engine] = run
+        return runs
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise Fail(f"{path}: invalid benchmark: {exc}") from exc
+
+
+def variants(run: dict) -> list[tuple[str, dict]]:
+    result = [("off", run)]
+    if "_tls_run" in run:
+        result.append(("on", run["_tls_run"]))
+    return result
+
+
+def paired_cell(off: str, on: str | None) -> str:
+    if on is None:
+        return f"{off} (off only)"
+    return off if off == on else f"off: {off}<br>on: {on}"
+
+
+def paired_sections(runs: dict[str, dict]) -> dict[str, str]:
+    """One proxy column; expand a cell only when TLS changes its verdict."""
+    header = "| Check | " + " | ".join(LABELS[e] for e in runs) + " |"
+    matrix = [
+        (
+            "Each proxy has one column. A single verdict applies to both TLS modes; "
+            "differences are labeled **off** and **on**. Smokescreen supports off only. "
+            "Bracketed values are attributed denial causes."
+        ),
+        "",
+        header,
+        "| --- |" + " --- |" * len(runs),
+    ]
+    details = []
+    for check in egress.TESTS:
+        cells = []
+        details += [f"### {check.name}", "", egress.check_purpose(check.name), ""]
+        for engine, run in runs.items():
+            off = verdict(rows_of(run).get(check.name))
+            on = (
+                verdict(rows_of(run["_tls_run"]).get(check.name))
+                if "_tls_run" in run
+                else None
+            )
+            cells.append(paired_cell(off, on))
+            for mode, data in variants(run):
+                row = rows_of(data).get(check.name)
+                if row is None:
+                    details.append(f"* **{LABELS[engine]} (TLS {mode})** — missing.")
+                    continue
+                details.append(
+                    f"* **{LABELS[engine]} (TLS {mode})** — {verdict(row)} "
+                    f"(expectation: {row['expectation']}, {row.get('elapsed_ms', 0):.0f}ms)  "
+                )
+                details.append(f"  {row['detail']}")
+        matrix.append(f"| [{check.name}](#{check.name}) | " + " | ".join(cells) + " |")
+        details.append("")
+    summary = []
+    for engine, run in runs.items():
+        totals = paired_cell(
+            counts(run), counts(run["_tls_run"]) if "_tls_run" in run else None
+        )
+        summary.append(f"* **{LABELS[engine]}**: {totals}.")
+    summary += [
+        "",
+        "Concurrency sanity passes only when all ten simultaneous CONNECTs establish.",
+    ]
+    conditions = [
+        "| Condition | " + " | ".join(LABELS[e] for e in runs) + " |",
+        "| --- |" + " --- |" * len(runs),
+        "| TLS interception | "
+        + " | ".join(
+            "off and on" if "_tls_run" in run else "off only (unsupported)"
+            for run in runs.values()
+        )
+        + " |",
+    ]
+    for label, field in (
+        ("Measured", "generated_at"),
+        ("Backend", "backend"),
+        ("Host", "host"),
+        ("Image", "image"),
+        ("Policy", "policy"),
+        ("Endpoint", "proxy"),
+        ("Exit code", "exit_code"),
+    ):
+        cells = []
+        for run in runs.values():
+            off = str(run.get(field, "?"))
+            on = str(run["_tls_run"].get(field, "?")) if "_tls_run" in run else None
+            cells.append(paired_cell(off, on))
+        conditions.append(f"| {label} | " + " | ".join(cells) + " |")
+    sources = sorted(
+        {str(run["_path"].relative_to(paths.workspace_root())) for run in runs.values()}
+    )
+    conditions += ["", "Source files: " + ", ".join(f"`{p}`" for p in sources) + "."]
+    return {
+        "conditions": "\n".join(conditions),
+        "summary": "\n".join(summary),
+        "matrix": "\n".join(matrix),
+        "per-check": "\n".join(details).rstrip(),
+    }
 
 
 def rows_of(run: dict) -> dict[str, dict]:
@@ -177,6 +313,8 @@ def conditions_table(runs: dict[str, dict]) -> list[str]:
 
 def render_sections(runs: dict[str, dict], results_dir: Path) -> dict[str, str]:
     """The generated blocks of docs/findings.md, keyed by marker name."""
+    if any(run.get("_paired") for run in runs.values()):
+        return paired_sections(runs)
     return {
         "conditions": _conditions(runs, results_dir),
         "summary": _summary(runs),
@@ -430,67 +568,71 @@ def measure_all(
     engines: tuple[str, ...] = ENGINES,
     results_dir: Path | None = None,
     out: Path | None = None,
-    tls_interception: bool = False,
 ) -> int:
-    """Measure every engine, then rewrite the generated blocks of findings.
-
-    Every engine publishes the same endpoint, so this is necessarily
-    sequential, and each `ipl-lab up` removes whatever the last one left.
-    The final `down` matters: `ipl-lab up` starts a DNS fixture that must
-    never outlive the run.
-
-    `tls_interception` is passed to `up` only for engines that support it
-    (pipelock, squid); smokescreen doesn't, so it is still measured in
-    tunnel mode rather than failing the whole run.
-    """
+    """Measure off/on sequentially, publish a complete bundle, then report."""
     if backend not in (None, "docker"):
         raise Fail("the lab requires Docker; use ipl for Apple container setups")
     results_dir = paths.results_dir() if results_dir is None else results_dir
     out = paths.findings_file() if out is None else out
     results_dir.mkdir(parents=True, exist_ok=True)
-    lab_cli = [sys.executable, "-m", CLI_MODULE["ipl-lab"]]
-    common = ["--backend", "docker"]
-    tls_flag = ["--tls-interception"] if tls_interception else []
+    lab_cli = [sys.executable, "-m", CLI_MODULE["ipl-lab"], "--backend", "docker"]
+    measured: dict[str, dict] = {}
     try:
         try:
             print("=== lab setup (all engines + the DNS fixture)", flush=True)
-            _run(lab_cli + common + ["setup"] + tls_flag)
+            _run(lab_cli + ["setup", "--tls-interception"])
             for engine in engines:
-                engine_tls = (
-                    tls_flag
+                measured[engine] = {}
+                modes = (
+                    (False, True)
                     if ServiceSpec.load(engine).supports_tls_interception
-                    else []
+                    else (False,)
                 )
-                suffix = " (TLS interception)" if engine_tls else ""
-                print(f"=== {engine}: up (test policy){suffix}", flush=True)
-                _run(lab_cli + common + ["--engine", engine, "up"] + engine_tls)
-                print(f"=== {engine}: check --json", flush=True)
-                proc = subprocess.run(
-                    lab_cli + common + ["check", "--json"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                # Exit 1 is a measured failure to report; only invalid output aborts.
-                try:
-                    json.loads(proc.stdout)
-                except json.JSONDecodeError as exc:
-                    raise Fail(
-                        f"{engine}: `ipl-lab check --json` produced no result "
-                        f"document ({exc}).\n{proc.stderr.strip()}"
-                    ) from exc
-                path = results_dir / f"{engine}.json"
-                path.write_text(proc.stdout, encoding="utf-8")
-                print(
-                    f"=== {engine}: wrote {path.relative_to(paths.workspace_root())} "
-                    f"(exit {proc.returncode})",
-                    flush=True,
-                )
+                for interception in modes:
+                    mode = "on" if interception else "off"
+                    print(f"=== {engine}: up (test policy, TLS {mode})", flush=True)
+                    flags = ["--tls-interception"] if interception else []
+                    _run(lab_cli + ["--engine", engine, "up"] + flags)
+                    proc = subprocess.run(
+                        lab_cli + ["check", "--json"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    # Failed checks are evidence; missing or mislabeled runs are not.
+                    try:
+                        data = json.loads(proc.stdout)
+                        validate_run(data, engine, results_dir / "benchmark.json")
+                        if data.get("tls_interception") is not interception:
+                            raise ValueError(
+                                "reported TLS mode disagrees with requested mode"
+                            )
+                    except (ValueError, TypeError, AttributeError) as exc:
+                        raise Fail(
+                            f"{engine} (TLS {mode}): invalid check result ({exc}).\n{proc.stderr.strip()}"
+                        ) from exc
+                    measured[engine][mode] = data
+                    print(
+                        f"=== {engine} (TLS {mode}): measured (exit {proc.returncode})",
+                        flush=True,
+                    )
         finally:
-            subprocess.run(lab_cli + common + ["down"], check=False)
+            subprocess.run(lab_cli + ["down"], check=False)
     except Fail as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    # Replacing one file prevents interrupted runs from mixing measurement batches.
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=results_dir, delete=False
+    ) as staged:
+        staged_path = Path(staged.name)
+        try:
+            json.dump({"benchmark_version": 1, "runs": measured}, staged, indent=2)
+            staged.write("\n")
+            staged.close()
+            staged_path.replace(results_dir / "benchmark.json")
+        finally:
+            staged_path.unlink(missing_ok=True)
     return write_findings(
         check=False, results_dir=results_dir, out=out, engines=engines
     )

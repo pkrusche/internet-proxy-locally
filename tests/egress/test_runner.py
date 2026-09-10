@@ -142,7 +142,7 @@ class EgressSuiteTest(unittest.TestCase):
         # Fixture-dependent tests skip: *.nip.io is not in the mock allowlist.
         self.assertEqual(results["dns-private-ipv4"].outcome, "skip")
         self.assertEqual(results["dns-rebinding"].outcome, "skip")
-        self.assertEqual(results["concurrency-sanity"].outcome, "record")
+        self.assertEqual(results["concurrency-sanity"].outcome, "pass")
 
     def test_full_suite_lenient_grades_fail_on_every_engine(self) -> None:
         """No per-engine grading override exists any more: every engine is

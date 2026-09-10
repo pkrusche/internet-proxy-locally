@@ -23,7 +23,7 @@ def test_concurrency(client: ProxyClient) -> tuple[str, str]:
         results = list(pool.map(one, range(10)))
     ok = sum(results)
     return (
-        "record",
+        "pass" if ok == 10 else "fail",
         f"10 concurrent CONNECTs to an allowed host: {ok} established, {10 - ok} denied/failed",
     )
 
@@ -31,7 +31,7 @@ def test_concurrency(client: ProxyClient) -> tuple[str, str]:
 CHECK = Check(
     "concurrency-sanity",
     "full",
-    "record",
+    "allow",
     test_concurrency,
     False,
     "Ten simultaneous CONNECTs to an allowed host all succeed — "

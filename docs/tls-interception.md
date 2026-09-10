@@ -140,7 +140,7 @@ control; DNS rebinding still uses the fixture's trap and requires evidence
 that a replacement DNS answer was actually offered.
 
 Saved results are historical evidence. Re-run
-`uv run ipl-lab measure --tls-interception` to regenerate results and findings
+`uv run ipl-lab measure` to regenerate results and findings
 with the active probes; editing the checker does not retroactively regrade them.
 
 ## Verifying interception end to end
@@ -163,10 +163,10 @@ covering destinations the floors deny (see [Squid](#squid) above). An
 ambiguous client-side abort remains inconclusive in the egress suite.
 
 `ipl-lab up --tls-interception && ipl-lab check` runs the adversarial suite
-against the intercepting configuration. `ipl-lab measure --tls-interception`
-does this across all three engines and rewrites `docs/findings.md`: pipelock
-and squid are measured with interception on, and smokescreen — which doesn't
-support it — is still measured in tunnel mode rather than failing the run.
+against the intercepting configuration. `ipl-lab measure`
+runs both TLS modes and rewrites one comparison table in `docs/findings.md`.
+Pipelock and Squid are measured with interception off and on; Smokescreen
+supports off only. Cells label each mode when its verdict or denial cause differs.
 
 Every `--json` result records whether the engine it measured was running
 with interception on (`tls_interception`, schema version 3+) — `check`

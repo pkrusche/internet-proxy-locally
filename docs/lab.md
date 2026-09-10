@@ -17,7 +17,7 @@ ipl-lab setup     # all three engines + the DNS fixture image
 ipl-lab up        # fixture, then an engine on the TEST policy
 ipl-lab check     # the full adversarial suite
 ipl-lab down      # remove both
-ipl-lab measure   # all three engines end to end, then rewrite findings.md
+ipl-lab measure   # both TLS modes, then rewrite findings.md
 ```
 
 `--engine` selects the proxy. `--backend docker` is optional and is the only
@@ -108,7 +108,7 @@ Network ownership labels are checked before reuse or removal.
 
 After updating from the old fixtures, rebuild with `uv run ipl-lab setup`.
 The fixture image tag is now `2.91-r1-build3`, so setup cannot reuse the old
-image. Then run `uv run ipl-lab measure --tls-interception` to replace the
+image. Then run `uv run ipl-lab measure` to replace the
 historical results with Docker measurements.
 
 ## Reproducing the comparison
@@ -123,7 +123,9 @@ ipl-lab check                      # full check / egress suite; needs lab mode
 
 Grades are `pass` (expectation met), `fail` (violated), `record` (behavior
 observed without a defined verdict), `skip` (missing prerequisite), and `error`
-(check could not run). Recorded rows retain the observed allowed/denied behavior.
+(check could not run). Historical recorded rows retain the observed allowed/denied behavior.
+Concurrency sanity now passes when all ten simultaneous CONNECTs establish
+and fails if any do not.
 
 CONNECT deny probes require an active TLS/HTTP exchange after the CONNECT
 acknowledgment. Explicit refusals pass; timeouts, resets, or ambiguous TLS/HTTP
@@ -135,17 +137,25 @@ JSON results include timing, available per-attempt evidence, response headers,
 denial causes, and engine logs. 
 
 ```bash
-ipl-lab measure                    # ipl-lab check for all three engines, then rewrite findings.md
+ipl-lab measure                    # both TLS modes for all engines, then rewrite findings.md
 ipl-lab --backend docker measure   # Docker is also the default
 ipl-lab report                     # rewrite from the committed results/
 ipl-lab report --check             # CI: exit 1 if the tables are stale
 ```
 
-`measure` drives, per engine, `up` on the test policy and `check --json`
-into `results/<engine>.json`, and finishes with a `down` so no engine and
-no fixture is left running on a test allowlist. The result files are
-committed: without them the generated blocks of `findings.md` could not be
-re-derived, only believed.
+`measure` runs each engine with TLS interception off, then on where supported.
+Pipelock and Squid run twice; Smokescreen runs once and is marked **off only**.
+The comparison has one column per proxy: matching verdicts appear once, while
+differences show **off** and **on**, including changes in attributed denial cause.
+Per-check details retain the evidence from each mode.
+
+All five runs are saved together in `results/benchmark.json` only after the
+batch completes; an interrupted batch leaves the previous results intact.
+A final `down` removes the engine and fixture. `measure` has no TLS mode flag;
+it always benchmarks all supported scenarios.
+Commit the bundle and generated findings together. `report` prefers the bundle,
+and still reads historical `results/<engine>.json` files if no bundle exists;
+it never combines an incomplete bundle with older results.
 
 `report` rewrites only the regions of `findings.md` between
 `<!-- BEGIN GENERATED <name> -->` and `<!-- END GENERATED <name> -->`.

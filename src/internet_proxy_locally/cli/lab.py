@@ -98,19 +98,8 @@ def cmd_check(opts: argparse.Namespace) -> int:
 
 
 def cmd_measure(opts: argparse.Namespace) -> int:
-    """Measure every engine, then regenerate the tables in docs/findings.md.
-
-    Per engine: setup, `up` on the test policy with the fixture, the full
-    suite as JSON into results/<engine>.json. Finishes with a `down`, so no
-    engine and no fixture is left running on a test allowlist.
-
-    `--tls-interception` measures the engines that support it (pipelock,
-    squid) with interception on; smokescreen, which does not, is still
-    measured in tunnel mode.
-    """
-    return report.measure_all(
-        backend=opts.backend, engines=ENGINES, tls_interception=opts.tls_interception
-    )
+    """Measure both TLS modes and regenerate the combined findings table."""
+    return report.measure_all(backend=opts.backend, engines=ENGINES)
 
 
 def cmd_report(opts: argparse.Namespace) -> int:
@@ -154,9 +143,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_measure = sub.add_parser(
         "measure",
-        help="measure all three engines, write results/, regenerate docs/findings.md",
+        help="measure all engines in both TLS modes and regenerate docs/findings.md",
     )
-    common.add_tls_option(p_measure)
     p_measure.set_defaults(func=cmd_measure)
 
     p_report = sub.add_parser(
