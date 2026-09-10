@@ -149,3 +149,37 @@ this proxy today.
 
 Enable TLS interception per run with `ipl up --tls-interception` or
 `ipl-lab up --tls-interception`; repeat the switch on `ipl restart`.
+
+### Codex backend traffic and TLS interception
+
+Direct Codex backend traffic can fail through the intercepting proxy even
+when `chatgpt.com` is allowlisted. Observed failures include:
+
+- **WebSocket fallback with Squid.** The shipped configuration does not
+  enable HTTP upgrades, so Squid drops the WebSocket upgrade header. Codex
+  can fall back to streaming HTTPS (SSE).
+- **Compressed requests blocked by Pipelock 3.3.0.** Codex sends POST bodies
+  with `Content-Encoding: zstd`. Pipelock's request-body scanner rejects them
+  with `compressed bodies cannot be scanned for secrets`, so HTTPS fallback
+  can fail too. The log's generic suggestion to add a DLP suppression does
+  not address this compression rejection.
+- **Pipelock rate limits.** Logs showing `scanner: ratelimit` and
+  `rate limit exceeded for chatgpt.com` explain an
+  `HTTP CONNECT failed with status 429` error. This refusal happens before
+  TLS or a WebSocket upgrade. Model traffic and the `codex_apps` MCP endpoint
+  (`https://chatgpt.com/backend-api/ps/mcp`) share the destination; retries
+  can add pressure to its rate limit. The MCP startup error alone does not
+  identify which proxy check failed.
+
+**We recommend using an agent gateway for backend traffic rather than
+weakening this proxy's configuration.** Choose a gateway that supports the
+agent's model and MCP connections, including their streaming transports and
+compression, and enforces an explicit policy for those connections. Keep
+this proxy's existing controls for sandbox Internet access. Interception
+exemptions, disabled scanning, or higher rate limits are not our recommended
+fix for this incompatibility; gateway integration is not provided by this
+repository.
+
+See [TLS interception](docs/tls-interception.md),
+[Squid's HTTP upgrade behavior](https://www.squid-cache.org/Doc/config/http_upgrade_request_protocols/),
+and the [pinned Pipelock request-body scanner](https://github.com/luckyPipewrench/pipelock/blob/v3.3.0/internal/proxy/bodyscan.go#L541).

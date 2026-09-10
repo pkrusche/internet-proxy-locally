@@ -46,7 +46,9 @@ proxy:
     - "ff00::/8"
 
 tls:
-  mode: sni-only
+  mode: mitm
+  ca_cert: "/config/ca.pem"
+  ca_key: "/config/ca-key.pem"
 
 transforms:
   - name: allowlist
