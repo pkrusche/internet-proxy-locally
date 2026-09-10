@@ -39,11 +39,11 @@ class MeasureAllTest(unittest.TestCase):
     def fake_subprocess_run(self, cmd, **kwargs):
         if cmd[-2:] == ["check", "--json"]:
             self.check_count += 1
-            data = run(self.engine, [row("concurrency-sanity", "pass", "allow")])
+            data = run(self.engine, [row("concurrency-sanity", "fail", "allow")])
             data.pop("_path", None)
             data["tls_interception"] = self.tls
-            # A failing check process must still be saved and compared.
-            return subprocess.CompletedProcess(cmd, 1, json.dumps(data), "")
+            # FAIL grades are findings, so the check process succeeds.
+            return subprocess.CompletedProcess(cmd, 0, json.dumps(data), "")
         self.calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
@@ -90,6 +90,22 @@ class MeasureAllTest(unittest.TestCase):
         self.assertEqual(path.read_text(), "previous measurement")
         self.assertEqual(self.calls[-1][-1], "down")
 
+    def test_errors_are_saved_and_reported_but_exit_one(self) -> None:
+        def error_result(cmd, **kwargs):
+            proc = self.fake_subprocess_run(cmd, **kwargs)
+            if cmd[-2:] == ["check", "--json"]:
+                data = json.loads(proc.stdout)
+                data["results"][0]["outcome"] = "error"
+                data["exit_code"] = 1
+                proc.stdout = json.dumps(data)
+                proc.returncode = 1
+            return proc
+
+        self.assertEqual(self.measure(error_result), 1)
+        self.assertEqual(self.check_count, 5)
+        self.assertTrue((self.results_dir / "benchmark.json").exists())
+        self.assertEqual(self.calls[-1][-1], "down")
+
     def test_wrong_tls_mode_is_not_published(self) -> None:
         def wrong_mode(cmd, **kwargs):
             proc = self.fake_subprocess_run(cmd, **kwargs)
@@ -125,6 +141,9 @@ class MeasureAllTest(unittest.TestCase):
         self.assertEqual(self.measure(), 0)
         runs = report.load_runs(self.results_dir, ENGINES)
         name = "concurrency-sanity"
+        for run_data in runs.values():
+            for _, data in report.variants(run_data):
+                data["results"][0]["outcome"] = "pass"
         runs["squid"]["_tls_run"]["results"][0]["outcome"] = "fail"
         sections = report.render_sections(runs, self.results_dir)
         matrix = sections["matrix"]
@@ -136,6 +155,8 @@ class MeasureAllTest(unittest.TestCase):
         self.assertEqual(matrix.count(f"[{name}](#{name})"), 1)
         self.assertIn("Squid (TLS on)", sections["per-check"])
         self.assertIn("benchmark.json", sections["conditions"])
+        self.assertNotIn("| Policy |", sections["conditions"])
+        self.assertNotIn("| Policy |", "\n".join(report.conditions_table(runs)))
         for check in egress.TESTS:
             self.assertIn(f"### {check.name}", sections["per-check"])
 

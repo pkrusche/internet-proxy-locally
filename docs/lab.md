@@ -127,6 +127,11 @@ observed without a defined verdict), `skip` (missing prerequisite), and `error`
 Concurrency sanity now passes when all ten simultaneous CONNECTs establish
 and fails if any do not.
 
+Checks exit 1 only for `error` outcomes; `pass` and `fail` grades are findings
+reported in the summary. The checker's optional `--strict` flag also treats
+skipped checks as execution errors. JSON `exit_code` matches the process status.
+Historical result files retain the exit codes recorded when they were measured.
+
 CONNECT deny probes require an active TLS/HTTP exchange after the CONNECT
 acknowledgment. Explicit refusals pass; timeouts, resets, or ambiguous TLS/HTTP
 failures remain `error` rather than proving access or denial. DNS and PTR

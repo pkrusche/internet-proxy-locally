@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from .reporting import envelope, print_text
+from .reporting import envelope, exit_code, print_text
 from .runner import run_suite
 
 DEFAULT_PROXY = "http://127.0.0.1:18080"
@@ -51,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="release gate: fail on skips, errors, missing required rows, or failures",
+        help="treat skipped checks as execution errors too",
     )
     opts = parser.parse_args(argv)
 
@@ -74,11 +74,11 @@ def main(argv: list[str] | None = None) -> int:
                     backend=opts.backend_bin,
                     image=opts.image,
                     tls_interception=opts.tls_interception,
+                    strict=opts.strict,
                 ),
                 indent=2,
             )
         )
     else:
         print_text(results, opts.engine)
-    bad = {"fail", "error"} | ({"skip"} if opts.strict else set())
-    return 1 if any(r.outcome in bad for r in results) else 0
+    return exit_code(results, strict=opts.strict)

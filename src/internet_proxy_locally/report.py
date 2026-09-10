@@ -185,7 +185,6 @@ def paired_sections(runs: dict[str, dict]) -> dict[str, str]:
         ("Backend", "backend"),
         ("Host", "host"),
         ("Image", "image"),
-        ("Policy", "policy"),
         ("Endpoint", "proxy"),
         ("Exit code", "exit_code"),
     ):
@@ -293,14 +292,6 @@ def conditions_table(runs: dict[str, dict]) -> list[str]:
         ("Backend", lambda r: r.get("backend") or "?"),
         ("Host", lambda r: r.get("host") or "?"),
         ("Image", lambda r: f"`{r['image']}`" if r.get("image") else "?"),
-        (
-            "Policy",
-            lambda r: {
-                "test": "test (`ipl-lab up`)",
-                "real": "real",
-                "unknown": "?",
-            }.get(r.get("policy"), "?"),
-        ),
         ("TLS interception", lambda r: "on" if r.get("tls_interception") else "off"),
         ("Endpoint", lambda r: f"`{r.get('proxy', '?')}`"),
         ("Result", counts),
@@ -577,6 +568,7 @@ def measure_all(
     results_dir.mkdir(parents=True, exist_ok=True)
     lab_cli = [sys.executable, "-m", CLI_MODULE["ipl-lab"], "--backend", "docker"]
     measured: dict[str, dict] = {}
+    had_errors = False
     try:
         try:
             print("=== lab setup (all engines + the DNS fixture)", flush=True)
@@ -612,6 +604,9 @@ def measure_all(
                             f"{engine} (TLS {mode}): invalid check result ({exc}).\n{proc.stderr.strip()}"
                         ) from exc
                     measured[engine][mode] = data
+                    had_errors |= proc.returncode != 0 or any(
+                        row["outcome"] == "error" for row in data["results"]
+                    )
                     print(
                         f"=== {engine} (TLS {mode}): measured (exit {proc.returncode})",
                         flush=True,
@@ -633,9 +628,10 @@ def measure_all(
             staged_path.replace(results_dir / "benchmark.json")
         finally:
             staged_path.unlink(missing_ok=True)
-    return write_findings(
+    report_code = write_findings(
         check=False, results_dir=results_dir, out=out, engines=engines
     )
+    return report_code or int(had_errors)
 
 
 def _run(cmd: list[str]) -> None:

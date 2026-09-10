@@ -61,7 +61,7 @@ class DnsMixedTest(unittest.TestCase):
         self.assertEqual(graded["squid"], "fail")
         self.assertEqual(graded["smokescreen"], "fail")
 
-    def test_smokescreens_deviation_fails_and_sets_the_exit_code(self) -> None:
+    def test_smokescreens_deviation_is_reported_as_a_failure(self) -> None:
         port = self._mixed_fixture_server(
             {dns_mixed.MIXED_FIXTURE_CONTROL, *dns_mixed.MIXED_FIXTURE_TARGETS}
         )

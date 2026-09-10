@@ -21,6 +21,12 @@ from .runner import policy_in_use
 SCHEMA_VERSION = 3
 
 
+def exit_code(results: list[Result], strict: bool = False) -> int:
+    """Grades are findings; errors (and strict-mode skips) fail execution."""
+    bad = {"error", "skip"} if strict else {"error"}
+    return int(any(r.outcome in bad for r in results))
+
+
 def envelope(
     results: list[Result],
     engine: str,
@@ -29,6 +35,7 @@ def envelope(
     backend: str | None = None,
     image: str | None = None,
     tls_interception: bool = False,
+    strict: bool = False,
 ) -> dict:
     """The `--json` document: the results plus the conditions they were
     measured under, which is what `report` generates
@@ -44,7 +51,7 @@ def envelope(
         "tls_interception": tls_interception,
         "host": f"{platform.system()} {platform.release()} {platform.machine()}",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "exit_code": 1 if any(r.outcome in ("fail", "error") for r in results) else 0,
+        "exit_code": exit_code(results, strict=strict),
         "results": [asdict(r) for r in results],
     }
 

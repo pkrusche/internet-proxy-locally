@@ -91,8 +91,8 @@ class BehaviorTest(unittest.TestCase):
 
     def test_a_recorded_deviation_is_not_hidden_as_agreement(self) -> None:
         """Smokescreen's `record` on dns-mixed-answers must still show up as
-        a behavioral difference — that grade changes the exit code, not the
-        finding."""
+        a behavioral difference — that grade changes the summary counts,
+        not the finding."""
         runs = {
             "pipelock": run(
                 "pipelock",
