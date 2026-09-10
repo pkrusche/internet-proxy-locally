@@ -45,5 +45,13 @@ tag in `images.py` whenever its pins or build context change**: setup skips tags
 already present. Use a `-buildN` suffix for a build-only revision, or `--rebuild`
 to force a local rebuild.
 
+Iron is built from the v0.49.0 release commit
+`c8724937fbe109b7fbc6ddb21490e15902b187c0`, with the release version embedded
+in the binary. Its Dockerfile uses a static Go build for amd64/arm64 and
+ships the upstream license. Update the commit, embedded version, image tag,
+and pin test together. The tunnel listener must support both absolute-form
+HTTP and CONNECT (added upstream in v0.48.0). Confirm the wildcard translation
+still excludes apex hosts when upgrading Iron.
+
 Keep documentation concise in `docs/`. Source comments should explain only
 non-obvious constraints; omit code narration and refactor history.

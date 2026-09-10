@@ -28,6 +28,15 @@ def _squid_wild(entry: str) -> str:
     return "\\." + entry[2:].replace(".", "\\.") + "$"
 
 
+def _iron_domain(entry: str) -> str:
+    """Iron's `*.d` includes the apex; `?*.d` requires a subdomain.
+
+    The latter uses Iron's ordinary Go path.Match glob branch rather than
+    its special `*.` suffix matcher. Both globs cover nested subdomains.
+    """
+    return "?" + entry if entry.startswith("*.") else entry
+
+
 def _template_name(spec: ServiceSpec) -> str:
     """`config/squid.conf` -> `squid.conf.j2`."""
     return Path(spec.config_file).name + ".j2"
@@ -45,6 +54,7 @@ def jinja_env():
     )
     env.filters["yaml_scalar"] = _yaml_scalar
     env.filters["squid_wild"] = _squid_wild
+    env.filters["iron_domain"] = _iron_domain
     return env
 
 

@@ -13,7 +13,7 @@ Fixture names use the reserved `.test` domain; `ipl up` removes any running
 fixture container.
 
 ```bash
-ipl-lab setup     # all three engines + the DNS fixture image
+ipl-lab setup     # all four engines + the DNS fixture image
 ipl-lab up        # fixture, then an engine on the TEST policy
 ipl-lab check     # the full adversarial suite
 ipl-lab down      # remove both
@@ -32,7 +32,7 @@ renders both through the shared policy templates into `lab/config/`:
 
 | generated | from |
 | --- | --- |
-| `lab/config/{pipelock,smokescreen}.test.yaml`, `squid.test.conf` | `[policy]` + `[policy.test]` |
+| `lab/config/{pipelock,smokescreen,iron}.test.yaml`, `squid.test.conf` | `[policy]` + `[policy.test]` |
 | `lab/config/dns-fixture.hosts` | `[fixture.records]` |
 
 `ipl-lab up` regenerates these files before starting the fixture and engine.
@@ -149,18 +149,26 @@ ipl-lab report --check             # CI: exit 1 if the tables are stale
 ```
 
 `measure` runs each engine with TLS interception off, then on where supported.
-Pipelock and Squid run twice; Smokescreen runs once and is marked **off only**.
+Pipelock, Squid and Iron run twice; Smokescreen runs once and is marked **off only**.
 The comparison has one column per proxy: matching verdicts appear once, while
 differences show **off** and **on**, including changes in attributed denial cause.
 Per-check details retain the evidence from each mode.
 
-All five runs are saved together in `results/benchmark.json` only after the
+All seven runs are saved together in `results/benchmark.json` only after the
 batch completes; an interrupted batch leaves the previous results intact.
 A final `down` removes the engine and fixture. `measure` has no TLS mode flag;
 it always benchmarks all supported scenarios.
 Commit the bundle and generated findings together. `report` prefers the bundle,
 and still reads historical `results/<engine>.json` files if no bundle exists;
 it never combines an incomplete bundle with older results.
+
+Iron measurements are pending. The existing bundle and generated findings
+retain the earlier three-engine measurements. Until a complete four-engine
+batch is recorded, `ipl-lab report --check` rejects the bundle for missing
+Iron results; this is not a successful Iron verification. On a Docker host,
+run `uv run ipl ca init`, then `uv run ipl-lab measure` and
+`uv run ipl-lab report --check`. Retain errors and failed policy checks as
+evidence rather than reclassifying them to make the comparison pass.
 
 `report` rewrites only the regions of `findings.md` between
 `<!-- BEGIN GENERATED <name> -->` and `<!-- END GENERATED <name> -->`.

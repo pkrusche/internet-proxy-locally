@@ -63,7 +63,7 @@ class MeasureAllTest(unittest.TestCase):
 
     def test_runs_both_modes_and_saves_every_run(self) -> None:
         self.assertEqual(self.measure(), 0)
-        self.assertEqual(self.check_count, 5)
+        self.assertEqual(self.check_count, 7)
         self.assertIn("--tls-interception", self.calls[0])
         self.assertEqual(self.calls[-1][-1], "down")
         ups = [cmd for cmd in self.calls if "up" in cmd]
@@ -76,6 +76,8 @@ class MeasureAllTest(unittest.TestCase):
         self.assertTrue(runs["pipelock"]["_tls_run"]["tls_interception"])
         self.assertFalse(runs["pipelock"]["tls_interception"])
         self.assertNotIn("_tls_run", runs["smokescreen"])
+        self.assertTrue(runs["iron"]["_tls_run"]["tls_interception"])
+        self.assertFalse(runs["iron"]["tls_interception"])
 
     def test_interruption_preserves_previous_batch_and_cleans_up(self) -> None:
         path = self.results_dir / "benchmark.json"
@@ -102,7 +104,7 @@ class MeasureAllTest(unittest.TestCase):
             return proc
 
         self.assertEqual(self.measure(error_result), 1)
-        self.assertEqual(self.check_count, 5)
+        self.assertEqual(self.check_count, 7)
         self.assertTrue((self.results_dir / "benchmark.json").exists())
         self.assertEqual(self.calls[-1][-1], "down")
 
@@ -133,6 +135,17 @@ class MeasureAllTest(unittest.TestCase):
             self.assertEqual(opts.func(opts), 0)
             measure.assert_called_once_with(backend="docker", engines=ENGINES)
 
+    def test_missing_iron_run_is_not_a_complete_comparison(self) -> None:
+        self.assertEqual(self.measure(), 0)
+        path = self.results_dir / "benchmark.json"
+        bundle = json.loads(path.read_text())
+        del bundle["runs"]["iron"]
+        path.write_text(json.dumps(bundle))
+        with self.assertRaisesRegex(
+            report.Fail, "missing iron results.*ipl-lab measure"
+        ):
+            report.load_runs(self.results_dir, ENGINES)
+
     def test_measure_rejects_tls_flag(self) -> None:
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             lab.build_parser().parse_args(["measure", "--tls-interception"])
@@ -147,13 +160,14 @@ class MeasureAllTest(unittest.TestCase):
         runs["squid"]["_tls_run"]["results"][0]["outcome"] = "fail"
         sections = report.render_sections(runs, self.results_dir)
         matrix = sections["matrix"]
-        self.assertIn("| Check | Pipelock | Smokescreen | Squid |", matrix)
+        self.assertIn("| Check | Pipelock | Smokescreen | Squid | Iron |", matrix)
         self.assertIn(
-            f"| [{name}](#{name}) | PASS | PASS (off only) | off: PASS<br>on: FAIL |",
+            f"| [{name}](#{name}) | PASS | PASS (off only) | off: PASS<br>on: FAIL | PASS |",
             matrix,
         )
         self.assertEqual(matrix.count(f"[{name}](#{name})"), 1)
         self.assertIn("Squid (TLS on)", sections["per-check"])
+        self.assertIn("Iron (TLS on)", sections["per-check"])
         self.assertIn("benchmark.json", sections["conditions"])
         self.assertNotIn("| Policy |", sections["conditions"])
         self.assertNotIn("| Policy |", "\n".join(report.conditions_table(runs)))

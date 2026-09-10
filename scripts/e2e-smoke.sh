@@ -15,7 +15,7 @@ while [ $# -gt 0 ]; do
             shift 2
             ;;
         --engine)
-            [ $# -ge 2 ] || { echo "--engine requires pipelock, smokescreen or squid" >&2; exit 2; }
+            [ $# -ge 2 ] || { echo "--engine requires pipelock, smokescreen, squid or iron" >&2; exit 2; }
             engine="$2"
             shift 2
             ;;
@@ -31,7 +31,7 @@ while [ $# -gt 0 ]; do
 done
 
 case "$engine" in
-    pipelock|smokescreen|squid) ;;
+    pipelock|smokescreen|squid|iron) ;;
     *) echo "invalid engine: $engine" >&2; exit 2 ;;
 esac
 

@@ -1,7 +1,7 @@
 # TLS interception (opt-in)
 
 Off by default. The `--tls-interception` CLI switch turns
-Pipelock or Squid into the real TLS endpoint for allowlisted HTTPS
+Pipelock, Squid or Iron into the real TLS endpoint for allowlisted HTTPS
 destinations instead of an opaque CONNECT tunnel.  Smokescreen does not 
 support this, starting smokescreen with `--tls-interception`
 fails.
@@ -106,6 +106,23 @@ an `ssl_bump splice all` fallback.
 
 Smokescreen doesn't support TLS interception.
 
+### Iron
+
+Without interception, `tls.mode: sni-only` checks the TLS ClientHello SNI
+and passes TLS through without a signing CA. With interception, `tls.mode: mitm`
+uses the same managed CA as the other engines, mounted read-only at
+`/config/ca.pem` and `/config/ca-key.pem`. Upstream certificate verification
+remains enabled; lab runs also receive the fixture's public CA through
+`SSL_CERT_FILE`.
+
+Iron's tunnel listener accepts ordinary HTTP and CONNECT on one port.
+The upstream implementation also accepts HTTP inside a CONNECT tunnel and
+routes passthrough TLS by SNI on port 443. These are engine behaviors to
+measure, not guarantees of CONNECT-target/SNI equality or TLS-only tunnels.
+See the [pinned tunnel implementation](https://github.com/ironsh/iron-proxy/blob/v0.49.0/internal/proxy/tunnel.go).
+This integration enables only the hostname allowlist transform, not credential
+injection or content filtering. Live interception and rotation checks are pending.
+
 ## Late denials, and how the suite grades them
 
 A CONNECT `200` only acknowledges the tunnel. With interception, even a
@@ -149,7 +166,7 @@ Run `scripts/e2e-release.sh` on each supported runtime. A focused manual check i
 
 ```bash
 ipl ca export --out ca.pem
-ipl --engine pipelock up --tls-interception   # or --engine squid
+ipl --engine pipelock up --tls-interception   # or --engine squid / --engine iron
 export HTTP_PROXY=http://127.0.0.1:18080 HTTPS_PROXY=http://127.0.0.1:18080
 curl --cacert ca.pem https://github.com   # allowlisted: succeeds, and
                                            # `ipl logs` shows the decrypted request
@@ -165,7 +182,7 @@ ambiguous client-side abort remains inconclusive in the egress suite.
 `ipl-lab up --tls-interception && ipl-lab check` runs the adversarial suite
 against the intercepting configuration. `ipl-lab measure`
 runs both TLS modes and rewrites one comparison table in `docs/findings.md`.
-Pipelock and Squid are measured with interception off and on; Smokescreen
+Pipelock, Squid and Iron are measured with interception off and on; Smokescreen
 supports off only. Cells label each mode when its verdict or denial cause differs.
 
 Every `--json` result records whether the engine it measured was running

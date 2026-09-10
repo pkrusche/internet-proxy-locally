@@ -14,6 +14,7 @@ from unittest.mock import patch
 from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.checks import egress
 from internet_proxy_locally.checks.egress import catalogue, runner, transport
+from internet_proxy_locally.constants import ENGINES
 from tests import mock_proxy
 from tests.egress import support
 
@@ -148,7 +149,7 @@ class EgressSuiteTest(unittest.TestCase):
         """No per-engine grading override exists any more: every engine is
         judged against the same `deny` expectation, the config this repo
         ships (docs/findings.md §2)."""
-        for engine in ("pipelock", "smokescreen", "squid"):
+        for engine in ENGINES:
             with self.subTest(engine=engine):
                 results = self.run_suite(engine, "lenient", full=True)
                 self.assertEqual(

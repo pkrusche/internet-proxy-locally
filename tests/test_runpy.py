@@ -512,6 +512,38 @@ class RunPyCliTest(unittest.TestCase):
 
     # -- TLS interception (opt-in; docs/tls-interception.md) -----------------
 
+    def test_iron_lifecycle_and_check_identify_engine_and_tls_mode(self) -> None:
+        self.build_engine("iron")
+        self.assertEqual(self.run_cli("ca", "init").returncode, 0)
+        for enabled in (True, False):
+            self.log.write_text("")
+            args = ["--backend", "docker", "--engine", "iron", "restart"]
+            if enabled:
+                args.append("--tls-interception")
+            up = self.run_cli(*args)
+            self.assertEqual(up.returncode, 0, up.stderr)
+            text = (self.tmp / "config/iron.yaml").read_text()
+            self.assertIn("mode: mitm" if enabled else "mode: sni-only", text)
+            run_line = next(
+                l for l in self.backend_log().splitlines() if l.startswith("run ")
+            )
+            self.assertIn(f"--publish 127.0.0.1:{self.port}:1080", run_line)
+            self.assertIn(":/config/iron.yaml:ro", run_line)
+            self.assertEqual(":/config/ca-key.pem:ro" in run_line, enabled)
+            self.assertNotIn("SSL_CERT_FILE", run_line)
+            check = self.run_cli("--backend", "docker", "check", "--json")
+            self.assertEqual(check.returncode, 0, check.stderr)
+            payload = json.loads(check.stdout)
+            self.assertEqual(payload["engine"], "iron")
+            self.assertEqual(payload["tls_interception"], enabled)
+            status = self.run_cli("--backend", "docker", "status")
+            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertIn("iron: running (active)", status.stdout)
+            self.assertEqual(self.run_cli("--backend", "docker", "logs").returncode, 0)
+        down = self.run_cli("--backend", "docker", "down")
+        self.assertEqual(down.returncode, 0, down.stderr)
+        self.assertIn("removed internet-proxy-iron", down.stdout)
+
     def test_up_fails_closed_on_smokescreen_with_tls_interception(self) -> None:
         self.build_engine("smokescreen")
         self.assertEqual(self.run_cli("ca", "init").returncode, 0)
@@ -523,18 +555,26 @@ class RunPyCliTest(unittest.TestCase):
         self.assertNotIn("run --detach", self.backend_log())
 
     def test_up_fails_closed_with_tls_interception_and_no_ca(self) -> None:
-        self.build_engine("squid")
-        proc = self.run_cli(
-            "--backend", "docker", "--engine", "squid", "up", "--tls-interception"
-        )
-        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
-        self.assertIn("no CA exists", proc.stderr)
-        self.assertNotIn("run --detach", self.backend_log())
+        for engine in ("squid", "iron"):
+            with self.subTest(engine=engine):
+                self.build_engine(engine)
+                proc = self.run_cli(
+                    "--backend",
+                    "docker",
+                    "--engine",
+                    engine,
+                    "up",
+                    "--tls-interception",
+                )
+                self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+                self.assertIn("no CA exists", proc.stderr)
+                self.assertNotIn("run --detach", self.backend_log())
 
     def test_up_mounts_ca_files_when_tls_interception_is_on(self) -> None:
         for engine, cert_mount, key_mount in (
             ("pipelock", "/config/ca.pem", "/config/ca-key.pem"),
             ("squid", "/etc/squid/ca.pem", "/etc/squid/ca-key.pem"),
+            ("iron", "/config/ca.pem", "/config/ca-key.pem"),
         ):
             with self.subTest(engine=engine):
                 self.log.write_text("")
@@ -631,7 +671,7 @@ class RunPyCliTest(unittest.TestCase):
         before = {
             name: (ca_dir / name).read_bytes() for name in ("ca.pem", "ca-key.pem")
         }
-        for engine in ("pipelock", "squid", "smokescreen"):
+        for engine in ENGINES:
             state = self.state / f"container-internet-proxy-{engine}"
             state.write_text("running")
             try:

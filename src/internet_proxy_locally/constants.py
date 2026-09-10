@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DEFAULT_ENDPOINT = "127.0.0.1:18080"
-ENGINES = ("pipelock", "smokescreen", "squid")
+ENGINES = ("pipelock", "smokescreen", "squid", "iron")
 DEFAULT_ENGINE = "pipelock"
 BACKENDS = ("docker", "container")
 
@@ -11,6 +11,7 @@ ENGINE_LABELS = {
     "pipelock": "Pipelock",
     "smokescreen": "Smokescreen",
     "squid": "Squid",
+    "iron": "Iron",
 }
 
 HEALTH_WAIT_SECONDS = 15.0

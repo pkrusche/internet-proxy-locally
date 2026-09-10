@@ -196,7 +196,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ipl",
         description="Local containerized Internet filtering proxy "
-        "(Pipelock, Smokescreen or Squid) "
+        "(Pipelock, Smokescreen, Squid or Iron) "
         f"on http://{DEFAULT_ENDPOINT}",
     )
     parser.add_argument(

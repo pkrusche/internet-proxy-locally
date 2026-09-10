@@ -27,7 +27,7 @@ cd "$tmp"
 "$tmp/venv/bin/ipl-check" --help >/dev/null
 cd -
 
-for engine in pipelock smokescreen squid; do
+for engine in pipelock smokescreen squid iron; do
   scripts/e2e-smoke.sh --backend "$backend" --engine "$engine"
 done
 echo "Run TLS fixture/rotation cases per docs/tls-interception.md; both modes are required."

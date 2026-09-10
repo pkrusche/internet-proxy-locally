@@ -111,6 +111,30 @@ class LabCliTest(RunPyCliTest):
         # The engine resolves through it.
         self.assertIn("--dns 172.17.0.9", engine)
 
+    def test_iron_lab_uses_fixture_dns_and_trust_in_both_modes(self) -> None:
+        self.build_engine("iron")
+        self.fake_dns_fixture_image()
+        self.assertEqual(self.run_cli("ca", "init").returncode, 0)
+        for enabled in (False, True):
+            self.log.write_text("")
+            args = ["--engine", "iron", "up"]
+            if enabled:
+                args.append("--tls-interception")
+            up = self.lab_cli(*args)
+            self.assertEqual(up.returncode, 0, up.stderr)
+            run_line = next(
+                l
+                for l in self.backend_log().splitlines()
+                if l.startswith("run ") and "internet-proxy-iron" in l
+            )
+            self.assertIn("--dns 172.17.0.9", run_line)
+            self.assertIn("--env SSL_CERT_FILE=/fixture/ca.pem", run_line)
+            self.assertIn("lab/config/iron.test.yaml:/config/iron.yaml:ro", run_line)
+            self.assertIn("state/fixture-tls/ca.pem:/fixture/ca.pem:ro", run_line)
+            self.assertEqual(":/config/ca-key.pem:ro" in run_line, enabled)
+            text = (self.tmp / "lab/config/iron.test.yaml").read_text()
+            self.assertIn("mode: mitm" if enabled else "mode: sni-only", text)
+
     def test_up_mounts_the_test_policy_not_the_real_one(self) -> None:
         self.build_engine()
         self.fake_dns_fixture_image()

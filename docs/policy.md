@@ -29,6 +29,11 @@ For example, we might allow:
 | `pypi.org`, `files.pythonhosted.org` | Python packages |
 | `registry.npmjs.org` | npm packages |
 
+Iron's native `*.d` glob also includes the apex `d`. Its renderer uses
+`?*.d` instead, requiring at least one character before the dot while
+allowing nested subdomains. Exact entries stay exact. See Iron's
+[host matcher](https://github.com/ironsh/iron-proxy/blob/v0.49.0/internal/hostmatch/hostmatch.go).
+
 The key is to keep the allow list small; exfiltration via allowed domains
 is possible. When working with providers directly (not using an AI gateway), 
 then their API domains must be added.
@@ -47,6 +52,13 @@ then their API domains must be added.
 * rejected destinations are logged by the engine.
 
 Assessment of rule compliance is in [findings.md](findings.md).
+
+Iron's `proxy.upstream_deny_cidrs` explicitly includes the same metadata
+and private/reserved destination ranges as Squid's ACLs. Iron's upstream
+defaults omit RFC1918, so leaving that setting unset would weaken this policy.
+Its built-in DNS server is disabled; upstream resolution uses the container's
+resolver, including the DNS fixture in lab runs. See the
+[Iron configuration reference](https://docs.iron.sh/reference/configuration).
 
 ## Changing the policy
 

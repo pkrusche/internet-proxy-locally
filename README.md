@@ -5,8 +5,9 @@ sandboxes. Default deny, hostname allowlist, SSRF protection, fail closed.
 
 One stable endpoint — `http://127.0.0.1:18080` — backed by
 [Pipelock](https://github.com/luckyPipewrench/pipelock) (default),
-[Smokescreen](https://github.com/stripe/smokescreen) or
-[Squid](https://www.squid-cache.org/). Docker and Apple `container` are
+[Smokescreen](https://github.com/stripe/smokescreen),
+[Squid](https://www.squid-cache.org/) or
+[Iron](https://docs.iron.sh/). Docker and Apple `container` are
 both supported for operational setups. The lab uses Docker for all fixtures
 and measured proxies. No Docker Compose.
 
@@ -48,9 +49,9 @@ generates: `config.toml`, `config/`, `lab/config/`, `results/`.
 allow = ["github.com", "*.github.com", "pypi.org", ...]
 ```
 
-`ipl` renders it into all three engine configs (`config/*.yaml`,
+`ipl` renders it into all four engine configs (`config/*.yaml`,
 `config/squid.conf`) through `data/templates/`, and `setup` / `up` / `restart`
-do that before starting anything — so the three engines cannot express
+do that before starting anything — so the engines cannot express
 different policies. Edit `config.toml`, run `ipl up`, commit both.
 See
 [docs/policy.md](docs/policy.md).
@@ -68,8 +69,14 @@ See
 | `ipl down` | remove containers owned by this repository |
 | `ipl ca init/status/export/rotate` | manage the opt-in TLS-interception CA ([docs/tls-interception.md](docs/tls-interception.md)) |
 
-`--engine pipelock|smokescreen|squid` and `--backend docker|container`
+`--engine pipelock|smokescreen|squid|iron` and `--backend docker|container`
 override the defaults; `ipl --help` is the full reference.
+
+For Iron, run `uv run ipl --engine iron setup`, then
+`uv run ipl --engine iron up`. It uses the same endpoint and allowlist.
+TLS passes through by default; add `--tls-interception` to setup and up
+to use the existing CA workflow. Iron's live measurements are pending;
+see [docs/lab.md](docs/lab.md#reproducing-the-comparison).
 
 ## Pins
 
@@ -96,14 +103,14 @@ behind it is not part of the contract.
 
 ## Which engine, and why
 
-**Pipelock is the default: it is the only engine that enforces inside the
-CONNECT tunnel by default** (Squid can too, opt-in — see
-[docs/tls-interception.md](docs/tls-interception.md)). Squid is the
+**Pipelock remains the default**, with TLS and SNI checks inside CONNECT
+tunnels enabled. Iron also checks TLS SNI in its passthrough mode; its
+behavior in this integration still needs lab measurement. Squid is the
 alternative when the policy itself has to be auditable — its SSRF floors
 are ordinary `dst` ACLs in a file you can read, which `ipl setup` then
 checks rather than trusts.
 
-Every engine, every check and every number behind that is in
+The measured engines, checks and evidence are in
 [docs/findings.md](docs/findings.md), where the tables are generated from
 the result files by `ipl-lab report` rather than written by hand. This
 section deliberately does not restate them: a summary kept in step by
@@ -114,7 +121,7 @@ in a year.
 
 | | |
 | --- | --- |
-| [findings.md](docs/findings.md) | Pipelock vs Smokescreen vs Squid: what was measured, what it means, why Pipelock |
+| [findings.md](docs/findings.md) | measured engine comparison; Iron measurements pending |
 | [policy.md](docs/policy.md) | the allowlist, the rules, how to change them |
 | [security.md](docs/security.md) | threat model, fail-closed properties, non-goals, what it does *not* defend against |
 | [lab.md](docs/lab.md) | the test policy, the DNS fixture, and how to reproduce the comparison |
@@ -126,8 +133,9 @@ Open work is tracked in [TODO.md](TODO.md).
 
 By default, destination filtering limits **where** an agent can connect
 but cannot inspect encrypted request bodies: data can still be pushed to
-an already-allowlisted HTTPS service. Pipelock and Squid can close this
-specific gap with opt-in TLS interception — off by default, and a real
+an already-allowlisted HTTPS service. Pipelock, Squid and Iron support
+opt-in TLS interception, which enables inspection but does not itself prohibit
+uploads. It is off by default, and a real
 change to the threat model when turned on (private-key custody, trust
 distribution to every consuming sandbox) — see
 [docs/tls-interception.md](docs/tls-interception.md) before enabling it.

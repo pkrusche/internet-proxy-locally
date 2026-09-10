@@ -1,0 +1,83 @@
+{% include "_banner.j2" %}
+{% if test_policy %}
+# TEST POLICY — NEVER use for normal operation. config/iron.yaml plus
+# the `[policy.test]` fixtures from config.toml. See docs/lab.md.
+# Activate with: ipl-lab --engine iron up
+# Deactivate with `ipl up` (recreates with the real policy).
+{% else %}
+# Iron explicit forward proxy, default deny. See docs/policy.md.
+# TLS interception is opt-in via --tls-interception.
+{% endif %}
+
+# Use the runtime's resolver, including the lab DNS fixture when selected.
+dns:
+  enabled: false
+
+proxy:
+  tunnel_listen: ":1080"
+  # Iron requires these auxiliary listeners; only the tunnel is published.
+  http_listen: "127.0.0.1:8080"
+  https_listen: "127.0.0.1:8443"
+  # Override Iron's narrower defaults with the shared destination floors
+  # (the metadata_ip and private_ip ACLs in squid.conf).
+  upstream_deny_cidrs:
+    - "169.254.169.254/32"
+    - "fd00:ec2::254/128"
+    - "100.100.100.200/32"
+    - "0.0.0.0/8"
+    - "10.0.0.0/8"
+    - "100.64.0.0/10"
+    - "127.0.0.0/8"
+    - "169.254.0.0/16"
+    - "172.16.0.0/12"
+    - "192.0.0.0/24"
+    - "192.0.2.0/24"
+    - "192.88.99.0/24"
+    - "192.168.0.0/16"
+    - "198.18.0.0/15"
+    - "198.51.100.0/24"
+    - "203.0.113.0/24"
+    - "224.0.0.0/4"
+    - "240.0.0.0/4"
+    - "::/128"
+    - "::1/128"
+    - "64:ff9b::/96"
+    - "100::/64"
+    - "2001:db8::/32"
+    - "fc00::/7"
+    - "fe80::/10"
+    - "ff00::/8"
+
+tls:
+{% if tls_interception %}
+  mode: mitm
+  ca_cert: "/config/ca.pem"
+  ca_key: "/config/ca-key.pem"
+{% else %}
+  mode: sni-only
+{% endif %}
+
+transforms:
+  - name: allowlist
+    config:
+      warn: false
+      # Iron's *.d includes d; ?*.d preserves the subdomain-only policy.
+{% if allow or (test_policy and allow_test) %}
+      domains:
+{% for domain in allow %}
+        - {{ domain | iron_domain | yaml_scalar }}
+{% endfor %}
+{% if test_policy %}
+        # [policy.test]: adversarial fixtures only.
+{% for domain in allow_test %}
+        - {{ domain | iron_domain | yaml_scalar }}
+{% endfor %}
+{% endif %}
+{% else %}
+      domains: []
+{% endif %}
+
+metrics:
+  listen: "127.0.0.1:9090"
+log:
+  level: info

@@ -85,6 +85,11 @@ def load_benchmark(path: Path, engines: tuple[str, ...]) -> dict[str, dict]:
             raise ValueError("unsupported benchmark_version")
         runs = {}
         for engine in engines:
+            if engine not in bundle["runs"]:
+                raise ValueError(
+                    f"missing {engine} results; run `ipl-lab measure` "
+                    "to record all engines"
+                )
             modes = bundle["runs"][engine]
             expected = (
                 {"off", "on"}
@@ -384,7 +389,7 @@ def _summary(runs: dict[str, dict]) -> str:
     else:
         add(
             "**No engine behaved differently from another on any check**: every "
-            "outcome below is the same across the three."
+            "outcome below is the same across the measured engines."
         )
         add("")
     if attribution:

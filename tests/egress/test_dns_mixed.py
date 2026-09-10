@@ -7,6 +7,7 @@ import unittest
 
 from internet_proxy_locally.checks import egress
 from internet_proxy_locally.checks.egress import dns_mixed, transport
+from internet_proxy_locally.constants import ENGINES
 from tests import mock_proxy
 from tests.egress import support
 
@@ -51,15 +52,13 @@ class DnsMixedTest(unittest.TestCase):
             {dns_mixed.MIXED_FIXTURE_CONTROL, *dns_mixed.MIXED_FIXTURE_TARGETS}
         )
         graded = {}
-        for engine in ("pipelock", "squid", "smokescreen"):
+        for engine in ENGINES:
             results = {
                 r.name: r
                 for r in egress.run_suite(f"http://127.0.0.1:{port}", engine, full=True)
             }
             graded[engine] = results["dns-mixed-answers"].outcome
-        self.assertEqual(graded["pipelock"], "fail")
-        self.assertEqual(graded["squid"], "fail")
-        self.assertEqual(graded["smokescreen"], "fail")
+        self.assertEqual(graded, dict.fromkeys(ENGINES, "fail"))
 
     def test_smokescreens_deviation_is_reported_as_a_failure(self) -> None:
         port = self._mixed_fixture_server(

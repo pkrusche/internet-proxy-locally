@@ -43,7 +43,7 @@ def add_tls_option(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--tls-interception",
         action="store_true",
-        help="enable TLS interception for this invocation (Pipelock or Squid only)",
+        help="enable TLS interception for this invocation (Pipelock, Squid or Iron)",
     )
 
 

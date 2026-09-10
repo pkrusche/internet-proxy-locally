@@ -9,6 +9,7 @@ from internet_proxy_locally import ca, paths
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.images import (
     DNSFIXTURE_IMAGE,
+    IRON_IMAGE,
     PIPELOCK_IMAGE,
     SMOKESCREEN_IMAGE,
     SQUID_IMAGE,
@@ -112,6 +113,17 @@ SERVICES = {
         supports_tls_interception=True,
         ca_cert_mount="/etc/squid/ca.pem",
         ca_key_mount="/etc/squid/ca-key.pem",
+    ),
+    "iron": ServiceSpec(
+        engine="iron",
+        image=IRON_IMAGE,
+        container_name="internet-proxy-iron",
+        internal_port=1080,
+        config_file="config/iron.yaml",
+        config_mount="/config/iron.yaml",
+        supports_tls_interception=True,
+        ca_cert_mount="/config/ca.pem",
+        ca_key_mount="/config/ca-key.pem",
     ),
     # NOT an engine, and never part of an operational run — `ENGINES` does
     # not contain it and only the lab lane loads it. It answers allowlisted

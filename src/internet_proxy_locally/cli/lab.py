@@ -22,7 +22,7 @@ from internet_proxy_locally.lab.render import (
 def cmd_setup(opts: argparse.Namespace) -> int:
     """Prepare every engine plus the DNS fixture image.
 
-    The comparison measures all three engines, so this prepares all three
+    The comparison measures every engine, so this prepares them all
     — unlike `ipl setup`, which prepares the one you are going to run.
     """
     backend = detect_backend(opts.backend)
@@ -111,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ipl-lab",
         description="The adversarial test policy, the DNS fixture and the "
-        "three-engine comparison. Never an operational proxy — "
+        "engine comparison. Never an operational proxy — "
         "use `ipl` for that.",
     )
     common.add_global_options(

@@ -16,7 +16,9 @@ that client can connect:
   ↔ CONNECT target mismatch (domain fronting) and non-TLS bytes inside a
   tunnel. Pipelock does unconditionally; Squid does too when
   `--tls-interception` is on ([tls-interception.md](tls-interception.md));
-  Smokescreen never does.
+  Smokescreen never does. Iron examines SNI in passthrough mode, but permits
+  HTTP inside CONNECT and does not require CONNECT-target/SNI equality;
+  its live results are pending ([Iron notes](tls-interception.md#iron)).
 
 ## What it does not defend against
 
@@ -49,7 +51,7 @@ that client can connect:
 * Open modes and private-range escape hatches are absent from the fixed
   templates. Pipelock is rendered in strict mode, Smokescreen in enforce
   mode, and Squid ends in default deny. `--tls-interception` selects
-  complete CA-backed recipes for Pipelock and Squid; partial states are not
+  complete CA-backed recipes for Pipelock, Squid and Iron; partial states are not
   generated ([tls-interception.md](tls-interception.md)).
 * `up` refuses to start an engine with `--tls-interception` and no CA
   generated yet, and the CA's private key is written `0600` at creation
