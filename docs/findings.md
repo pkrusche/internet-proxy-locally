@@ -9,12 +9,12 @@ The tables are **generated** from `results/*.json` by `ipl-lab report`.
 | Condition | Pipelock | Smokescreen | Squid |
 | --- | --- | --- | --- |
 | TLS interception | off and on | off only (unsupported) | off and on |
-| Measured | off: 2026-09-10T07:11:29Z<br>on: 2026-09-10T07:11:35Z | 2026-09-10T07:11:39Z (off only) | off: 2026-09-10T07:11:44Z<br>on: 2026-09-10T07:11:49Z |
+| Measured | off: 2026-09-10T07:25:44Z<br>on: 2026-09-10T07:25:50Z | 2026-09-10T07:25:54Z (off only) | off: 2026-09-10T07:25:59Z<br>on: 2026-09-10T07:26:04Z |
 | Backend | docker | docker (off only) | docker |
 | Host | Darwin 25.6.0 arm64 | Darwin 25.6.0 arm64 (off only) | Darwin 25.6.0 arm64 |
 | Image | internet-proxy-locally/pipelock:3.3.0 | internet-proxy-locally/smokescreen:131fba29ce1e-build1 (off only) | internet-proxy-locally/squid:6.12-r0-build1 |
 | Endpoint | http://127.0.0.1:18080 | http://127.0.0.1:18080 (off only) | http://127.0.0.1:18080 |
-| Exit code | 0 | 1 (off only) | 1 |
+| Exit code | 0 | 0 (off only) | 0 |
 
 Source files: `results/benchmark.json`.
 
@@ -70,15 +70,15 @@ Each proxy has one column. A single verdict applies to both TLS modes; differenc
 
 A plain-HTTP GET to an allowlisted host reaches it.
 
-* **Pipelock (TLS off)** — PASS (expectation: allow, 298ms)  
+* **Pipelock (TLS off)** — PASS (expectation: allow, 285ms)  
   reached pypi.org (HTTP/1.1 200 OK)
-* **Pipelock (TLS on)** — PASS (expectation: allow, 278ms)  
+* **Pipelock (TLS on)** — PASS (expectation: allow, 277ms)  
   reached pypi.org (HTTP/1.1 200 OK)
-* **Smokescreen (TLS off)** — PASS (expectation: allow, 24ms)  
+* **Smokescreen (TLS off)** — PASS (expectation: allow, 39ms)  
   reached pypi.org (HTTP/1.1 301 Moved Permanently)
-* **Squid (TLS off)** — PASS (expectation: allow, 24ms)  
+* **Squid (TLS off)** — PASS (expectation: allow, 30ms)  
   reached pypi.org (HTTP/1.1 301 Moved Permanently)
-* **Squid (TLS on)** — PASS (expectation: allow, 26ms)  
+* **Squid (TLS on)** — PASS (expectation: allow, 28ms)  
   reached pypi.org (HTTP/1.1 301 Moved Permanently)
 
 ### allowed-https
@@ -87,13 +87,13 @@ A CONNECT tunnel to an allowlisted host completes a real TLS handshake, so ordin
 
 * **Pipelock (TLS off)** — PASS (expectation: allow, 30ms)  
   tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)
-* **Pipelock (TLS on)** — PASS (expectation: allow, 17ms)  
+* **Pipelock (TLS on)** — PASS (expectation: allow, 19ms)  
   tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)
-* **Smokescreen (TLS off)** — PASS (expectation: allow, 28ms)  
+* **Smokescreen (TLS off)** — PASS (expectation: allow, 29ms)  
   tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)
-* **Squid (TLS off)** — PASS (expectation: allow, 22ms)  
+* **Squid (TLS off)** — PASS (expectation: allow, 31ms)  
   tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)
-* **Squid (TLS on)** — PASS (expectation: allow, 37ms)  
+* **Squid (TLS on)** — PASS (expectation: allow, 40ms)  
   tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)
 
 ### blocked-host-connect
@@ -106,7 +106,7 @@ CONNECT to a host that is not on the allowlist is refused — the default-deny r
   denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: example.com
 * **Smokescreen (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 1ms)  
   denied: HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host 'example.com:443': default rule policy used.
-* **Squid (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 8ms)  
+* **Squid (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 13ms)  
   denied: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: the destination is not in the allowlist.
 * **Squid (TLS on)** — PASS [hostname-not-allowlisted] (expectation: deny, 6ms)  
   denied after CONNECT: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: the destination is not in the allowlist.
@@ -164,7 +164,7 @@ CONNECT to RFC1918 space (10/8, 172.16/12, 192.168/16) is refused.
   denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 10.0.0.1; denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 192.168.1.1; denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 172.16.0.1
 * **Pipelock (TLS on)** — PASS [hostname-not-allowlisted] (expectation: deny, 2ms)  
   denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 10.0.0.1; denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 192.168.1.1; denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 172.16.0.1
-* **Smokescreen (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 6ms)  
+* **Smokescreen (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 2ms)  
   denied: HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host '10.0.0.1:80': default rule policy used.; denied: HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host '192.168.1.1:80': default rule policy used.; denied: HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host '172.16.0.1:80': default rule policy used.
 * **Squid (TLS off)** — PASS [private-ip] (expectation: deny, 2ms)  
   denied: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.; denied: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.; denied: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.
@@ -194,9 +194,9 @@ The cloud metadata address is refused over both CONNECT and plain HTTP.
   denied for CONNECT and GET (CONNECT: denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 169.254.169.254; GET: denied: HTTP/1.1 403 Forbidden — blocked: domain not in allowlist: 169.254.169.254)
 * **Pipelock (TLS on)** — PASS [hostname-not-allowlisted] (expectation: deny, 1ms)  
   denied for CONNECT and GET (CONNECT: denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 169.254.169.254; GET: denied: HTTP/1.1 403 Forbidden — blocked: domain not in allowlist: 169.254.169.254)
-* **Smokescreen (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 1ms)  
+* **Smokescreen (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 2ms)  
   denied for CONNECT and GET (CONNECT: denied: HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host '169.254.169.254:80': default rule policy used.; GET: denied: HTTP/1.1 407 Proxy Authentication Required — Egress proxying is denied to host '169.254.169.254': default rule policy used.)
-* **Squid (TLS off)** — PASS [metadata] (expectation: deny, 1ms)  
+* **Squid (TLS off)** — PASS [metadata] (expectation: deny, 3ms)  
   denied for CONNECT and GET (CONNECT: denied: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.; GET: denied: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.)
 * **Squid (TLS on)** — PASS [metadata] (expectation: deny, 4ms)  
   denied for CONNECT and GET (CONNECT: denied after CONNECT: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.; GET: denied: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a cloud metadata endpoint.)
@@ -222,24 +222,24 @@ CONNECT to ULA and link-local IPv6 (fd00::1, fe80::1) is refused.
 
 * **Pipelock (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 1ms)  
   denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: fd00::1; denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: fe80::1
-* **Pipelock (TLS on)** — PASS [hostname-not-allowlisted] (expectation: deny, 2ms)  
+* **Pipelock (TLS on)** — PASS [hostname-not-allowlisted] (expectation: deny, 1ms)  
   denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: fd00::1; denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: fe80::1
 * **Smokescreen (TLS off)** — PASS [unparseable-destination] (expectation: deny, 1ms)  
   denied: HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host '[fd00::1]:80': Destination host cannot be determined.; denied: HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host '[fe80::1]:80': Destination host cannot be determined.
 * **Squid (TLS off)** — PASS [private-ip] (expectation: deny, 1ms)  
   denied: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.; denied: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.
-* **Squid (TLS on)** — PASS [private-ip] (expectation: deny, 7ms)  
+* **Squid (TLS on)** — PASS [private-ip] (expectation: deny, 6ms)  
   denied after CONNECT: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.; denied after CONNECT: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: SSRF blocked, the destination resolves to a private, loopback, link-local or otherwise non-public address.
 
 ### dns-private-ipv4
 
 An *allowlisted* name that resolves to a private IPv4 address is refused, so the denial can only have come from validating the resolved address (nip.io).
 
-* **Pipelock (TLS off)** — PASS [metadata+private-ip] (expectation: deny, 144ms)  
+* **Pipelock (TLS off)** — PASS [metadata+private-ip] (expectation: deny, 166ms)  
   allowlisted hostnames resolving to private/loopback/metadata IPv4 all denied; resolved IPs recorded per attempt
 * **Pipelock (TLS on)** — PASS [metadata+private-ip] (expectation: deny, 14ms)  
   allowlisted hostnames resolving to private/loopback/metadata IPv4 all denied; resolved IPs recorded per attempt
-* **Smokescreen (TLS off)** — PASS [private-ip] (expectation: deny, 14ms)  
+* **Smokescreen (TLS off)** — PASS [private-ip] (expectation: deny, 31ms)  
   allowlisted hostnames resolving to private/loopback/metadata IPv4 all denied; resolved IPs recorded per attempt
 * **Squid (TLS off)** — PASS [metadata+private-ip] (expectation: deny, 14ms)  
   allowlisted hostnames resolving to private/loopback/metadata IPv4 all denied; resolved IPs recorded per attempt
@@ -250,9 +250,9 @@ An *allowlisted* name that resolves to a private IPv4 address is refused, so the
 
 The same, for IPv6 (sslip.io).
 
-* **Pipelock (TLS off)** — PASS [private-ip] (expectation: deny, 111ms)  
+* **Pipelock (TLS off)** — PASS [private-ip] (expectation: deny, 129ms)  
   allowlisted hostnames resolving to private/loopback IPv6 all denied; resolved IPs recorded per attempt
-* **Pipelock (TLS on)** — PASS [private-ip] (expectation: deny, 11ms)  
+* **Pipelock (TLS on)** — PASS [private-ip] (expectation: deny, 12ms)  
   allowlisted hostnames resolving to private/loopback IPv6 all denied; resolved IPs recorded per attempt
 * **Smokescreen (TLS off)** — PASS [private-ip] (expectation: deny, 10ms)  
   allowlisted hostnames resolving to private/loopback IPv6 all denied; resolved IPs recorded per attempt
@@ -265,71 +265,71 @@ The same, for IPv6 (sslip.io).
 
 A name whose answer changes between the first lookup and the next does not get the engine to a private address. Graded on whether the fixture's trap was reached, not on counts.
 
-* **Pipelock (TLS off)** — PASS [private-ip] (expectation: deny, 1558ms)  
+* **Pipelock (TLS off)** — PASS [private-ip] (expectation: deny, 1595ms)  
   no connection reached the trap. 3/3 names were resolved more than once and so were handed the private address (9 lookups total); of the 3 repeat probes, 3 were denied, 0 carried HTTP traffic, and 0 were inconclusive
-* **Pipelock (TLS on)** — PASS [private-ip] (expectation: deny, 1585ms)  
+* **Pipelock (TLS on)** — PASS [private-ip] (expectation: deny, 1588ms)  
   no connection reached the trap. 3/3 names were resolved more than once and so were handed the private address (9 lookups total); of the 3 repeat probes, 3 were denied, 0 carried HTTP traffic, and 0 were inconclusive
-* **Smokescreen (TLS off)** — PASS [private-ip] (expectation: deny, 1590ms)  
+* **Smokescreen (TLS off)** — PASS [private-ip] (expectation: deny, 1595ms)  
   no connection reached the trap. 3/3 names were resolved more than once and so were handed the private address (6 lookups total); of the 3 repeat probes, 3 were denied, 0 carried HTTP traffic, and 0 were inconclusive
-* **Squid (TLS off)** — PASS [private-ip] (expectation: deny, 1573ms)  
+* **Squid (TLS off)** — PASS [private-ip] (expectation: deny, 1586ms)  
   no connection reached the trap. 3/3 names were resolved more than once and so were handed the private address (6 lookups total); of the 3 repeat probes, 3 were denied, 0 carried HTTP traffic, and 0 were inconclusive
-* **Squid (TLS on)** — PASS [private-ip] (expectation: deny, 1606ms)  
+* **Squid (TLS on)** — PASS [private-ip] (expectation: deny, 1608ms)  
   no connection reached the trap. 3/3 names were resolved more than once and so were handed the private address (6 lookups total); of the 3 repeat probes, 3 were denied, 0 carried HTTP traffic, and 0 were inconclusive
 
 ### dns-mixed-answers
 
 A name resolving to a public *and* a private address is refused, in both answer orderings — every address in the answer set is validated, not just the first or the routable one.
 
-* **Pipelock (TLS off)** — PASS [private-ip] (expectation: deny, 84ms)  
+* **Pipelock (TLS off)** — PASS [private-ip] (expectation: deny, 61ms)  
   control public-only.fixture.test established, and both mixed-answer names (public-first and private-first) were denied — every address in the answer set is validated, not only the first one or the routable one
-* **Pipelock (TLS on)** — PASS [private-ip] (expectation: deny, 74ms)  
+* **Pipelock (TLS on)** — PASS [private-ip] (expectation: deny, 75ms)  
   control public-only.fixture.test established, and both mixed-answer names (public-first and private-first) were denied — every address in the answer set is validated, not only the first one or the routable one
-* **Smokescreen (TLS off)** — FAIL (expectation: deny, 68ms)  
+* **Smokescreen (TLS off)** — FAIL (expectation: deny, 61ms)  
   mixed-public-first.fixture.test:443 established — the engine connected although a private address was in the answer set; mixed-private-first.fixture.test:443 established — the engine connected although a private address was in the answer set
-* **Squid (TLS off)** — PASS [private-ip] (expectation: deny, 56ms)  
+* **Squid (TLS off)** — PASS [private-ip] (expectation: deny, 59ms)  
   control public-only.fixture.test established, and both mixed-answer names (public-first and private-first) were denied — every address in the answer set is validated, not only the first one or the routable one
-* **Squid (TLS on)** — PASS [private-ip] (expectation: deny, 70ms)  
+* **Squid (TLS on)** — PASS [private-ip] (expectation: deny, 65ms)  
   control public-only.fixture.test established, and both mixed-answer names (public-first and private-first) were denied — every address in the answer set is validated, not only the first one or the routable one
 
 ### ptr-allowlist
 
 An address whose PTR record claims an allowlisted hostname is still refused, so a reverse lookup cannot satisfy the allowlist.
 
-* **Pipelock (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 37ms)  
+* **Pipelock (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 38ms)  
   denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 1.0.0.1; the engine performed no reverse lookup, so the allowlist was never offered the PTR name
-* **Pipelock (TLS on)** — PASS [hostname-not-allowlisted] (expectation: deny, 37ms)  
+* **Pipelock (TLS on)** — PASS [hostname-not-allowlisted] (expectation: deny, 38ms)  
   denied: HTTP/1.1 403 Forbidden — CONNECT blocked: domain not in allowlist: 1.0.0.1; the engine performed no reverse lookup, so the allowlist was never offered the PTR name
-* **Smokescreen (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 36ms)  
+* **Smokescreen (TLS off)** — PASS [hostname-not-allowlisted] (expectation: deny, 37ms)  
   denied: HTTP/1.1 407 Request rejected by proxy — Egress proxying is denied to host '1.0.0.1:443': default rule policy used.; the engine performed no reverse lookup, so the allowlist was never offered the PTR name
-* **Squid (TLS off)** — PASS [ip-literal-destination] (expectation: deny, 37ms)  
+* **Squid (TLS off)** — PASS [ip-literal-destination] (expectation: deny, 36ms)  
   denied: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: the destination is a bare IP address, and this proxy allowlists destinations by hostname only.; the engine performed no reverse lookup, so the allowlist was never offered the PTR name
-* **Squid (TLS on)** — PASS [ip-literal-destination] (expectation: deny, 41ms)  
+* **Squid (TLS on)** — PASS [ip-literal-destination] (expectation: deny, 40ms)  
   denied: HTTP/1.1 200 Connection established — denied after CONNECT: HTTP/1.1 403 Forbidden — 403 Forbidden internet-proxy-locally denied this request: the destination is a bare IP address, and this proxy allowlists destinations by hostname only.; the engine performed no reverse lookup, so the allowlist was never offered the PTR name
 
 ### connect-sni-mismatch
 
 A tunnel to one allowlisted host carrying a ClientHello for another is refused — enforcement inside the CONNECT tunnel.
 
-* **Pipelock (TLS off)** — PASS [sni-mismatch] (expectation: deny, 39ms)  
+* **Pipelock (TLS off)** — PASS [sni-mismatch] (expectation: deny, 41ms)  
   mismatched SNI refused: tunnel established but TLS handshake failed (SNI=files.pythonhosted.org): [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1032) — the matching-SNI control to the same host completed (tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)), so the refusal is the proxy's rather than the origin's
-* **Pipelock (TLS on)** — PASS [sni-mismatch] (expectation: deny, 31ms)  
+* **Pipelock (TLS on)** — PASS [sni-mismatch] (expectation: deny, 38ms)  
   mismatched SNI refused: tunnel established but TLS handshake failed (SNI=files.pythonhosted.org): [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1032) — the matching-SNI control to the same host completed (tunnel established, TLSv1.3 handshake OK (SNI=pypi.org)), so the refusal is the proxy's rather than the origin's
-* **Smokescreen (TLS off)** — FAIL [sni-mismatch] (expectation: deny, 34ms)  
+* **Smokescreen (TLS off)** — FAIL [sni-mismatch] (expectation: deny, 26ms)  
   mismatched SNI accepted: tunnel established, TLSv1.3 handshake OK (SNI=files.pythonhosted.org)
-* **Squid (TLS off)** — FAIL [sni-mismatch] (expectation: deny, 34ms)  
+* **Squid (TLS off)** — FAIL [sni-mismatch] (expectation: deny, 25ms)  
   mismatched SNI accepted: tunnel established, TLSv1.3 handshake OK (SNI=files.pythonhosted.org)
-* **Squid (TLS on)** — FAIL [sni-mismatch] (expectation: deny, 32ms)  
+* **Squid (TLS on)** — FAIL [sni-mismatch] (expectation: deny, 38ms)  
   mismatched SNI accepted: tunnel established, TLSv1.3 handshake OK (SNI=files.pythonhosted.org)
 
 ### connect-raw-tunnel
 
 A tunnel to an allowlisted host on 443 carrying plaintext rather than TLS is refused — enforcement inside the CONNECT tunnel.
 
-* **Pipelock (TLS off)** — PASS [non-tls-in-tunnel] (expectation: deny, 15ms)  
+* **Pipelock (TLS off)** — PASS [non-tls-in-tunnel] (expectation: deny, 16ms)  
   tunnel established; connection closed with no response to raw (non-TLS) bytes — consistent with a non-TLS-in-tunnel policy check
-* **Pipelock (TLS on)** — PASS [non-tls-in-tunnel] (expectation: deny, 16ms)  
+* **Pipelock (TLS on)** — PASS [non-tls-in-tunnel] (expectation: deny, 17ms)  
   tunnel established; connection closed with no response to raw (non-TLS) bytes — consistent with a non-TLS-in-tunnel policy check
-* **Smokescreen (TLS off)** — FAIL [non-tls-in-tunnel] (expectation: deny, 23ms)  
+* **Smokescreen (TLS off)** — FAIL [non-tls-in-tunnel] (expectation: deny, 24ms)  
   raw bytes traversed the tunnel; response: type=alert(21) version=TLS1.2 length=2 -> alert level=fatal(2) description=decode_error(50); type=alert(21) version=TLS1.2 length=2 -> alert level=warning(1) description=close_notify(0)
 * **Squid (TLS off)** — FAIL [non-tls-in-tunnel] (expectation: deny, 20ms)  
   raw bytes traversed the tunnel; response: type=alert(21) version=TLS1.2 length=2 -> alert level=fatal(2) description=decode_error(50); type=alert(21) version=TLS1.2 length=2 -> alert level=warning(1) description=close_notify(0)
@@ -340,15 +340,15 @@ A tunnel to an allowlisted host on 443 carrying plaintext rather than TLS is ref
 
 Ten simultaneous CONNECTs to an allowed host all succeed — the proxy is not serializing or dropping under trivial load.
 
-* **Pipelock (TLS off)** — PASS (expectation: allow, 38ms)  
+* **Pipelock (TLS off)** — PASS (expectation: allow, 27ms)  
   10 concurrent CONNECTs to an allowed host: 10 established, 0 denied/failed
 * **Pipelock (TLS on)** — PASS (expectation: allow, 28ms)  
   10 concurrent CONNECTs to an allowed host: 10 established, 0 denied/failed
 * **Smokescreen (TLS off)** — PASS (expectation: allow, 21ms)  
   10 concurrent CONNECTs to an allowed host: 10 established, 0 denied/failed
-* **Squid (TLS off)** — PASS (expectation: allow, 27ms)  
+* **Squid (TLS off)** — PASS (expectation: allow, 22ms)  
   10 concurrent CONNECTs to an allowed host: 10 established, 0 denied/failed
-* **Squid (TLS on)** — PASS (expectation: allow, 7ms)  
+* **Squid (TLS on)** — PASS (expectation: allow, 5ms)  
   10 concurrent CONNECTs to an allowed host: 10 established, 0 denied/failed
 
 <!-- END GENERATED per-check -->
