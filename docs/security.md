@@ -18,7 +18,7 @@ that client can connect:
   `--tls-interception` is on ([tls-interception.md](tls-interception.md));
   Smokescreen never does. Iron examines SNI in passthrough mode, but permits
   HTTP inside CONNECT and does not require CONNECT-target/SNI equality;
-  its live results are pending ([Iron notes](tls-interception.md#iron)).
+  see its measured results and [Iron notes](tls-interception.md#iron).
 
 ## What it does not defend against
 
@@ -102,7 +102,11 @@ in the taxonomy rather than what the set actually contained.
 
 `proxy-access-denied` records an explicit Squid access-denial response inside
 TLS. Un-attributable closures and TLS failures are inconclusive, not policy
-passes. The historical `aborted-after-connect` cause remains readable for
+passes. Iron's DNS/private-address probes can use an explicit IP refusal
+from the same CONNECT transaction in the current check's audit-log window.
+The result retains the client error and identifies the log-based evidence;
+missing, ambiguous, stale, or conflicting evidence cannot produce a pass.
+The historical `aborted-after-connect` cause remains readable for
 older measurements. See
 [tls-interception.md](tls-interception.md#late-denials-and-how-the-suite-grades-them).
 

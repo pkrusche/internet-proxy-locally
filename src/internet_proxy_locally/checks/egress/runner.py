@@ -7,12 +7,14 @@ import re
 import socket
 import subprocess
 import time
+from datetime import UTC, datetime
 
 from internet_proxy_locally.backend import log_command
 
 from . import fixture_log
 from .catalogue import TESTS
 from .denial import aggregate_cause, classify_denial
+from .iron_logs import explain_denials
 from .models import Result, _normalize
 from .transport import ProxyClient
 
@@ -126,6 +128,7 @@ def run_suite(
                 results.append(Result(name, group, expectation, "skip", FIXTURE_SKIP))
                 continue
         before_logs = _fetch_logs(backend_bin, container)
+        started_at = datetime.now(UTC)
         t0 = time.monotonic()
         observed = None
         try:
@@ -137,6 +140,7 @@ def run_suite(
             raw = _normalize((outcome, detail))
         elapsed_ms = round((time.monotonic() - t0) * 1000, 1)
         after_logs = _fetch_logs(backend_bin, container)
+        ended_at = datetime.now(UTC)
         for attempt in raw.attempts:
             if attempt.outcome == "denied" and attempt.cause is None:
                 attempt.cause = classify_denial(attempt.detail)
@@ -147,21 +151,22 @@ def run_suite(
             if gradable and (expectation == "deny" or raw.attempts)
             else None
         )
-        results.append(
-            Result(
-                name,
-                group,
-                expectation,
-                outcome,
-                detail,
-                cause=cause,
-                observed=observed,
-                elapsed_ms=elapsed_ms,
-                attempts=raw.attempts,
-                headers=raw.headers,
-                engine_logs=_log_delta(before_logs, after_logs),
-            )
+        result = Result(
+            name,
+            group,
+            expectation,
+            outcome,
+            detail,
+            cause=cause,
+            observed=observed,
+            elapsed_ms=elapsed_ms,
+            attempts=raw.attempts,
+            headers=raw.headers,
+            engine_logs=_log_delta(before_logs, after_logs),
         )
+        if engine == "iron":
+            result = explain_denials(result, started_at=started_at, ended_at=ended_at)
+        results.append(result)
     fixture_log.FIXTURE_LOG_SOURCE = old_fixture_source
     return results
 

@@ -162,13 +162,12 @@ Commit the bundle and generated findings together. `report` prefers the bundle,
 and still reads historical `results/<engine>.json` files if no bundle exists;
 it never combines an incomplete bundle with older results.
 
-Iron measurements are pending. The existing bundle and generated findings
-retain the earlier three-engine measurements. Until a complete four-engine
-batch is recorded, `ipl-lab report --check` rejects the bundle for missing
-Iron results; this is not a successful Iron verification. On a Docker host,
-run `uv run ipl ca init`, then `uv run ipl-lab measure` and
-`uv run ipl-lab report --check`. Retain errors and failed policy checks as
-evidence rather than reclassifying them to make the comparison pass.
+Iron's DNS/private-address checks can use correlated audit logs to explain
+late IP denials that appear to the client as TLS EOFs or generic 502s. See
+[log evidence rules](tls-interception.md#late-denials-and-how-the-suite-grades-them).
+The original client error is retained alongside the explanation. Existing
+result files keep their recorded grades; run `uv run ipl-lab measure` to
+record the new classification, then `uv run ipl-lab report --check`.
 
 `report` rewrites only the regions of `findings.md` between
 `<!-- BEGIN GENERATED <name> -->` and `<!-- END GENERATED <name> -->`.

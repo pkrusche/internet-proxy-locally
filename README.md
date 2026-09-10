@@ -75,8 +75,8 @@ override the defaults; `ipl --help` is the full reference.
 For Iron, run `uv run ipl --engine iron setup`, then
 `uv run ipl --engine iron up`. It uses the same endpoint and allowlist.
 TLS passes through by default; add `--tls-interception` to setup and up
-to use the existing CA workflow. Iron's live measurements are pending;
-see [docs/lab.md](docs/lab.md#reproducing-the-comparison).
+to use the existing CA workflow. See
+[docs/lab.md](docs/lab.md#reproducing-the-comparison) for measurements.
 
 ## Pins
 
@@ -104,8 +104,8 @@ behind it is not part of the contract.
 ## Which engine, and why
 
 **Pipelock remains the default**, with TLS and SNI checks inside CONNECT
-tunnels enabled. Iron also checks TLS SNI in its passthrough mode; its
-behavior in this integration still needs lab measurement. Squid is the
+tunnels enabled. Iron also checks TLS SNI in its passthrough mode, but accepts
+mismatched CONNECT/SNI names and plaintext HTTP inside CONNECT. Squid is the
 alternative when the policy itself has to be auditable — its SSRF floors
 are ordinary `dst` ACLs in a file you can read, which `ipl setup` then
 checks rather than trusts.
@@ -121,7 +121,7 @@ in a year.
 
 | | |
 | --- | --- |
-| [findings.md](docs/findings.md) | measured engine comparison; Iron measurements pending |
+| [findings.md](docs/findings.md) | measured engine comparison and explanations |
 | [policy.md](docs/policy.md) | the allowlist, the rules, how to change them |
 | [security.md](docs/security.md) | threat model, fail-closed properties, non-goals, what it does *not* defend against |
 | [lab.md](docs/lab.md) | the test policy, the DNS fixture, and how to reproduce the comparison |

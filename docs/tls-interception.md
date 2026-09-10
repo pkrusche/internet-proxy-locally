@@ -121,7 +121,8 @@ routes passthrough TLS by SNI on port 443. These are engine behaviors to
 measure, not guarantees of CONNECT-target/SNI equality or TLS-only tunnels.
 See the [pinned tunnel implementation](https://github.com/ironsh/iron-proxy/blob/v0.49.0/internal/proxy/tunnel.go).
 This integration enables only the hostname allowlist transform, not credential
-injection or content filtering. Live interception and rotation checks are pending.
+injection or content filtering. CA trust and rotation still need the manual
+verification described below.
 
 ## Late denials, and how the suite grades them
 
@@ -148,8 +149,23 @@ The active probe uses TLS even for CONNECT targets on port 80, to exercise
 an intercepting listener. A plaintext-only origin may therefore produce an
 inconclusive result; this is not proof that the proxy blocked it. Certificate
 verification is disabled for these behavioral probes, so they do not verify
-CA trust or upstream identity. Engine logs remain attached for diagnosis,
-but are not used to turn ambiguous client observations into policy passes.
+CA trust or upstream identity. Engine logs remain attached for diagnosis.
+
+For Iron's `dns-private-ipv4` and `dns-private-ipv6` checks, an explicit
+`denied by upstream_deny_cidrs` audit error can establish a denial after
+CONNECT. The checker matches the exact CONNECT target to one terminal audit
+on the same client connection, with matching SNI and TLS mode. Both audit
+timestamps must fall within the check's execution window. The refused IP,
+port and CIDR must agree with the logged dial error; generic 502s, incomplete
+transactions, duplicate/conflicting records, and old logs do not qualify.
+Every attempt must be denied before the check passes. A demonstrated
+connection still takes precedence over log evidence.
+
+The result and each explained attempt name the Iron audit log as the evidence
+source and retain the original TLS/HTTP error. Thus a TLS EOF or `bad gateway`
+alone remains inconclusive, while a correlated IP-policy refusal is reported
+as `PASS [private-ip]` (or `metadata`). Without engine logs the same probe
+remains `ERROR`. Other checks retain their existing grading rules.
 
 DNS and PTR checks propagate inconclusive attempts instead of silently
 counting them as denials. The mixed-answer check needs a working TLS/HTTP

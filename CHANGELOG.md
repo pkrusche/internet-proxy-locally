@@ -10,4 +10,5 @@ export/install the new public CA, verify new connections, then remove old trust.
 
 Iron v0.49.0 is selectable with `--engine iron`, using the shared hostname
 policy and explicit destination deny ranges in operational and lab runs.
-Its live benchmark results are pending.
+Its DNS/private-address checks can attribute late denials to correlated
+`upstream_deny_cidrs` audit errors, retaining the original client failure.
