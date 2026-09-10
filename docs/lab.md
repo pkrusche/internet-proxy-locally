@@ -48,13 +48,17 @@ in `config.toml` are read by `ipl-lab`.
 ## The DNS fixture
 
 The fixture runs DNS, a controlled HTTPS origin, and a private connection
-trap. Docker attaches it and the proxy to the default bridge and to the
+trap. Docker attaches it and the proxy to the managed private bridge
+`internet-proxy-fixture-private` (`172.30.203.0/24`) and to the
 managed internal network `internet-proxy-fixture-public` (`11.203.0.0/24`).
 The HTTPS origin binds `11.203.0.2:443` on that internal network; the trap
 binds port 443 on the fixture's separate private bridge address. No fixture
 port is published, no extra Linux capability is granted, and no host route
 is installed. The internal subnet models a public destination for the proxy's
 IP classifier; traffic to that origin stays on the local Docker network.
+The private bridge supplies the default route for Internet probes. Both networks
+are user-defined, as Docker rejects combining the built-in `bridge` with a
+user-defined network at startup. See [Docker networking](https://docs.docker.com/engine/network/).
 This shadows that small public-numbered subnet while the lab is running.
 
 The addresses in `[fixture.records]` specify public/private roles. At startup,
@@ -97,8 +101,8 @@ observed; a connection to the private trap is a failure.
 The PTR probe still uses a separate public address claiming an allowlisted
 hostname. Rejecting literals before performing reverse DNS is valid enforcement.
 
-`ipl-lab down` removes the Docker proxies, fixture, and owned internal network.
-Operational `ipl --backend docker up` also removes a stale lab network after
+`ipl-lab down` removes the Docker proxies, fixture, and both owned networks.
+Operational `ipl --backend docker up` also removes stale lab networks after
 removing its containers. Apple operational commands do not contact Docker.
 Network ownership labels are checked before reuse or removal.
 

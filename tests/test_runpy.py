@@ -62,9 +62,10 @@ case "$cmd" in
         if [ -f "$f" ]; then cat "$f"; else exit 1; fi
         ;;
       create)
-        prev=""; managed=""; workspace=""; role=""; subnet=""
+        prev=""; managed=""; workspace=""; role=""; subnet=""; internal=false
         for a in "$@"; do
           if [ "$prev" = "--subnet" ]; then subnet="$a"; fi
+          if [ "$a" = "--internal" ]; then internal=true; fi
           if [ "$prev" = "--label" ]; then
             case "$a" in
               io.internet-proxy-locally.managed=*) managed="${a#*=}";;
@@ -74,7 +75,7 @@ case "$cmd" in
           fi
           prev="$a"
         done
-        printf '[{"Internal":true,"IPAM":{"Config":[{"Subnet":"%s"}]},"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s","io.internet-proxy-locally.role":"%s","io.internet-proxy-locally.tls-interception":"false"}}]\n' "$subnet" "$managed" "$workspace" "$role" > "$FAKE_STATE/network-$prev"
+        printf '[{"Internal":%s,"IPAM":{"Config":[{"Subnet":"%s"}]},"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s","io.internet-proxy-locally.role":"%s","io.internet-proxy-locally.tls-interception":"false"}}]\n' "$internal" "$subnet" "$managed" "$workspace" "$role" > "$FAKE_STATE/network-$prev"
         ;;
       rm) rm -f "$FAKE_STATE/network-$1" ;;
     esac
@@ -120,8 +121,11 @@ case "$cmd" in
     done
     ;;
   run)
-    name=""; prev=""; published=""; label_managed=""; label_workspace=""; label_tls="false"
+    name=""; prev=""; published=""; label_managed=""; label_workspace=""; label_tls="false"; builtin_network=""; custom_network=""
     for a in "$@"; do
+      if [ "$prev" = "--network" ]; then
+        case "$a" in bridge|host|none) builtin_network=1;; *) custom_network=1;; esac
+      fi
       if [ "$prev" = "--name" ]; then name="$a"; fi
       if [ "$a" = "--publish" ]; then published=1; fi
       if [ "$prev" = "--publish" ]; then publication="$a"; fi
@@ -130,6 +134,10 @@ case "$cmd" in
       fi
       prev="$a"
     done
+    if [ -n "$builtin_network" ] && [ -n "$custom_network" ]; then
+      echo "conflicting options: cannot attach both user-defined and non-user-defined network-modes" >&2
+      exit 1
+    fi
     echo running > "$FAKE_STATE/container-$name"
     if [ -n "$published" ]; then
       host="${publication%%:*}"; rest="${publication#*:}"; hostport="${rest%%:*}"; containerport="${rest##*:}"

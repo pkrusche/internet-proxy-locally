@@ -21,6 +21,7 @@ from internet_proxy_locally.cli import lab as lab_cli
 from internet_proxy_locally.cli import run as run_cli
 from internet_proxy_locally.constants import (
     FIXTURE_NETWORK_NAME,
+    FIXTURE_PRIVATE_NETWORK_NAME,
     FIXTURE_PUBLIC_ADDRESS,
     FIXTURE_PUBLIC_SUBNET,
 )
@@ -137,7 +138,7 @@ class FixtureWiringTest(unittest.TestCase):
                 "NetworkSettings": {
                     "Networks": {
                         FIXTURE_NETWORK_NAME: {"IPAddress": FIXTURE_PUBLIC_ADDRESS},
-                        "bridge": {"IPAddress": "172.17.0.9"},
+                        FIXTURE_PRIVATE_NETWORK_NAME: {"IPAddress": "172.17.0.9"},
                     }
                 }
             },
@@ -160,6 +161,14 @@ class FixtureWiringTest(unittest.TestCase):
             args = run.call_args.args
             self.assertIn(
                 f"name={FIXTURE_NETWORK_NAME},ip={FIXTURE_PUBLIC_ADDRESS}", args
+            )
+            networks = [args[i + 1] for i, arg in enumerate(args) if arg == "--network"]
+            self.assertEqual(
+                networks,
+                [
+                    FIXTURE_PRIVATE_NETWORK_NAME,
+                    f"name={FIXTURE_NETWORK_NAME},ip={FIXTURE_PUBLIC_ADDRESS}",
+                ],
             )
             self.assertNotIn("--publish", args)
             self.assertNotIn("--cap-add", args)

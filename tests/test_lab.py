@@ -187,6 +187,7 @@ class LabCliTest(RunPyCliTest):
         self.assertEqual(down.returncode, 0)
         self.assertIn("removed internet-proxy-dnsfixture", down.stdout)
         self.assertIn("removed internet-proxy-pipelock", down.stdout)
+        self.assertFalse(list(self.state.glob("network-*")))
 
     def test_up_refuses_without_the_fixture_image(self) -> None:
         self.build_engine()  # fixture image deliberately absent

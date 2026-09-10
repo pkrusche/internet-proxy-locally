@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from internet_proxy_locally.constants import BACKENDS
+from internet_proxy_locally.constants import BACKENDS, FIXTURE_PRIVATE_NETWORK_NAME
 from internet_proxy_locally.errors import Fail
 
 COMMAND_TIMEOUT = 30
@@ -122,7 +122,9 @@ class Backend:
             networks = settings.get("Networks") or {}
             # The lab also has a public-shaped origin network. DNS must use
             # the private bridge address, independent of inspect key ordering.
-            address = (networks.get("bridge") or {}).get("IPAddress")
+            address = (networks.get(FIXTURE_PRIVATE_NETWORK_NAME) or {}).get(
+                "IPAddress"
+            )
             if isinstance(address, str) and address:
                 return address
             address = settings.get("IPAddress")
@@ -208,7 +210,7 @@ class Backend:
         return True
 
     def ensure_lab_network(
-        self, name: str, subnet: str, labels: dict[str, str]
+        self, name: str, subnet: str, labels: dict[str, str], *, internal: bool = True
     ) -> None:
         if self.name != "docker":
             raise Fail(
@@ -222,12 +224,14 @@ class Backend:
             ]
             if (
                 any(actual.get(k) != v for k, v in labels.items())
-                or not entry.get("Internal")
+                or entry.get("Internal") is not internal
                 or subnets != [subnet]
             ):
                 raise Fail(f"refusing to reuse foreign or incompatible network {name}")
             return
-        args = ["network", "create", "--internal", "--subnet", subnet]
+        args = ["network", "create", "--subnet", subnet]
+        if internal:
+            args.append("--internal")
         for key, value in sorted(labels.items()):
             args += ["--label", f"{key}={value}"]
         self._run(*args, name)
@@ -283,7 +287,7 @@ class Backend:
             attachment = f"name={lab_network}"
             if lab_address:
                 attachment += f",ip={lab_address}"
-            cmd += ["--network", "bridge", "--network", attachment]
+            cmd += ["--network", FIXTURE_PRIVATE_NETWORK_NAME, "--network", attachment]
         for key, value in sorted((environment or {}).items()):
             cmd += ["--env", f"{key}={value}"]
         for src, dst in mounts:

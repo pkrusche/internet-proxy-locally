@@ -7,6 +7,8 @@ from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.constants import (
     DNS_FIXTURE,
     FIXTURE_NETWORK_NAME,
+    FIXTURE_PRIVATE_NETWORK_NAME,
+    FIXTURE_PRIVATE_SUBNET,
     FIXTURE_PUBLIC_ADDRESS,
     FIXTURE_PUBLIC_SUBNET,
     HEALTH_WAIT_SECONDS,
@@ -46,7 +48,15 @@ def start_dns_fixture(backend: Backend) -> str:
         )
     remove_owned(backend, spec.container_name)
     backend.ensure_lab_network(
-        FIXTURE_NETWORK_NAME, FIXTURE_PUBLIC_SUBNET, ownership_labels("lab-fixture")
+        FIXTURE_NETWORK_NAME,
+        FIXTURE_PUBLIC_SUBNET,
+        ownership_labels("lab-fixture"),
+    )
+    backend.ensure_lab_network(
+        FIXTURE_PRIVATE_NETWORK_NAME,
+        FIXTURE_PRIVATE_SUBNET,
+        ownership_labels("lab-fixture"),
+        internal=False,
     )
     tls.generate(load_lab_config().fixture)
     backend.run_detached(

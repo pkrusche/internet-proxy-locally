@@ -12,6 +12,7 @@ from internet_proxy_locally.constants import (
     DNS_FIXTURE,
     ENGINES,
     FIXTURE_NETWORK_NAME,
+    FIXTURE_PRIVATE_NETWORK_NAME,
     HEALTH_WAIT_SECONDS,
 )
 from internet_proxy_locally.errors import Fail
@@ -119,6 +120,7 @@ def start_engine(
 
     if not keep_fixture:
         backend.remove_lab_network(FIXTURE_NETWORK_NAME, ownership_labels())
+        backend.remove_lab_network(FIXTURE_PRIVATE_NETWORK_NAME, ownership_labels())
 
     if port_listening(host, port):
         raise Fail(

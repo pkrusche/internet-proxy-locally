@@ -16,6 +16,7 @@ from internet_proxy_locally.constants import (
     DEFAULT_ENGINE,
     ENGINES,
     FIXTURE_NETWORK_NAME,
+    FIXTURE_PRIVATE_NETWORK_NAME,
 )
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.images import prepare_image
@@ -82,6 +83,7 @@ def cmd_down(opts: argparse.Namespace) -> int:
             print(f"removed {name}")
             removed = True
     backend.remove_lab_network(FIXTURE_NETWORK_NAME, ownership_labels())
+    backend.remove_lab_network(FIXTURE_PRIVATE_NETWORK_NAME, ownership_labels())
     if not removed:
         print("nothing to remove")
     return 0
