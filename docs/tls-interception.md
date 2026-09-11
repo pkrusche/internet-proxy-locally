@@ -8,10 +8,8 @@ fails.
 
 Pass the switch after the subcommand: `ipl up --tls-interception`,
 `ipl restart --tls-interception`, or `ipl-lab up --tls-interception`.
-It is also available on both CLIs' `setup` commands. The choice is per
-invocation: repeat it on restart; omitting it renders tunnel mode.
-Remove the old `[policy].tls_interception` key from existing TOML files;
-it is no longer accepted. For the lab, initialize the CA with `ipl ca init`.
+
+Initialize the CA with `ipl ca init`.
 
 ## What changes
 
@@ -26,12 +24,9 @@ it is no longer accepted. For the lab, initialize the CA with `ipl ca init`.
   that trusts this CA. Treat the checkout's `state/` directory the way you
   would treat any other private-key store.
 * **Every sandbox that is meant to see decrypted traffic needs this CA in
-  its trust store.** 
+  its trust store.** Project-sandbox supports this: <https://github.com/pkrusche/project-sandbox/blob/main/docs/internet-proxy.md#injecting-proxy-ca-certificates>.
 
 ## The `ipl ca` lifecycle
-
-`ipl` owns the CA's whole lifecycle — generate, check, export, rotate.
-Nothing outside `ca.py` touches the private key.
 
 ```bash
 ipl ca init            # generate a CA if none exists yet
@@ -43,11 +38,9 @@ ipl ca rotate            # generate a new CA (same as init --rebuild)
 
 `ipl setup --tls-interception` also generates the CA automatically
 when no CA exists yet — a repo that never opts in gets zero new files under `state/`. `ipl up` refuses to
-start an engine with `--tls-interception` and no CA present, telling
-you to run `ipl ca init` first, rather than starting a half-configured
-engine.
+start an engine with `--tls-interception` and no CA present.
 
-### Rotation and compromise runbook
+### Rotation 
 
 If you suspect the private key has been read by anything untrusted
 (a compromised sandbox, a leaked backup of `state/`, a workstation you no
@@ -115,15 +108,6 @@ uses the same managed CA as the other engines, mounted read-only at
 remains enabled; lab runs also receive the fixture's public CA through
 `SSL_CERT_FILE`.
 
-Iron's tunnel listener accepts ordinary HTTP and CONNECT on one port.
-The upstream implementation also accepts HTTP inside a CONNECT tunnel and
-routes passthrough TLS by SNI on port 443. These are engine behaviors to
-measure, not guarantees of CONNECT-target/SNI equality or TLS-only tunnels.
-See the [pinned tunnel implementation](https://github.com/ironsh/iron-proxy/blob/v0.49.0/internal/proxy/tunnel.go).
-This integration enables only the hostname allowlist transform, not credential
-injection or content filtering. CA trust and rotation still need the manual
-verification described below.
-
 ## Late denials, and how the suite grades them
 
 A CONNECT `200` only acknowledges the tunnel. With interception, even a
@@ -151,31 +135,6 @@ inconclusive result; this is not proof that the proxy blocked it. Certificate
 verification is disabled for these behavioral probes, so they do not verify
 CA trust or upstream identity. Engine logs remain attached for diagnosis.
 
-For Iron's `dns-private-ipv4` and `dns-private-ipv6` checks, an explicit
-`denied by upstream_deny_cidrs` audit error can establish a denial after
-CONNECT. The checker matches the exact CONNECT target to one terminal audit
-on the same client connection, with matching SNI and TLS mode. Both audit
-timestamps must fall within the check's execution window. The refused IP,
-port and CIDR must agree with the logged dial error; generic 502s, incomplete
-transactions, duplicate/conflicting records, and old logs do not qualify.
-Every attempt must be denied before the check passes. A demonstrated
-connection still takes precedence over log evidence.
-
-The result and each explained attempt name the Iron audit log as the evidence
-source and retain the original TLS/HTTP error. Thus a TLS EOF or `bad gateway`
-alone remains inconclusive, while a correlated IP-policy refusal is reported
-as `PASS [private-ip]` (or `metadata`). Without engine logs the same probe
-remains `ERROR`. Other checks retain their existing grading rules.
-
-DNS and PTR checks propagate inconclusive attempts instead of silently
-counting them as denials. The mixed-answer check needs a working TLS/HTTP
-control; DNS rebinding still uses the fixture's trap and requires evidence
-that a replacement DNS answer was actually offered.
-
-Saved results are historical evidence. Re-run
-`uv run ipl-lab measure` to regenerate results and findings
-with the active probes; editing the checker does not retroactively regrade them.
-
 ## Verifying interception end to end
 
 Run `scripts/e2e-release.sh` on each supported runtime. A focused manual check is:
@@ -194,22 +153,3 @@ That second line is the one that catches an ungated peek on Squid: a
 the CONNECT is being acknowledged before policy runs, and the peek is
 covering destinations the floors deny (see [Squid](#squid) above). An
 ambiguous client-side abort remains inconclusive in the egress suite.
-
-`ipl-lab up --tls-interception && ipl-lab check` runs the adversarial suite
-against the intercepting configuration. `ipl-lab measure`
-runs both TLS modes and rewrites one comparison table in `docs/findings.md`.
-Pipelock, Squid and Iron are measured with interception off and on; Smokescreen
-supports off only. Cells label each mode when its verdict or denial cause differs.
-
-Every `--json` result records whether the engine it measured was running
-with interception on (`tls_interception`, schema version 3+) — `check`
-detects this from the running container's own ownership label rather than
-needing it repeated on the command line, so it stays right even when `check`
-is invoked separately from the `up` that started the engine. `docs/findings.md`'s
-conditions table has a matching "TLS interception" row per engine.
-
-The lab now uses Docker for every engine and a local HTTPS origin whose
-certificate covers the fixture names. Its separate `.test`-constrained CA is
-trusted only by lab engines; see [lab fixture setup](lab.md#the-dns-fixture).
-The default one-minute Squid DNS cache floor is shortened only in lab configs
-so the repeat lookup can exercise rebinding.

@@ -46,17 +46,7 @@ def load_runs(results_dir: Path, engines: tuple[str, ...]) -> dict[str, dict]:
     bundle = results_dir / "benchmark.json"
     if bundle.is_file():
         return load_benchmark(bundle, engines)
-    runs: dict[str, dict] = {}
-    for engine in engines:
-        path = result_path(results_dir, engine)
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise Fail(f"{path}: cannot read result file: {exc}") from exc
-        validate_run(data, engine, path)
-        runs[engine] = data
-        runs[engine]["_path"] = path
-    return runs
+    raise Fail(f"{bundle}: missing. Run `ipl-lab measure` to record all engines")
 
 
 def validate_run(data: dict, engine: str, path: Path) -> None:

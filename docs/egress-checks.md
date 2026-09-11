@@ -8,6 +8,20 @@ The implementations live in
 For measured engine behavior see [findings.md](findings.md); for fixture
 setup see [lab.md](lab.md).
 
+## How these scenarios arise
+
+A malicious dependency can execute code when its build or install hooks run,
+or later when imported or invoked. That code can make network requests with
+the sandbox's permissions. A coding agent can also be prompt-injected by
+instructions in an untrusted README, issue, tool response or downloaded page:
+for example, instructions to run a supposed diagnostic that uploads workspace
+files or fetches an attacker-supplied script. The injection must actually cause
+the agent to execute the request for these network scenarios to arise.
+
+The examples below illustrate requests such code could make through the proxy;
+the checks send probes directly and do not install malicious packages or test
+whether an agent follows injected instructions. 
+
 ## Interpreting results
 
 `pass` means the check's implemented expectation was met; `fail` means it
@@ -74,6 +88,9 @@ See [security.md](security.md) for the threat model.
   if CONNECT succeeds, actively tests TLS/HTTP traffic.
 - **Risk tested:** A hostile client contacting an arbitrary, unapproved
   HTTPS endpoint for exfiltration, downloads or command-and-control.
+- **Example:** A dependency's install hook tries to upload environment secrets
+  to an attacker endpoint, or an injected README tells the agent to download
+  and run a “required repair” script from an unapproved HTTPS host.
 - **Caveats:** `example.com` must remain outside the allowlist. This checks
   one hostname and port, not hostname normalization or wildcard edge cases.
   Ambiguous post-CONNECT failures remain errors.
@@ -83,6 +100,9 @@ See [security.md](security.md) for the threat model.
 - **What it does:** GETs `http://example.com/`, expecting an HTTP error status.
 - **Risk tested:** Default-deny bypass on the plain-HTTP request path when
   CONNECT filtering is configured correctly but HTTP forwarding is not.
+- **Example:** Malicious package code retries its blocked HTTPS callback over
+  plain HTTP, or an injected troubleshooting instruction sends workspace data
+  to an unapproved HTTP URL.
 - **Caveats:** The hostname must be unlisted. Any status at least 400 passes,
   including upstream failures; inspect the response and denial cause.
 
@@ -91,6 +111,9 @@ See [security.md](security.md) for the threat model.
 - **What it does:** Attempts CONNECT to the public literal `1.1.1.1:443`.
 - **Risk tested:** Bypassing a hostname allowlist by addressing a server
   directly, without presenting an approved hostname.
+- **Example:** An install hook embeds its callback server's IP address, or an
+  injected instruction tells the agent to use a numeric “backup mirror” after
+  a hostname request is blocked.
 - **Caveats:** A pass establishes refusal of this literal, not why it was
   refused. It does not cover IPv6 public literals, alternative IP spellings
   or literal destinations on the plain-HTTP path.
@@ -100,6 +123,9 @@ See [security.md](security.md) for the threat model.
 - **What it does:** Attempts CONNECT to `127.0.0.1:80`.
 - **Risk tested:** Using the proxy for server-side request forgery (SSRF)
   against services on the proxy's own loopback interface.
+- **Example:** Package code sends a proxied request to a local administrative
+  API, hoping the proxy can reach a service that the sandbox cannot. An injected
+  “health check” command could make the same request.
 - **Caveats:** Loopback is relative to the proxy's network namespace, which
   may be a container rather than the host. Only one address is sampled;
   hostname or port rejection can mask missing loopback filtering.
@@ -110,6 +136,9 @@ See [security.md](security.md) for the threat model.
   and `172.16.0.1:80`; all must be refused.
 - **Risk tested:** SSRF into private networks to reach internal applications,
   routers or administrative services accessible from the proxy.
+- **Example:** An injected issue asks the agent to fetch a diagnostic from an
+  internal address; malicious package code could instead probe private services
+  for exposed configuration or management endpoints through the proxy.
 - **Caveats:** These are representatives of the three RFC1918 ranges, not
   exhaustive coverage. Other private/special ranges are not tested here.
   A hostname or port denial does not prove resolved-IP filtering works.
@@ -119,6 +148,9 @@ See [security.md](security.md) for the threat model.
 - **What it does:** Attempts CONNECT to `169.254.1.1:80`.
 - **Risk tested:** Reaching services on the proxy's local link that should
   not be exposed to an untrusted client.
+- **Example:** A malicious install hook attempts to query a link-local
+  management service reachable from the proxy, using its response to discover
+  information about the surrounding infrastructure.
 - **Caveats:** One address represents `169.254.0.0/16`. This does not test
   every link-local service, and a literal/port rule can deny it first.
 
@@ -128,6 +160,10 @@ See [security.md](security.md) for the threat model.
   `http://169.254.169.254/latest/meta-data/`; both paths must be refused.
 - **Risk tested:** SSRF to a cloud metadata service that could expose
   instance information or credentials to the sandboxed client.
+- **Example:** Package code, or an agent following a bogus “cloud setup” step,
+  requests instance metadata through the proxy. If the metadata service and
+  its authentication requirements permit it, this could expose credentials
+  associated with the proxy's environment rather than the sandbox's.
 - **Caveats:** It does not perform a credential retrieval or token exchange,
   or cover provider-specific alternative endpoints. An HTTP authentication
   error can count as a pass even if metadata was reached. CONNECT also uses
@@ -139,6 +175,8 @@ See [security.md](security.md) for the threat model.
 - **What it does:** Attempts CONNECT to `[::1]:80`.
 - **Risk tested:** An IPv6 route to local services left open by IPv4-only
   SSRF protections.
+- **Example:** Malicious package code retries a blocked IPv4 loopback request
+  using `::1`, looking for a local API listening on IPv6 in the proxy's namespace.
 - **Caveats:** Tests bracketed IPv6 loopback only, not IPv4-mapped IPv6 or
   alternative encodings. Parsing, hostname or port rejection can occur before
   address validation; missing IPv6 connectivity does not prove enforcement.
@@ -149,6 +187,9 @@ See [security.md](security.md) for the threat model.
   both must be refused.
 - **Risk tested:** SSRF to IPv6 unique-local or link-local services despite
   restrictions on private IPv4 destinations.
+- **Example:** An injected diagnostic supplies an internal IPv6 URL, or
+  package code tries an IPv6 management endpoint after private IPv4 requests
+  are refused.
 - **Caveats:** Samples one address of each kind, not the full ranges.
   The link-local target has no interface scope identifier. Parsing, port
   policy and IPv6 routing can prevent the intended address check from running.
@@ -163,6 +204,10 @@ See [security.md](security.md) for the threat model.
   checker's own DNS answers.
 - **Risk tested:** An approved hostname resolving to a private, loopback or
   metadata address, bypassing a policy that checks only the requested name.
+- **Example:** An attacker supplies a “build mirror” name covered by a broad
+  allowed domain and points its DNS at an internal service. An install hook or
+  injected agent command requests the innocent-looking hostname; the proxy
+  would make the private connection if it trusted the name alone.
 - **Caveats:** Requires the lab's `*.nip.io` allowance and external DNS.
   The checker's answers need not match the proxy's. Port restrictions or DNS
   filtering can stop the request before resolved-address validation; inspect
@@ -175,6 +220,9 @@ See [security.md](security.md) for the threat model.
   link-local and unique-local IPv6. All must be refused.
 - **Risk tested:** The same approved-name SSRF bypass through AAAA answers,
   exposing gaps in IPv6 address validation.
+- **Example:** The attacker-controlled “mirror” publishes a private AAAA
+  answer. Package code or an injected agent fetch then reaches an internal IPv6
+  service if the proxy validates A answers but overlooks AAAA destinations.
 - **Caveats:** Requires the lab's `*.sslip.io` allowance and working external
   DNS. Local resolution is diagnostic, not proof of the proxy's answer.
   Port, DNS or parser rejection can mask the intended rule. `0--1` is
@@ -188,6 +236,10 @@ See [security.md](security.md) for the threat model.
   trap on subsequent lookups. Any new trap connection fails the check.
 - **Risk tested:** An attacker changing DNS after initial validation so a
   later lookup or connection reaches an internal address.
+- **Example:** An allowed, attacker-controlled download name initially points
+  to a public server. A package hook or injected agent workflow makes repeated
+  requests while the attacker changes DNS to a private target, hoping validation
+  from the first request is reused for the later connection.
 - **Caveats:** Requires observable fixture DNS/trap logs. No observed lookup
   skips; no repeat lookup yields an error. A pass requires at least one name
   to be looked up again and no trap hits, not all three names rebinding or all
@@ -206,6 +258,10 @@ See [security.md](security.md) for the threat model.
   new private-trap connection, fails the check.
 - **Risk tested:** Validating only the first or selected DNS answer and
   overlooking a private address that could be used during selection or fallback.
+- **Example:** An attacker puts both a public server and an internal address
+  in the DNS answers for an allowed “artifact mirror.” A package download or
+  agent fetch could pass a public-address check yet connect to the private
+  answer when the proxy selects or retries an address.
 - **Caveats:** This tests the strict policy of rejecting the entire mixed
   answer set: connecting only to its public address still fails. An unsuccessful
   public control skips the check; ambiguous mixed-probe failures are errors.
@@ -219,6 +275,10 @@ See [security.md](security.md) for the threat model.
   whether the proxy performed a reverse lookup.
 - **Risk tested:** An attacker-controlled reverse-DNS record satisfying a
   hostname allowlist even though the client requested an unapproved IP literal.
+- **Example:** An attacker able to set reverse DNS for their server makes its
+  PTR claim an approved service's name. Malicious package code connects to the
+  server's IP, hoping the proxy treats that claim as authorization without the
+  attacker controlling the approved service's forward DNS.
 - **Caveats:** Rejecting literals before reverse lookup is a valid pass.
   Successful traffic fails, but does not by itself prove PTR-based authorization.
   The destination is external; transport failure is inconclusive. This tests
@@ -233,6 +293,10 @@ See [security.md](security.md) for the threat model.
 - **Risk tested:** Using an approved CONNECT destination while asking a
   shared TLS endpoint for another virtual host, separating the declared tunnel
   target from the service selected inside it.
+- **Example:** Package code, or a script an injected agent is persuaded to run,
+  declares an approved CONNECT host but sends another SNI name to a shared
+  endpoint. Reaching an attacker-controlled virtual host would additionally
+  require that endpoint to serve it and the proxy's other rules to permit it.
 - **Caveats:** This tests equality of two allowed names, not successful access
   to a forbidden service or HTTP Host-based fronting. A matching-SNI control
   reduces ambiguity but cannot rule out origin-specific rejection of the
@@ -247,6 +311,10 @@ See [security.md](security.md) for the threat model.
   alert; no returned bytes grade as denied/pass.
 - **Risk tested:** Using an HTTPS CONNECT allowance to carry non-TLS traffic,
   potentially reaching another protocol on an approved destination and port.
+- **Example:** A malicious helper script opens an approved CONNECT tunnel and
+  speaks a custom plaintext protocol instead of TLS. This could provide a
+  callback channel if the attacker can operate or compromise a listener at
+  that allowed destination; CONNECT alone does not grant an arbitrary endpoint.
 - **Caveats:** This is a response-based heuristic. Silence, reset or a CONNECT
   failure can pass without proving deliberate proxy enforcement; a returned
   alert/error can come from the proxy rather than the origin. Inspect engine
