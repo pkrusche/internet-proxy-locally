@@ -79,7 +79,8 @@ ipl check     # ordinary allow/deny behavior, against the live proxy
 ipl-lab up && ipl-lab check    # the full adversarial suite (docs/lab.md)
 ```
 
-See [lab.md](lab.md).
+See [egress-checks.md](egress-checks.md) for each check's behavior, attack
+scenario and caveats, and [lab.md](lab.md) for setup.
 
 Each result carries, where relevant: a best-effort denial-cause
 classification (`hostname-not-allowlisted`, `private-ip`, `metadata`,

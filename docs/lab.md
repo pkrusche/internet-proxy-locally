@@ -2,7 +2,7 @@
 
 The lab tests proxy policy behavior.
 
-`ipl-lab` runs extended checks for engines:
+`ipl-lab` runs extended checks for all engines:
 local DNS fixture, the full egress suite, and reports the comparison
 in [findings.md](findings.md). The lab lane uses Docker, including
 the fixture and all measured proxies (this is to keep network setup
@@ -13,6 +13,8 @@ the lab setting.
 adds `[policy.test].allow` to `[policy].allow` and starts the DNS fixture.
 Fixture names use the reserved `.test` domain; `ipl up` removes any running
 fixture container.
+
+To reproduce the comparison, run:
 
 ```bash
 ipl-lab setup     # all four engines + the DNS fixture image
@@ -31,6 +33,12 @@ ipl-lab down      # remove both
 
 `--engine` selects the proxy. `--backend docker` is optional and is the only
 lab backend; `--backend container` is rejected before starting anything.
+
+`ipl-lab down` removes the Docker proxies, fixture, and both owned networks.
+Operational `ipl --backend docker up` also removes stale lab networks after
+removing its containers. Apple operational commands do not contact Docker.
+Network ownership labels are checked before reuse or removal.
+
 
 ## The test policy
 
@@ -98,9 +106,8 @@ A fresh name resolves first to the controlled origin, then to the private
 trap. The checker repeats probes after a 1.5-second gap. Lab Squid sets
 `negative_dns_ttl 1 seconds`: despite its name, that directive also sets the
 minimum positive cache lifetime, whose default is one minute. This is a
-lab-only timing adjustment, not a claim that production uses that cache
-setting. [Squid's directive documentation](https://www.squid-cache.org/Doc/config/negative_dns_ttl/)
-explains the positive-cache floor.
+lab-only timing adjustment, 
+see also [Squid's directive documentation](https://www.squid-cache.org/Doc/config/negative_dns_ttl/).
 
 The fixture logs origin requests, DNS answers, and trap connections as
 `IPL-FIXTURE` lines. Startup waits for the origin and trap listeners and a
@@ -112,73 +119,4 @@ observed; a connection to the private trap is a failure.
 The PTR probe still uses a separate public address claiming an allowlisted
 hostname. Rejecting literals before performing reverse DNS is valid enforcement.
 
-`ipl-lab down` removes the Docker proxies, fixture, and both owned networks.
-Operational `ipl --backend docker up` also removes stale lab networks after
-removing its containers. Apple operational commands do not contact Docker.
-Network ownership labels are checked before reuse or removal.
-
 After updating from the old fixtures, rebuild with `uv run ipl-lab setup`.
-The fixture image tag is now `2.91-r1-build3`, so setup cannot reuse the old
-image. Then run `uv run ipl-lab measure` to replace the
-historical results with Docker measurements.
-
-## Reproducing the comparison
-
-`ipl-check` runs `quick` allow/deny checks or the `full` suite, which adds
-DNS/SSRF fixtures and CONNECT-abuse probes. 
-
-```bash
-ipl check                          # check connectivity quickly
-ipl-lab check                      # full check / egress suite; needs lab mode
-```
-
-Grades are `pass` (expectation met), `fail` (violated), `record` (behavior
-observed without a defined verdict), `skip` (missing prerequisite), and `error`
-(check could not run). Historical recorded rows retain the observed allowed/denied behavior.
-Concurrency sanity now passes when all ten simultaneous CONNECTs establish
-and fails if any do not.
-
-Checks exit 1 only for `error` outcomes; `pass` and `fail` grades are findings
-reported in the summary. The checker's optional `--strict` flag also treats
-skipped checks as execution errors. JSON `exit_code` matches the process status.
-Historical result files retain the exit codes recorded when they were measured.
-
-CONNECT deny probes require an active TLS/HTTP exchange after the CONNECT
-acknowledgment. Explicit refusals pass; timeouts, resets, or ambiguous TLS/HTTP
-failures remain `error` rather than proving access or denial. DNS and PTR
-checks preserve that uncertainty. See
-[tls-interception.md](tls-interception.md#late-denials-and-how-the-suite-grades-them).
-
-JSON results include timing, available per-attempt evidence, response headers,
-denial causes, and engine logs. 
-
-```bash
-ipl-lab measure                    # both TLS modes for all engines, then rewrite findings.md
-ipl-lab --backend docker measure   # Docker is also the default
-ipl-lab report                     # rewrite from the committed results/
-ipl-lab report --check             # CI: exit 1 if the tables are stale
-```
-
-`measure` runs each engine with TLS interception off, then on where supported.
-Pipelock, Squid and Iron run twice; Smokescreen runs once and is marked **off only**.
-The comparison has one column per proxy: matching verdicts appear once, while
-differences show **off** and **on**, including changes in attributed denial cause.
-Per-check details retain the evidence from each mode.
-
-All seven runs are saved together in `results/benchmark.json` only after the
-batch completes; an interrupted batch leaves the previous results intact.
-A final `down` removes the engine and fixture. `measure` has no TLS mode flag;
-it always benchmarks all supported scenarios.
-Commit the bundle and generated findings together. `report` prefers the bundle,
-and still reads historical `results/<engine>.json` files if no bundle exists;
-it never combines an incomplete bundle with older results.
-
-Iron's DNS/private-address checks can use correlated audit logs to explain
-late IP denials that appear to the client as TLS EOFs or generic 502s. See
-[log evidence rules](tls-interception.md#late-denials-and-how-the-suite-grades-them).
-The original client error is retained alongside the explanation. Existing
-result files keep their recorded grades; run `uv run ipl-lab measure` to
-record the new classification, then `uv run ipl-lab report --check`.
-
-`report` rewrites only the regions of `findings.md` between
-`<!-- BEGIN GENERATED <name> -->` and `<!-- END GENERATED <name> -->`.
