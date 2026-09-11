@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # Run from the repository root, so everything imports by package name.
 from internet_proxy_locally import report
 from internet_proxy_locally.checks import egress
+from internet_proxy_locally.spec import ServiceSpec
 
 
 def row(
@@ -50,7 +51,7 @@ def run(engine: str, rows: list[dict]) -> dict:
         "generated_at": "2026-08-28T00:00:00Z",
         "exit_code": 0,
         "results": rows,
-        "_path": REPO_ROOT / "results" / f"{engine}.json",
+        "_path": REPO_ROOT / "results" / "benchmark.json",
     }
 
 
@@ -160,7 +161,7 @@ class GradedPoolTest(unittest.TestCase):
 
 
 class ResultFileTest(unittest.TestCase):
-    """A result file has to state the conditions it was measured under, or
+    """A benchmark has to state the conditions it was measured under, or
     the generated conditions table would be a guess."""
 
     def setUp(self) -> None:
@@ -173,7 +174,11 @@ class ResultFileTest(unittest.TestCase):
     def write(self, engine: str, document: dict) -> None:
         document = dict(document)
         document.pop("_path", None)
-        (self.tmp / f"{engine}.json").write_text(json.dumps(document))
+        modes = {"off": {**document, "tls_interception": False}}
+        if ServiceSpec.load(engine).supports_tls_interception:
+            modes["on"] = {**document, "tls_interception": True}
+        bundle = {"benchmark_version": 1, "runs": {engine: modes}}
+        (self.tmp / "benchmark.json").write_text(json.dumps(bundle))
 
     def test_rejects_an_older_schema(self) -> None:
         stale = run("pipelock", [row("x", "pass")])
@@ -198,8 +203,10 @@ class ResultFileTest(unittest.TestCase):
         self.assertIn("squid", str(ctx.exception))
 
     def test_reports_a_missing_engine_with_the_command_to_fix_it(self) -> None:
+        self.write("squid", run("squid", [row("x", "pass")]))
         with self.assertRaises(report.Fail) as ctx:
             report.load_runs(self.tmp, ("pipelock",))
+        self.assertIn("missing pipelock", str(ctx.exception))
         self.assertIn("ipl-lab measure", str(ctx.exception))
 
 

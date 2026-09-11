@@ -260,7 +260,16 @@ class RunPyCliTest(unittest.TestCase):
 
     def run_cli(self, *args: str) -> CompletedProcess:
         return subprocess.run(
-            [sys.executable, "-m", "internet_proxy_locally.cli.run", *args],
+            [
+                sys.executable,
+                "-m",
+                "internet_proxy_locally.cli.run",
+                # Auto-detection on macOS can select the host's real Apple
+                # runtime instead of the isolated Docker shim.
+                "--backend",
+                "docker",
+                *args,
+            ],
             capture_output=True,
             text=True,
             env=self.env,

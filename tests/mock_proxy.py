@@ -230,7 +230,10 @@ def start_in_thread(
         certfile=certfile,
         keyfile=keyfile,
     )
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    # Poll frequently so cleanup does not wait for the default half-second tick.
+    threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    ).start()
     return server
 
 

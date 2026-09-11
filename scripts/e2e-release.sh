@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# Live release gate for checks unavailable in a runtime-free sandbox.
+# Release gate for static checks, Python tests, artifacts, and live containers.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 backend="${1:-docker}"
 case "$backend" in docker|container) ;; *) echo "usage: $0 [docker|container]" >&2; exit 2;; esac
 command -v "$backend" >/dev/null || { echo "$backend is not installed" >&2; exit 1; }
+
+uv run --frozen ruff check .
+uv run --frozen ruff format --check .
+uv run --frozen ty check
+uv run --frozen python -m unittest discover -s tests -t .
 
 sentinel="UNTRACKED-RELEASE-SENTINEL"
 trap 'rm -f "$sentinel"' EXIT
@@ -28,6 +33,6 @@ cd "$tmp"
 cd -
 
 for engine in pipelock smokescreen squid iron; do
-  scripts/e2e-smoke.sh --backend "$backend" --engine "$engine"
+  scripts/smoke.sh --backend "$backend" --engine "$engine"
 done
 echo "Run TLS fixture/rotation cases per docs/tls-interception.md; both modes are required."

@@ -66,7 +66,11 @@ class FixtureOriginTest(unittest.TestCase):
             port=0,
         )
         self.addCleanup(self.origin.server_close)
-        thread = threading.Thread(target=self.origin.serve_forever, daemon=True)
+        thread = threading.Thread(
+            target=self.origin.serve_forever,
+            kwargs={"poll_interval": 0.01},
+            daemon=True,
+        )
         thread.start()
         self.addCleanup(self.origin.shutdown)
 

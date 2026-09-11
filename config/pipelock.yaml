@@ -38,7 +38,4 @@ forward_proxy:
   sni_require_tls: true
 
 tls_interception:
-  enabled: true
-  ca_cert: "/config/ca.pem"
-  ca_key: "/config/ca-key.pem"
-  max_response_bytes: 5242880
+  enabled: false

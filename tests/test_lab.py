@@ -33,7 +33,8 @@ from internet_proxy_locally.lifecycle import owned_containers
 from internet_proxy_locally.policy.config import load_policy_config
 from internet_proxy_locally.policy.render import _squid_wild, render_policies
 from internet_proxy_locally.spec import SERVICES, ServiceSpec
-from tests.test_runpy import PACKAGE_DATA, REPO_ROOT, RunPyCliTest
+from tests import test_runpy
+from tests.test_runpy import PACKAGE_DATA, REPO_ROOT
 
 
 def _capture(pattern: str, text: str) -> str:
@@ -48,7 +49,7 @@ def _capture(pattern: str, text: str) -> str:
     return found.group(1)
 
 
-class LabCliTest(RunPyCliTest):
+class LabCliTest(test_runpy.RunPyCliTest):
     """`ipl-lab` against the fake backend.
 
     Inherits the shim, the isolated repository and the image helpers. The
@@ -69,6 +70,9 @@ class LabCliTest(RunPyCliTest):
                 sys.executable,
                 "-m",
                 "internet_proxy_locally.cli.lab",
+                # Keep lab commands on the same isolated shim as run_cli.
+                "--backend",
+                "docker",
                 *args,
             ],
             capture_output=True,
