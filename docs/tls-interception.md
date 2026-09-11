@@ -137,7 +137,10 @@ CA trust or upstream identity. Engine logs remain attached for diagnosis.
 
 ## Verifying interception end to end
 
-Run `scripts/e2e-release.sh` on each supported runtime. A focused manual check is:
+Run `scripts/e2e-release.sh` on each supported runtime. It performs trusted,
+untrusted, and denied-destination checks for every engine that supports
+interception, plus a CA-rotation check through Pipelock. The equivalent focused
+manual check is:
 
 ```bash
 ipl ca export --out ca.pem
@@ -148,8 +151,10 @@ curl --cacert ca.pem https://github.com   # allowlisted: succeeds, and
 curl --cacert ca.pem https://example.com  # denied: a real 4xx, not a hung tunnel
 ```
 
-That second line is the one that catches an ungated peek on Squid: a
-`curl: (56) Recv failure` or an empty reply where a 403 page belongs means
-the CONNECT is being acknowledged before policy runs, and the peek is
-covering destinations the floors deny (see [Squid](#squid) above). An
-ambiguous client-side abort remains inconclusive in the egress suite.
+For the denied request, the release gate accepts a CONNECT 4xx or a completed
+HTTP 403 inside TLS carrying the project's denial marker or Squid's
+`X-Squid-Error: ERR_ACCESS_DENIED`. A CONNECT 200 alone does not establish
+whether the request was allowed. Generic origin 403s, resets, and timeouts
+remain inconclusive. Untrusted and stale-trust checks require curl's
+certificate-verification failure (exit 60); an arbitrary network error cannot
+count as successful rejection.

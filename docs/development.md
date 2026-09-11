@@ -14,6 +14,9 @@ uv run python -m unittest discover -s tests -t .
 CI uses the locked tools with `--frozen`. Upgrade them deliberately with
 `uv lock --upgrade-package ruff` or `uv lock --upgrade-package ty`.
 
+An end to end release test that includes all the above and which checks whether real
+proxies can be started on the current system is available in `scripts/e2e-release.sh`.
+
 ## Package layout
 
 - `cli.run` implements `ipl`; `cli.lab` implements `ipl-lab`. Shared commands

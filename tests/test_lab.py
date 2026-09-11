@@ -222,6 +222,13 @@ class LabCliTest(test_runpy.RunPyCliFixture):
         self.assertIn("DNS fixture image", proc.stderr)
         self.assertIn("ipl-lab setup", proc.stderr)
 
+    def test_tls_setup_generates_a_missing_ca(self) -> None:
+        proc = self.lab_cli("setup", "--tls-interception")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("generated the TLS-interception CA", proc.stdout)
+        self.assertTrue((self.state / "ca" / "ca.pem").is_file())
+        self.assertTrue((self.state / "ca" / "ca-key.pem").is_file())
+
     def test_check_requires_running_engine(self) -> None:
         proc = self.lab_cli("--backend", "docker", "check")
         self.assertEqual(proc.returncode, 1)

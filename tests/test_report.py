@@ -49,6 +49,8 @@ class MeasureAllTest(unittest.TestCase):
 
     def measure(self, check=None) -> int:
         with (
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
             patch.object(report, "_run", side_effect=self.fake_run),
             patch.object(
                 report.subprocess, "run", side_effect=check or self.fake_subprocess_run

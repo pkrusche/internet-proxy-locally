@@ -6,7 +6,7 @@ import argparse
 import sys
 from functools import partial
 
-from internet_proxy_locally import report
+from internet_proxy_locally import ca, report
 from internet_proxy_locally.backend import Backend, detect_backend
 from internet_proxy_locally.cli import common
 from internet_proxy_locally.cli import run as run_cli
@@ -28,6 +28,9 @@ def cmd_setup(opts: argparse.Namespace) -> int:
     backend = detect_backend(opts.backend)
     print(f"selected backend: {backend.name}")
     sync_test_policies(tls_interception=opts.tls_interception)
+    if opts.tls_interception and not ca.ca_present():
+        ca.generate_ca()
+        print(f"generated the TLS-interception CA at {ca.ca_cert_path()}")
     for name in (*ENGINES, DNS_FIXTURE):
         prepare_image(backend, name, rebuild=opts.rebuild)
     print("lab setup complete")
