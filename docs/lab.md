@@ -1,11 +1,13 @@
 # The lab
 
+The lab tests proxy policy behavior.
+
 `ipl-lab` runs extended checks for engines:
 local DNS fixture, the full egress suite, and reports the comparison
-in [findings.md](findings.md). The entire lab lane uses Docker, including
-the fixture and all measured proxies. Apple `container` remains supported
-for operational `ipl` setups. The lab tests proxy policy behavior, not runtime
-isolation differences.
+in [findings.md](findings.md). The lab lane uses Docker, including
+the fixture and all measured proxies (this is to keep network setup
+simple). Apple `container` remains supported for running `ipl` outside
+the lab setting. 
 
 `config.toml` contains both operational and lab settings. Only `ipl-lab`
 adds `[policy.test].allow` to `[policy].allow` and starts the DNS fixture.
@@ -14,17 +16,26 @@ fixture container.
 
 ```bash
 ipl-lab setup     # all four engines + the DNS fixture image
+ipl-lab measure   # both TLS modes, then rewrite findings.md
+```
+
+Use a Docker version supporting multiple `--network` attachments (25+).
+
+To run specific proxies individually, you can use:
+
+```bash
 ipl-lab up        # fixture, then an engine on the TEST policy
 ipl-lab check     # the full adversarial suite
 ipl-lab down      # remove both
-ipl-lab measure   # both TLS modes, then rewrite findings.md
 ```
 
 `--engine` selects the proxy. `--backend docker` is optional and is the only
 lab backend; `--backend container` is rejected before starting anything.
-Use a Docker version supporting multiple `--network` attachments (25+).
 
 ## The test policy
+
+For lab testing, we need to allow a few more connections through the
+proxy to cover our test fixtures.
 
 `config.toml` holds `[policy.test]` — domains added **on top of**
 `[policy].allow` — and `[fixture]`, the DNS records. `ipl-lab up`

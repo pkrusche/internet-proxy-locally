@@ -2,13 +2,6 @@
 
 The tables are **generated** from `results/*.json` by `ipl-lab report`.
 
-Iron's DNS/private-address checks can use correlated `upstream_deny_cidrs`
-audit errors as denial evidence, retaining the original client error alongside
-the explanation. Older measurements may still show `ERROR` for these refusals;
-re-run `uv run ipl-lab measure` to record the revised grades. Existing
-measurements are not silently rewritten. See
-[lab.md](lab.md#reproducing-the-comparison).
-
 ## Conditions
 
 <!-- BEGIN GENERATED conditions -->
