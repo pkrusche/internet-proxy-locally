@@ -169,8 +169,8 @@ def free_port() -> int:
         return sock.getsockname()[1]
 
 
-class RunPyCliTest(unittest.TestCase):
-    """End-to-end CLI behavior against the fake backend."""
+class RunPyCliFixture(unittest.TestCase):
+    """Fake-backend setup shared by the operational and lab CLI tests."""
 
     certdir: Path | None = None
 
@@ -315,6 +315,10 @@ class RunPyCliTest(unittest.TestCase):
             except OSError:
                 pass  # already gone, or never ours
             pid_file.unlink(missing_ok=True)
+
+
+class RunPyCliTest(RunPyCliFixture):
+    """End-to-end operational CLI behavior against the fake backend."""
 
     # -- fail-closed behavior ----------------------------------------------
 
@@ -950,11 +954,13 @@ class RunPyUnitTest(unittest.TestCase):
         self.assertEqual(rules[-1], "ssl_bump splice all")
 
     def test_squid_wildcard_filter_renders_an_anchored_suffix(self) -> None:
-        for entry in ("*.github.com", "*.rebind.fixture.test", "*.io"):
-            pattern = _squid_wild(entry)
-            self.assertEqual(pattern, "\\." + entry[2:].replace(".", "\\.") + "$")
-        # The apex must not match: `\.d$` is a suffix, not a prefix.
-        self.assertEqual(_squid_wild("*.github.com"), r"\.github\.com$")
+        pattern = re.compile(_squid_wild("*.github.com"))
+        for hostname in ("api.github.com", "nested.api.github.com"):
+            with self.subTest(hostname=hostname):
+                self.assertIsNotNone(pattern.search(hostname))
+        for hostname in ("github.com", "notgithub.com", "github.com.example"):
+            with self.subTest(hostname=hostname):
+                self.assertIsNone(pattern.search(hostname))
 
     def test_yaml_scalar_quotes_wildcards(self) -> None:
         # A bare leading `*` is a YAML alias, not a string.

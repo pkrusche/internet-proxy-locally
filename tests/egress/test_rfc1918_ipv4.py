@@ -18,12 +18,11 @@ class Rfc1918Ipv4Test(unittest.TestCase):
         self.assertEqual(outcome, "pass", detail)
 
     def test_fails_when_any_range_is_wrongly_allowed(self) -> None:
-        _, port = support.start_mock(
-            self, mode="strict", host_allowed=lambda host: True
+        support.assert_each_target_matters(
+            self,
+            rfc1918_ipv4.test_rfc1918,
+            ("10.0.0.1:80", "192.168.1.1:80", "172.16.0.1:80"),
         )
-        client = transport.ProxyClient("127.0.0.1", port)
-        outcome, detail = rfc1918_ipv4.test_rfc1918(client)
-        self.assertEqual(outcome, "fail", detail)
 
 
 if __name__ == "__main__":

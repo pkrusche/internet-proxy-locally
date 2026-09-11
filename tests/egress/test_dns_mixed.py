@@ -4,9 +4,10 @@ against the same `deny` expectation — the config this repo ships."""
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from internet_proxy_locally.checks import egress
-from internet_proxy_locally.checks.egress import dns_mixed, transport
+from internet_proxy_locally.checks.egress import dns_mixed, runner, transport
 from internet_proxy_locally.constants import ENGINES
 from tests import mock_proxy
 from tests.egress import support
@@ -44,32 +45,24 @@ class DnsMixedTest(unittest.TestCase):
         for name in dns_mixed.MIXED_FIXTURE_TARGETS:
             self.assertIn(name, raw.detail)
 
-    def test_mixed_answers_fails_on_every_engine(self) -> None:
+    def test_allowed_mixed_answers_fail_without_an_invented_cause(self) -> None:
         """Grading no longer varies by engine: every engine is judged
         against the same `deny` expectation, so a connection that establishes
         fails the row regardless of which engine made it."""
         port = self._mixed_fixture_server(
             {dns_mixed.MIXED_FIXTURE_CONTROL, *dns_mixed.MIXED_FIXTURE_TARGETS}
         )
-        graded = {}
-        for engine in ENGINES:
-            results = {
-                r.name: r
-                for r in egress.run_suite(f"http://127.0.0.1:{port}", engine, full=True)
-            }
-            graded[engine] = results["dns-mixed-answers"].outcome
-        self.assertEqual(graded, dict.fromkeys(ENGINES, "fail"))
-
-    def test_smokescreens_deviation_is_reported_as_a_failure(self) -> None:
-        port = self._mixed_fixture_server(
-            {dns_mixed.MIXED_FIXTURE_CONTROL, *dns_mixed.MIXED_FIXTURE_TARGETS}
-        )
-        results = egress.run_suite(f"http://127.0.0.1:{port}", "smokescreen", full=True)
-        row = {r.name: r for r in results}["dns-mixed-answers"]
-        self.assertEqual(row.outcome, "fail")
-        self.assertIn("established", row.detail)
-        self.assertIsNone(row.cause, "nothing was denied, so there is no cause")
-        self.assertTrue(any(r.outcome == "fail" for r in results))
+        with patch.object(runner, "TESTS", [dns_mixed.CHECK]):
+            for engine in ENGINES:
+                with self.subTest(engine=engine):
+                    [row] = egress.run_suite(
+                        f"http://127.0.0.1:{port}", engine, full=True
+                    )
+                    self.assertEqual(row.outcome, "fail", row.detail)
+                    self.assertIn("established", row.detail)
+                    self.assertIsNone(
+                        row.cause, "nothing was denied, so there is no cause"
+                    )
 
     def test_mixed_answers_skips_without_a_working_control(self) -> None:
         # No control means a denial below cannot be attributed to
@@ -80,21 +73,6 @@ class DnsMixedTest(unittest.TestCase):
         self.assertEqual(raw.outcome, "skip", raw.detail)
         self.assertIn("control probe", raw.detail)
         self.assertEqual(len(raw.attempts), 1)
-
-    def test_mixed_answers_failure_carries_no_invented_cause(self) -> None:
-        """A failing deny-check has no denial to attribute. The detail must
-        not read back as one — an earlier revision said "a private address"
-        and got itself classified as `private-ip`."""
-        port = self._mixed_fixture_server(
-            {dns_mixed.MIXED_FIXTURE_CONTROL, *dns_mixed.MIXED_FIXTURE_TARGETS}
-        )
-        results = {
-            r.name: r
-            for r in egress.run_suite(f"http://127.0.0.1:{port}", "squid", full=True)
-        }
-        row = results["dns-mixed-answers"]
-        self.assertEqual(row.outcome, "fail", row.detail)
-        self.assertIsNone(row.cause)
 
 
 if __name__ == "__main__":

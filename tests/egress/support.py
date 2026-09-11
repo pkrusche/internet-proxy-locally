@@ -16,7 +16,9 @@ import subprocess
 import tempfile
 import unittest
 from collections.abc import Callable
+from typing import Protocol
 
+from internet_proxy_locally.checks.egress.transport import ProxyClient
 from tests import mock_proxy
 
 OPENSSL = shutil.which("openssl")
@@ -85,3 +87,26 @@ def start_mock(
         server.host_allowed = host_allowed  # ty: ignore[invalid-assignment]
     test_case.addCleanup(server.stop)
     return server, port
+
+
+class Outcome(Protocol):
+    outcome: str
+
+
+def assert_each_target_matters(
+    test_case: unittest.TestCase,
+    check: Callable[[ProxyClient], tuple[str, str] | Outcome],
+    targets: tuple[str, ...],
+) -> None:
+    """Prove a multi-target denial check fails when each target alone is allowed."""
+    for allowed_target in targets:
+        allowed_host = allowed_target.rsplit(":", 1)[0]
+        with test_case.subTest(allowed_target=allowed_target):
+            _, port = start_mock(
+                test_case,
+                mode="strict",
+                host_allowed=lambda host, expected=allowed_host: host == expected,
+            )
+            result = check(ProxyClient("127.0.0.1", port))
+            outcome = result[0] if isinstance(result, tuple) else result.outcome
+            test_case.assertEqual(outcome, "fail")

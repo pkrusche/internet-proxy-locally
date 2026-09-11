@@ -28,12 +28,16 @@ class DnsPrivateV4Test(unittest.TestCase):
         self.assertEqual({a.cause for a in raw.attempts}, {None})
 
     def test_fails_when_any_target_is_wrongly_allowed(self) -> None:
-        _, port = support.start_mock(
-            self, mode="strict", host_allowed=lambda host: True
+        support.assert_each_target_matters(
+            self,
+            dns_private_v4.test_dns_private_v4,
+            (
+                "10.0.0.1.nip.io:80",
+                "192.168.1.1.nip.io:80",
+                "127.0.0.1.nip.io:80",
+                "169.254.169.254.nip.io:80",
+            ),
         )
-        client = transport.ProxyClient("127.0.0.1", port)
-        raw = dns_private_v4.test_dns_private_v4(client)
-        self.assertEqual(raw.outcome, "fail", raw.detail)
 
 
 if __name__ == "__main__":

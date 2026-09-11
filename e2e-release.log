@@ -1,0 +1,176 @@
+All checks passed!
+110 files already formatted
+All checks passed!
+.......................................................................................................................................IPL-FIXTURE dns name=a0-token.rebind.fixture.test query=1 answer=11.203.0.2
+IPL-FIXTURE dns name=a0-token.rebind.fixture.test query=2 answer=172.17.0.9
+IPL-FIXTURE dns name=a0-token.rebind.fixture.test query=3 answer=172.17.0.9
+.IPL-FIXTURE origin request host=public-only.fixture.test from=127.0.0.1
+IPL-FIXTURE origin request host=mixed-public-first.fixture.test from=127.0.0.1
+IPL-FIXTURE origin request host=mixed-private-first.fixture.test from=127.0.0.1
+IPL-FIXTURE origin request host=a0-token.rebind.fixture.test from=127.0.0.1
+...................................................=== lab setup (all engines + the DNS fixture)
+=== pipelock: up (test policy, TLS off)
+=== pipelock (TLS off): measured (exit 1)
+=== pipelock: up (test policy, TLS on)
+=== pipelock (TLS on): measured (exit 1)
+=== smokescreen: up (test policy, TLS off)
+=== smokescreen (TLS off): measured (exit 1)
+=== squid: up (test policy, TLS off)
+=== squid (TLS off): measured (exit 1)
+=== squid: up (test policy, TLS on)
+=== squid (TLS on): measured (exit 1)
+=== iron: up (test policy, TLS off)
+=== iron (TLS off): measured (exit 1)
+=== iron: up (test policy, TLS on)
+=== iron (TLS on): measured (exit 1)
+.=== lab setup (all engines + the DNS fixture)
+=== pipelock: up (test policy, TLS off)
+=== pipelock (TLS off): measured (exit 0)
+=== pipelock: up (test policy, TLS on)
+error: pipelock (TLS on): invalid check result (Expecting value: line 1 column 1 (char 0)).
+startup failed
+..=== lab setup (all engines + the DNS fixture)
+=== pipelock: up (test policy, TLS off)
+=== pipelock (TLS off): measured (exit 0)
+=== pipelock: up (test policy, TLS on)
+=== pipelock (TLS on): measured (exit 0)
+=== smokescreen: up (test policy, TLS off)
+=== smokescreen (TLS off): measured (exit 0)
+=== squid: up (test policy, TLS off)
+=== squid (TLS off): measured (exit 0)
+=== squid: up (test policy, TLS on)
+=== squid (TLS on): measured (exit 0)
+=== iron: up (test policy, TLS off)
+=== iron (TLS off): measured (exit 0)
+=== iron: up (test policy, TLS on)
+=== iron (TLS on): measured (exit 0)
+.=== lab setup (all engines + the DNS fixture)
+=== pipelock: up (test policy, TLS off)
+=== pipelock (TLS off): measured (exit 0)
+=== pipelock: up (test policy, TLS on)
+=== pipelock (TLS on): measured (exit 0)
+=== smokescreen: up (test policy, TLS off)
+=== smokescreen (TLS off): measured (exit 0)
+=== squid: up (test policy, TLS off)
+=== squid (TLS off): measured (exit 0)
+=== squid: up (test policy, TLS on)
+=== squid (TLS on): measured (exit 0)
+=== iron: up (test policy, TLS off)
+=== iron (TLS off): measured (exit 0)
+=== iron: up (test policy, TLS on)
+=== iron (TLS on): measured (exit 0)
+.=== lab setup (all engines + the DNS fixture)
+=== pipelock: up (test policy, TLS off)
+=== pipelock (TLS off): measured (exit 0)
+=== pipelock: up (test policy, TLS on)
+=== pipelock (TLS on): measured (exit 0)
+=== smokescreen: up (test policy, TLS off)
+=== smokescreen (TLS off): measured (exit 0)
+=== squid: up (test policy, TLS off)
+=== squid (TLS off): measured (exit 0)
+=== squid: up (test policy, TLS on)
+=== squid (TLS on): measured (exit 0)
+=== iron: up (test policy, TLS off)
+=== iron (TLS off): measured (exit 0)
+=== iron: up (test policy, TLS on)
+=== iron (TLS on): measured (exit 0)
+.=== lab setup (all engines + the DNS fixture)
+=== pipelock: up (test policy, TLS off)
+=== pipelock (TLS off): measured (exit 0)
+=== pipelock: up (test policy, TLS on)
+=== pipelock (TLS on): measured (exit 0)
+=== smokescreen: up (test policy, TLS off)
+=== smokescreen (TLS off): measured (exit 0)
+=== squid: up (test policy, TLS off)
+=== squid (TLS off): measured (exit 0)
+=== squid: up (test policy, TLS on)
+=== squid (TLS on): measured (exit 0)
+=== iron: up (test policy, TLS off)
+=== iron (TLS off): measured (exit 0)
+=== iron: up (test policy, TLS on)
+=== iron (TLS on): measured (exit 0)
+.=== lab setup (all engines + the DNS fixture)
+=== pipelock: up (test policy, TLS off)
+error: pipelock (TLS off): invalid check result (reported TLS mode disagrees with requested mode).
+
+.......................................................................
+----------------------------------------------------------------------
+Ran 265 tests in 53.833s
+
+OK
+smokescreen: building internet-proxy-locally/smokescreen:131fba29ce1e-build1 from smokescreen/Dockerfile
+smokescreen: built internet-proxy-locally/smokescreen:131fba29ce1e-build1
+Building source distribution...
+Building wheel from source distribution...
+Successfully built dist/internet_proxy_locally-0.1.0.tar.gz
+Successfully built dist/internet_proxy_locally-0.1.0-py3-none-any.whl
+dist/internet_proxy_locally-0.1.0-py3-none-any.whl: manifest OK (79 members)
+dist/internet_proxy_locally-0.1.0.tar.gz: manifest OK (143 members)
+Using CPython 3.12.13 interpreter at: /opt/local/bin/python3.12
+Creating virtual environment at: /var/folders/yb/93q1z7pd2vq4q8rbf7bd9f2r0000gn/T/tmp.qviw6oistX/venv
+Activate with: source /var/folders/yb/93q1z7pd2vq4q8rbf7bd9f2r0000gn/T/tmp.qviw6oistX/venv/bin/activate
+Using Python 3.12.13 environment at: /private/var/folders/yb/93q1z7pd2vq4q8rbf7bd9f2r0000gn/T/tmp.qviw6oistX/venv
+Resolved 6 packages in 5ms
+Prepared 1 package in 4ms
+Installed 6 packages in 3ms
+ + cffi==2.1.1
+ + cryptography==50.0.1
+ + internet-proxy-locally==0.1.0 (from file:///Users/peter/workspace/internet-proxy-locally/dist/internet_proxy_locally-0.1.0-py3-none-any.whl)
+ + jinja2==3.1.6
+ + markupsafe==3.0.3
+ + pycparser==3.0
+ipl 0.1.0
+/Users/peter/workspace/internet-proxy-locally
+python: 3.13.14
+backend docker: available
+backend container: available
+selected backend: docker
+configs: up to date
+pipelock: image internet-proxy-locally/pipelock:3.3.0 already built
+setup complete
+starting pipelock (internet-proxy-locally/pipelock:3.3.0) on http://127.0.0.1:18089
+healthy: policy denies unknown destinations (HTTP/1.1 403 Forbidden)
+clients: export HTTP_PROXY=http://127.0.0.1:18089 HTTPS_PROXY=http://127.0.0.1:18089
+proxy is listening on 127.0.0.1:18089
+removed internet-proxy-pipelock
+internet-proxy-pipelock is absent after ipl down
+python: 3.13.14
+backend docker: available
+backend container: available
+selected backend: docker
+configs: up to date
+smokescreen: image internet-proxy-locally/smokescreen:131fba29ce1e-build1 already built
+setup complete
+starting smokescreen (internet-proxy-locally/smokescreen:131fba29ce1e-build1) on http://127.0.0.1:18089
+healthy: policy denies unknown destinations (HTTP/1.1 407 Proxy Authentication Required)
+clients: export HTTP_PROXY=http://127.0.0.1:18089 HTTPS_PROXY=http://127.0.0.1:18089
+proxy is listening on 127.0.0.1:18089
+removed internet-proxy-smokescreen
+internet-proxy-smokescreen is absent after ipl down
+python: 3.13.14
+backend docker: available
+backend container: available
+selected backend: docker
+configs: up to date
+squid: image internet-proxy-locally/squid:6.12-r0-build1 already built
+setup complete
+starting squid (internet-proxy-locally/squid:6.12-r0-build1) on http://127.0.0.1:18089
+healthy: policy denies unknown destinations (HTTP/1.1 403 Forbidden)
+clients: export HTTP_PROXY=http://127.0.0.1:18089 HTTPS_PROXY=http://127.0.0.1:18089
+proxy is listening on 127.0.0.1:18089
+removed internet-proxy-squid
+internet-proxy-squid is absent after ipl down
+python: 3.13.14
+backend docker: available
+backend container: available
+selected backend: docker
+configs: up to date
+iron: image internet-proxy-locally/iron:0.49.0-build1 already built
+setup complete
+starting iron (internet-proxy-locally/iron:0.49.0-build1) on http://127.0.0.1:18089
+healthy: policy denies unknown destinations (HTTP/1.1 403 Forbidden)
+clients: export HTTP_PROXY=http://127.0.0.1:18089 HTTPS_PROXY=http://127.0.0.1:18089
+proxy is listening on 127.0.0.1:18089
+removed internet-proxy-iron
+internet-proxy-iron is absent after ipl down
+Run TLS fixture/rotation cases per docs/tls-interception.md; both modes are required.

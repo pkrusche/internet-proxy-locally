@@ -18,12 +18,11 @@ class PrivateIpv6Test(unittest.TestCase):
         self.assertEqual(outcome, "pass", detail)
 
     def test_fails_when_wrongly_allowed(self) -> None:
-        _, port = support.start_mock(
-            self, mode="strict", host_allowed=lambda host: True
+        support.assert_each_target_matters(
+            self,
+            private_ipv6.test_ipv6_private,
+            ("[fd00::1]:80", "[fe80::1]:80"),
         )
-        client = transport.ProxyClient("127.0.0.1", port)
-        outcome, detail = private_ipv6.test_ipv6_private(client)
-        self.assertEqual(outcome, "fail", detail)
 
 
 if __name__ == "__main__":

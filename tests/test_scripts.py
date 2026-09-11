@@ -275,28 +275,31 @@ class GeneratedComparisonTest(unittest.TestCase):
         for label in report.LABELS.values():
             self.assertIn(label, sections["matrix"])
 
-    def test_the_narrative_outside_the_markers_is_copied_byte_for_byte(self) -> None:
-        # The whole point of injecting into named regions rather than
-        # rendering the file: a person's reading of the measurements must
-        # not be rewritable by the generator.
-        document = self.FINDINGS.read_text(encoding="utf-8")
-        sections = report.render_sections(self.runs, self.results_dir)
-        rebuilt = report.inject(document, sections, self.FINDINGS)
+    def test_injection_preserves_prose_between_generated_sections(self) -> None:
+        """A replacement must leave prose at every boundary byte-for-byte."""
+        prose = [
+            "opening\n",
+            "\nfirst bridge\n",
+            "\nsecond bridge\n",
+            "\nthird bridge\n",
+            "\nclosing\n",
+        ]
+        old_blocks = []
+        new_blocks = []
+        sections = {}
         for name in report.SECTIONS:
-            begin, end = (
-                f"<!-- BEGIN GENERATED {name} -->",
-                f"<!-- END GENERATED {name} -->",
-            )
-            self.assertIn(begin, rebuilt)
-            self.assertIn(end, rebuilt)
-        # Everything before the first marker and after the last is identical.
-        first = document.index("<!-- BEGIN GENERATED")
-        self.assertEqual(document[:first], rebuilt[:first])
-        tail = "<!-- END GENERATED "
-        self.assertEqual(
-            document[document.rindex(tail) :].split("-->", 1)[1],
-            rebuilt[rebuilt.rindex(tail) :].split("-->", 1)[1],
+            begin = f"<!-- BEGIN GENERATED {name} -->"
+            end = f"<!-- END GENERATED {name} -->"
+            old_blocks.append(f"{begin}\n\nold {name}\n\n{end}")
+            new_blocks.append(f"{begin}\n\nnew {name}\n\n{end}")
+            sections[name] = f"new {name}"
+        document = "".join(
+            part for pair in zip(prose, [*old_blocks, ""], strict=True) for part in pair
         )
+        expected = "".join(
+            part for pair in zip(prose, [*new_blocks, ""], strict=True) for part in pair
+        )
+        self.assertEqual(report.inject(document, sections, self.FINDINGS), expected)
 
     def test_a_missing_marker_is_fatal_rather_than_silently_skipped(self) -> None:
         sections = report.render_sections(self.runs, self.results_dir)

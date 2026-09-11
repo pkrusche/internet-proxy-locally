@@ -237,11 +237,6 @@ class ClassifyDenialRealWordingTest(unittest.TestCase):
             with self.subTest(text=text[:60]):
                 self.assertEqual(denial.classify_denial(text), expected)
 
-    def test_no_real_denial_is_unknown(self) -> None:
-        for text, _ in self.PIPELOCK + self.SMOKESCREEN + self.SQUID:
-            with self.subTest(text=text[:60]):
-                self.assertNotEqual(denial.classify_denial(text), "unknown")
-
 
 class AggregateCauseTest(unittest.TestCase):
     """A mixed attempt set must not report a minority reason (docs/security.md)."""

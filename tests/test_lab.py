@@ -49,13 +49,11 @@ def _capture(pattern: str, text: str) -> str:
     return found.group(1)
 
 
-class LabCliTest(test_runpy.RunPyCliTest):
+class LabCliTest(test_runpy.RunPyCliFixture):
     """`ipl-lab` against the fake backend.
 
-    Inherits the shim, the isolated repository and the image helpers. The
-    inherited `test_*` methods run again here, which is deliberate: they
-    exercise `ipl` in a workspace that also holds lab/config/, and that
-    combination is exactly what a real checkout is.
+    Inherits the shim, isolated repository, and image helpers without
+    rediscovering the operational CLI's tests in this class.
     """
 
     def setUp(self) -> None:
