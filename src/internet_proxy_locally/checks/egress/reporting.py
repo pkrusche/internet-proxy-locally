@@ -9,10 +9,6 @@ from dataclasses import asdict
 from .models import Result
 from .runner import policy_in_use
 
-# The version tracks document shape. Active TLS/HTTP probing changes grades
-# but not keys; old measurements remain readable and are not regraded.
-# Re-run `ipl-lab measure --tls-interception` to replace historical evidence.
-#
 # 3: adds `tls_interception` to the run's conditions (was 2: the envelope
 # carries the run's conditions — engine image, backend, which policy was
 # mounted, host, timestamp — so that `report` can generate
