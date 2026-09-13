@@ -113,8 +113,8 @@ class IronLogsTest(unittest.TestCase):
         self.stderr = io.StringIO()
         self.enterContext(redirect_stderr(self.stderr))
 
-    def test_window_diagnostics_explain_rejection_without_relaxing_timestamps(self):
-        for offset_ms, expected_offset in ((-1, "-1.000"), (1001, "+1001.000")):
+    def test_window_diagnostics_explain_rejection_outside_bounded_slack(self):
+        for offset_ms, expected_offset in ((-101, "-101.000"), (1101, "+1101.000")):
             with self.subTest(offset_ms=offset_ms):
                 self.stderr.seek(0)
                 self.stderr.truncate()
@@ -136,7 +136,9 @@ class IronLogsTest(unittest.TestCase):
                     "from_host_end_ms=",
                     "window=outside (rejected)",
                     "usable in-window audits=0; unresolved attempts=1",
-                    "no clock-skew allowance",
+                    "clock slack=+/-100ms",
+                    f"accepted start={(START - timedelta(milliseconds=100)).isoformat()}",
+                    f"end={(END + timedelta(milliseconds=100)).isoformat()}",
                 ):
                     self.assertIn(expected, diagnostic)
 
@@ -145,6 +147,48 @@ class IronLogsTest(unittest.TestCase):
             row = http_result([{**http_transaction(), "time": stamp.isoformat()}])
             self.assertEqual(assess(row).outcome, "pass")
         self.assertEqual(self.stderr.getvalue(), "")
+
+    def test_clock_slack_accepts_observed_skew_and_exact_boundaries(self):
+        for stamp in (
+            START - timedelta(microseconds=25),
+            START - timedelta(milliseconds=100),
+            END + timedelta(milliseconds=100),
+        ):
+            with self.subTest(stamp=stamp):
+                row = http_result([{**http_transaction(), "time": stamp.isoformat()}])
+                self.assertEqual(assess(row).outcome, "pass")
+                self.assertEqual(row.outcome, "error")  # input evidence is unchanged
+        self.assertEqual(self.stderr.getvalue(), "")
+
+    def test_clock_slack_does_not_extend_past_100_milliseconds(self):
+        for stamp in (
+            START - timedelta(milliseconds=100, microseconds=1),
+            END + timedelta(milliseconds=100, microseconds=1),
+        ):
+            row = http_result([{**http_transaction(), "time": stamp.isoformat()}])
+            self.assertIs(assess(row), row)
+            self.assertEqual(row.outcome, "error")
+
+    def test_slack_does_not_bypass_matching_or_duplicate_rejection(self):
+        record = http_transaction()
+        record["time"] = (START - timedelta(milliseconds=50)).isoformat()
+        unrelated = copy.deepcopy(record)
+        unrelated["audit"]["host"] = "unrelated.test"
+        allowed = copy.deepcopy(record)
+        allowed["audit"]["action"] = "allow"
+        for records in ([unrelated], [record, record], [record, allowed]):
+            row = http_result(records)
+            self.assertIs(assess(row), row)
+        self.assertIn("window=inside (slack)", self.stderr.getvalue())
+
+    def test_connect_transaction_with_clock_skew_still_requires_correct_order(self):
+        begin, end = transaction()
+        begin["time"] = (START - timedelta(milliseconds=50)).isoformat()
+        end["time"] = (START - timedelta(milliseconds=40)).isoformat()
+        self.assertEqual(assess(result([begin, end])).outcome, "pass")
+        begin["time"], end["time"] = end["time"], begin["time"]
+        row = result([begin, end])
+        self.assertIs(assess(row), row)
 
     def test_missing_or_unmatched_audits_report_the_window_and_counts(self):
         row = http_result([])

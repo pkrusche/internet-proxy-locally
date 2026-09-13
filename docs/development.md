@@ -28,9 +28,11 @@ gate. Its separate `IPL_ROOT` cannot remove an instance owned by another workspa
 Unresolved Iron denial checks print `Iron audit correlation` diagnostics to stderr:
 the host's inclusive check window, audit timestamps, signed offsets from each
 window boundary, and usable audit counts. Capture stderr alongside stdout in the
-release log. These diagnostics do not relax timestamp filtering; they distinguish
-out-of-window evidence (including possible host/VM clock differences) from
-in-window records that do not establish a matching denial.
+release log. Iron permits up to 100 ms of clock slack on either side of the
+host window to accommodate small host/VM clock differences. Diagnostics show
+the expanded bounds and whether a timestamp was admitted using slack. Older
+or later evidence remains rejected; explicit denial, request matching,
+transaction ordering, and duplicate/conflict rejection are unchanged.
 
 ## Package layout
 

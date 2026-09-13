@@ -7,11 +7,16 @@ import json
 import re
 import sys
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlsplit
 
 from .denial import aggregate_cause
 from .models import Attempt, Result
+
+# Host and container clocks need not agree to the microsecond. Keep this
+# allowance bounded: it only widens the audit timestamp filter, never the
+# transaction matching, duplicate rejection, or explicit-denial requirements.
+AUDIT_CLOCK_SLACK = timedelta(milliseconds=100)
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,8 @@ def _audits(
     diagnostics: list[str],
 ) -> list[_Audit]:
     records = []
+    earliest = started_at - AUDIT_CLOCK_SLACK
+    latest = ended_at + AUDIT_CLOCK_SLACK
     for line in lines:
         # Docker prefixes JSON with an RFC3339 timestamp; Apple does not.
         _, sep, payload = line.partition("{")
@@ -47,13 +54,18 @@ def _audits(
             stamp = datetime.fromisoformat(entry["time"])
             if entry.get("msg") != "request":
                 continue
-            in_window = started_at <= stamp <= ended_at
+            in_window = earliest <= stamp <= latest
+            window = "outside (rejected)"
+            if in_window:
+                window = (
+                    "inside" if started_at <= stamp <= ended_at else "inside (slack)"
+                )
             diagnostics.append(
                 f"audit time={stamp.isoformat()} "
                 f"host={audit.get('host')!r} method={audit.get('method')!r} "
                 f"from_host_start_ms={(stamp - started_at).total_seconds() * 1000:+.3f} "
                 f"from_host_end_ms={(stamp - ended_at).total_seconds() * 1000:+.3f} "
-                f"window={'inside' if in_window else 'outside (rejected)'}"
+                f"window={window}"
             )
             if not in_window:
                 continue
@@ -187,8 +199,8 @@ def explain_denials(
 ) -> Result:
     """Use explicit, correlated log evidence; retain the original client error.
 
-    Call only for Iron, with the wall-clock interval of this check. Logs from
-    older checks remain diagnostic output but cannot supply a policy verdict.
+    Call only for Iron, with the wall-clock interval of this check. Timestamps
+    outside that interval plus bounded clock slack cannot supply a verdict.
     Only DNS/private-address and plain-HTTP checks have the matching attempt
     evidence needed for this reassessment.
     """
@@ -207,7 +219,12 @@ def explain_denials(
     ):
         return result
     diagnostics = [
-        f"host window start={started_at.isoformat()} end={ended_at.isoformat()} (inclusive)"
+        f"host window start={started_at.isoformat()} end={ended_at.isoformat()} (inclusive)",
+        (
+            f"clock slack=+/-{AUDIT_CLOCK_SLACK.total_seconds() * 1000:g}ms; "
+            f"accepted start={(started_at - AUDIT_CLOCK_SLACK).isoformat()} "
+            f"end={(ended_at + AUDIT_CLOCK_SLACK).isoformat()} (inclusive)"
+        ),
     ]
     records = _audits(result.engine_logs, started_at, ended_at, diagnostics)
     attempts = []
@@ -226,8 +243,7 @@ def explain_denials(
     if not complete:
         diagnostics.append(
             f"usable in-window audits={len(records)}; "
-            f"unresolved attempts={sum(a.outcome != 'denied' for a in attempts)}; "
-            "timestamp filtering unchanged (no clock-skew allowance)"
+            f"unresolved attempts={sum(a.outcome != 'denied' for a in attempts)}"
         )
         for diagnostic in diagnostics:
             # stderr keeps --json stdout parseable and is captured by the
