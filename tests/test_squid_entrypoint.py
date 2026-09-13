@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -29,6 +30,10 @@ class SquidEntrypointTest(unittest.TestCase):
         self.bin = self.root / "bin"
         for path in (self.source, self.shm, self.bin):
             path.mkdir()
+        self.fds = self.root / "fds"
+        self.fds.mkdir()
+        for fd in (1, 2):
+            os.mkfifo(self.fds / str(fd))
         for name in ("ca.pem", "ca-key.pem"):
             path = self.source / name
             path.write_text("test-only " + name)
@@ -41,6 +46,7 @@ class SquidEntrypointTest(unittest.TestCase):
             .read_text()
             .replace("/dev/shm", str(self.shm))
             .replace("/run/ipl-ca", str(self.source))
+            .replace("/proc/self/fd", str(self.fds))
         )
         self.stub(
             "su-exec",
@@ -85,6 +91,7 @@ stat() { printf '%s\n' "${FS_TYPE:-tmpfs}"; }
 chown() {
     printf 'chown %s\n' "$*" >> "$TEST_LOG"
     [ "${FAIL_COMMAND:-}" != chown ]
+    [ "$2" != "${FAIL_CHOWN_PATH:-}" ]
 }
 chmod() {
     [ "${FAIL_COMMAND:-}" != chmod ] || return 1
@@ -131,6 +138,10 @@ printf 'bootstrap pid=%s\n' "$$" >> "$TEST_LOG"
             self.assertEqual(source.stat().st_uid, stat.st_uid)
         self.assertIn("chown 31:31", log)
         self.assertLess(log.index("chown"), log.index("drop 31:31"))
+        for fd in (1, 2):
+            event = f"chown 31:31 {self.fds / str(fd)}"
+            self.assertIn(event, log)
+            self.assertLess(log.index(event), log.index("drop 31:31"))
         bootstrap = log.splitlines()[0].removeprefix("bootstrap ")
         self.assertIn(f"command {bootstrap} argc=1 args=arg with spaces", log)
 
@@ -193,6 +204,24 @@ printf 'bootstrap pid=%s\n' "$$" >> "$TEST_LOG"
         self.assertIn("drop 31:31", log)
         self.assertNotIn("command pid", log)
 
+    def test_logging_never_chowns_redirected_regular_files(self):
+        output = self.fds / "1"
+        output.unlink()
+        output.write_text("must not change")
+        proc, log = self.run_entrypoint()
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("requires a runtime pipe on fd 1", proc.stderr)
+        self.assertNotIn(f"chown 31:31 {output}", log)
+        self.assertNotIn("drop", log)
+        self.assertEqual(output.read_text(), "must not change")
+
+    def test_logging_permission_failure_never_launches_squid(self):
+        proc, log = self.run_entrypoint(FAIL_CHOWN_PATH=str(self.fds / "2"))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("logging pipe fd 2", proc.stderr)
+        self.assertNotIn("drop", log)
+        self.assertNotIn("command pid", log)
+
     def test_image_and_configs_use_bootstrap_and_the_private_staged_copy(self):
         dockerfile = (IMAGE_DIR / "Dockerfile").read_text()
         self.assertIn('"su-exec=0.2-r3"', dockerfile)
@@ -219,10 +248,14 @@ printf 'bootstrap pid=%s\n' "$$" >> "$TEST_LOG"
     def test_old_image_cannot_skip_the_bootstrap_rebuild(self):
         backend = Mock(spec=Backend)
         backend.image_present.side_effect = lambda tag: (
-            tag == "internet-proxy-locally/squid:6.12-r0-build1"
+            tag
+            in {
+                "internet-proxy-locally/squid:6.12-r0-build1",
+                "internet-proxy-locally/squid:6.12-r0-build2",
+            }
         )
         prepare_image(backend, "squid")
-        self.assertEqual(SQUID_IMAGE, "internet-proxy-locally/squid:6.12-r0-build2")
+        self.assertEqual(SQUID_IMAGE, "internet-proxy-locally/squid:6.12-r0-build3")
         backend.build.assert_called_once_with(
             tag=SQUID_IMAGE, dockerfile=IMAGE_DIR / "Dockerfile", context=IMAGE_DIR
         )
@@ -260,13 +293,22 @@ id() {
 stat() {
     if [ "$1" = -f ]; then
         printf '%s\n' "${FS_TYPE:-tmpfs}"
-    elif [ "$(uname -s)" = Darwin ]; then
-        command stat -f '%Lp:%u:%g' "$3"
     else
-        printf '%s:31:31\n' "$(command stat -c %a "$3")"
+        fixture_stat "$3"
     fi
 }
 """
+        # Real fixture modes, mocked container ownership on every host. Do not
+        # accidentally compare macOS uid/gid against the fake Squid identity.
+        cases = []
+        if self.staged.exists():
+            for path in (self.staged, *self.staged.iterdir()):
+                mode_bits = path.stat().st_mode & 0o777
+                cases.append(
+                    f"{shlex.quote(str(path))}) printf '%s\\n' '{mode_bits:o}:31:31' ;;"
+                )
+        prefix += '\nfixture_stat() { case "$1" in\n' + "\n".join(cases)
+        prefix += "\n*) return 1 ;;\nesac; }\n"
         return subprocess.run(
             ["sh", "-c", runtime + script, "check-squid", backend, mode],
             env={**os.environ, "TEST_PREFIX": prefix, **env},
@@ -290,11 +332,29 @@ stat() {
             "",
         ):
             with self.subTest(status=changed):
-                self.assertNotEqual(self.verify_runtime(changed).returncode, 0)
+                proc = self.verify_runtime(changed)
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("Squid runtime verification failed", proc.stderr)
         for env in ({"SQUID_UID": "0"}, {"SQUID_GID": "0"}, {"FS_TYPE": "overlayfs"}):
             self.assertNotEqual(self.verify_runtime(status, **env).returncode, 0)
         (self.staged / "ca-key.pem").chmod(0o644)
-        self.assertNotEqual(self.verify_runtime(status).returncode, 0)
+        proc = self.verify_runtime(status)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn(
+            "ca-key.pem mode/uid/gid: expected [400:31:31], got [644:31:31]",
+            proc.stderr,
+        )
+
+    def test_live_verifier_reports_actual_identity_and_groups(self):
+        for status, diagnostic in (
+            ("Uid:\t31 31 0 31\n", "got [31:31:0:31]"),
+            ("Gid:\t31 0 31 31\n", "got [31:0:31:31]"),
+            ("Groups:\t31 999\n", "unexpected supplementary groups [31 999"),
+        ):
+            with self.subTest(status=status):
+                proc = self.verify_runtime(status, mode="off")
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn(diagnostic, proc.stderr)
 
     def test_live_verifier_tls_off_accepts_no_supplementary_groups_but_no_ca_copy(self):
         status = "Uid:\t31 31 31 31\nGid:\t31 31 31 31\nGroups:\n"

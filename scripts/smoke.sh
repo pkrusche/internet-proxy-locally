@@ -57,8 +57,24 @@ port="${IPL_ENDPOINT##*:}"
 smoke_results="$(mktemp)"
 
 cleanup() {
+    local rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "Smoke failed: engine=$engine backend=$backend exit=$rc" >&2
+        if [ -s "$smoke_results" ]; then
+            echo "--- quick-check JSON (including per-check evidence) ---" >&2
+            cat "$smoke_results" >&2
+        fi
+        echo "--- bounded container logs before cleanup ---" >&2
+        uv run --no-sync python -c '
+import sys
+from internet_proxy_locally.backend import Backend
+from internet_proxy_locally.spec import ServiceSpec
+print(Backend(sys.argv[1]).tail_logs(ServiceSpec.load(sys.argv[2]).container_name, lines=40))
+' "$backend" "$engine" >&2 || true
+    fi
     uv run --no-sync ipl --backend "$backend" down >/dev/null 2>&1 || true
     rm -f "$smoke_results"
+    return "$rc"
 }
 trap cleanup EXIT
 
@@ -79,8 +95,15 @@ if [ "$engine" = squid ]; then
     sh scripts/check-squid-runtime.sh "$backend" off
 fi
 
-uv run --no-sync ipl --backend "$backend" --engine "$engine" check --json >"$smoke_results"
-uv run --no-sync python -m internet_proxy_locally.release quick "$engine" "$smoke_results"
+check_rc=0
+uv run --no-sync ipl --backend "$backend" --engine "$engine" check --json >"$smoke_results" || check_rc=$?
+policy_rc=0
+uv run --no-sync python -m internet_proxy_locally.release quick "$engine" "$smoke_results" || policy_rc=$?
+if [ "$check_rc" -ne 0 ]; then
+    echo "Quick check exited $check_rc (release validator exited $policy_rc)" >&2
+    exit "$check_rc"
+fi
+[ "$policy_rc" -eq 0 ] || exit "$policy_rc"
 
 uv run --no-sync ipl --backend "$backend" down
 uv run --no-sync python -c '

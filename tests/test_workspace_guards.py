@@ -44,12 +44,21 @@ class WorkspaceGuardsTest(unittest.TestCase):
             with contextlib.chdir(self.root):
                 expected = ownership_labels()
             with contextlib.chdir(child):
-                self.assertEqual(paths.workspace_root(), self.root)
+                self.assertEqual(paths.workspace_root(), self.root.resolve())
                 self.assertEqual(ownership_labels(), expected)
         alias = self.root / "alias"
         alias.symlink_to(self.root, target_is_directory=True)
         with patch.dict(os.environ, {"IPL_ROOT": str(alias)}):
             self.assertEqual(ownership_labels(), expected)
+
+    def test_symlinked_temp_directory_resolves_like_macos_var(self) -> None:
+        real_root = self.root
+        alias = real_root / "temp-alias"
+        alias.symlink_to(real_root, target_is_directory=True)
+        self.root = alias
+        # Exercise the same assertions even on Linux, where /tmp usually is
+        # not a symlink like macOS /var -> /private/var.
+        self.test_subdirectories_and_root_aliases_share_ownership()
 
     def test_separate_roots_cannot_remove_each_others_containers(self) -> None:
         backend = Mock(spec=Backend)

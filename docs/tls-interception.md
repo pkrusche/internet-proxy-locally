@@ -97,6 +97,11 @@ then uses `su-exec` to permanently drop user/group privileges before executing
 Squid. No root wrapper stays behind, and container signals reach Squid directly.
 The host key's `0600` permissions and ownership are unchanged.
 
+Before dropping root, the entrypoint also gives Squid ownership of its two
+inherited logging pipes so it can reopen `/dev/stdout` and `/dev/stderr`.
+TLS startup requires pipe-backed stdout/stderr (the detached container setup);
+it refuses redirected regular files or devices instead of changing their ownership.
+
 The entrypoint requires `/dev/shm` to be tmpfs and refuses an existing staging
 directory or any copy/permission failure. The copy survives only for the
 container's runtime lifetime, never in its writable image layer; it is needed
@@ -104,7 +109,7 @@ for configuration reloads. As with any tmpfs, [host swap](https://docs.docker.co
 or VM snapshots can retain memory, so this is not a secure-erasure guarantee. Without interception,
 the image's `USER squid` remains in effect and no CA copy is made.
 
-This requires image `squid:6.12-r0-build2`; run `ipl --engine squid setup` to
+This requires image `squid:6.12-r0-build3`; run `ipl --engine squid setup` to
 build it, then restart Squid. Recorded `build1` benchmark results remain historical
 evidence, not validation of the new image; run the release gate for fresh results.
 The gate checks Squid's real/effective/saved IDs, supplementary groups, and CA

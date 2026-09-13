@@ -9,6 +9,7 @@ case "$backend" in
     docker|container) ;;
     *) echo "usage: $0 [docker|container]" >&2; exit 2 ;;
 esac
+echo "Release gate backend: $backend (default: docker; pass container for Apple container)"
 command -v "$backend" >/dev/null || { echo "$backend is not installed" >&2; exit 1; }
 command -v curl >/dev/null || { echo "curl is not installed" >&2; exit 1; }
 export IPL_ENDPOINT="${IPL_ENDPOINT:-127.0.0.1:18089}"

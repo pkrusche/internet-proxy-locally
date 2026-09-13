@@ -14,7 +14,7 @@
 # `apk add` rather than silently installing something else.
 #
 # `SQUID_IMAGE`'s tag carries a `-buildN` suffix after the apk version
-# (currently `-build2`, adding non-root Squid with tmpfs CA staging): a local
+# (currently `-build3`, fixing log pipe ownership after dropping root): a local
 # build revision, not a new upstream apk release, bumped whenever this
 # Dockerfile's build context changes without the apk pin itself moving —
 # `prepare_image()` skips a build when the tag is already present, so

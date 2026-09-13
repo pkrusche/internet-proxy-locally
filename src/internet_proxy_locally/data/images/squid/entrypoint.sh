@@ -28,6 +28,22 @@ if [ "$(id -u)" -eq 0 ]; then
     chmod 0500 /dev/shm/ipl-squid-ca
     chown "$squid_uid:$squid_gid" /dev/shm/ipl-squid-ca/ca.pem /dev/shm/ipl-squid-ca/ca-key.pem /dev/shm/ipl-squid-ca
 
+    # Squid reopens /dev/stdout and /dev/stderr instead of only writing to
+    # inherited descriptors. Runtime pipes created for this root bootstrap
+    # would otherwise reject those opens after su-exec. Change only the two
+    # inherited pipes, never an arbitrary redirected file or device.
+    for fd in 1 2; do
+        pipe="/proc/self/fd/$fd"
+        if [ ! -p "$pipe" ]; then
+            echo "error: Squid logging requires a runtime pipe on fd $fd" >&2
+            exit 1
+        fi
+        chown "$squid_uid:$squid_gid" "$pipe" || {
+            echo "error: cannot give Squid ownership of logging pipe fd $fd" >&2
+            exit 1
+        }
+    done
+
     # setgroups/setgid/setuid + exec: no saved root UID, no root parent, and
     # Squid receives container signals directly. Never launch it if copying,
     # permissions, or the privilege drop fails.

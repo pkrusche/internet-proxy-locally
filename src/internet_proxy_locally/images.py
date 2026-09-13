@@ -8,8 +8,8 @@ from internet_proxy_locally.backend import Backend
 PIPELOCK_IMAGE = "internet-proxy-locally/pipelock:3.3.0"
 # build1 adds the default CMD that loads the daemon config and egress ACL.
 SMOKESCREEN_IMAGE = "internet-proxy-locally/smokescreen:131fba29ce1e-build1"
-# build2 stages the CA in tmpfs and drops root before executing Squid.
-SQUID_IMAGE = "internet-proxy-locally/squid:6.12-r0-build2"
+# build3 also transfers runtime logging pipes before dropping root.
+SQUID_IMAGE = "internet-proxy-locally/squid:6.12-r0-build3"
 IRON_IMAGE = "internet-proxy-locally/iron:0.49.0-build1"
 DNSFIXTURE_IMAGE = "internet-proxy-locally/dnsfixture:2.91-r1-build3"
 
