@@ -14,6 +14,31 @@ command -v "$backend" >/dev/null || { echo "$backend is not installed" >&2; exit
 command -v curl >/dev/null || { echo "curl is not installed" >&2; exit 1; }
 export IPL_ENDPOINT="${IPL_ENDPOINT:-127.0.0.1:18089}"
 
+# The gate's own `IPL_ROOT` is a fresh tmp workspace, so any of these names
+# already existing is either an operational instance in another workspace or
+# a leftover from a prior run — ownership labels mean the gate could not
+# remove it later anyway (docs/development.md), so fail fast here instead of
+# partway through a `setup`/`up` step.
+uv run --no-sync python -c '
+import sys
+
+from internet_proxy_locally.backend import Backend
+from internet_proxy_locally.lifecycle import owned_containers
+
+backend = Backend(sys.argv[1])
+running = [name for name in owned_containers() if backend.container_state(name) != "absent"]
+if running:
+    print("error: found existing containers: " + ", ".join(running), file=sys.stderr)
+    print(
+        "stop the operational instance first (`ipl --backend "
+        + sys.argv[1]
+        + " down` from the workspace that owns it) — a different workspace "
+        "cannot remove it, so the gate would fail partway through instead",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+' "$backend" || exit 1
+
 passed=()
 failed=()
 skipped=()
