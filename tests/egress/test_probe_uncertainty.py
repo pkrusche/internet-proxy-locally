@@ -77,14 +77,20 @@ class ProbeUncertaintyTest(unittest.TestCase):
         with (
             patch.object(
                 metadata_endpoint,
-                "_classify_deny_connect",
-                return_value=("error", "TLS failed"),
+                "_connect_attempt",
+                return_value=self.error,
             ),
             patch.object(
-                metadata_endpoint, "_classify_deny_http", return_value=("pass", "403")
+                metadata_endpoint,
+                "_http_attempt",
+                return_value=Attempt(
+                    1, "http://169.254.169.254/", [], "denied", 403, 1, "denied"
+                ),
             ),
         ):
-            self.assertEqual(metadata_endpoint.test_metadata(self.client)[0], "error")
+            self.assertEqual(
+                metadata_endpoint.test_metadata(self.client).outcome, "error"
+            )
 
     def test_one_demonstrated_bypass_is_not_hidden_by_an_error(self) -> None:
         with patch.object(

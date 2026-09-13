@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import stat
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -132,13 +133,19 @@ def write_rendered(rendered: dict[Path, str]) -> list[Path]:
     """Write rendered files atomically, leaving matching files alone."""
     changed: list[Path] = []
     for path, text in sorted(rendered.items()):
-        if not path.is_file() or path.read_text(encoding="utf-8") != text:
+        if (
+            not path.is_file()
+            or path.read_text(encoding="utf-8") != text
+            or stat.S_IMODE(path.stat().st_mode) != 0o644
+        ):
             path.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as fh:
                     fh.write(text)
                     fh.flush()
+                    # Public policy files must be readable by container UIDs.
+                    os.fchmod(fh.fileno(), 0o644)
                     os.fsync(fh.fileno())
                 os.replace(tmp_name, path)
             finally:

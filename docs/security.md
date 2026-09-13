@@ -17,14 +17,16 @@ all other egress dropped by iptables. The proxy's job is to limit where
 that client can connect:
 
 * only allowlisted Internet hostnames;
-* never private, loopback, link-local or metadata addresses — including via
-  DNS tricks (public hostname → private A/AAAA record, rebinding, mixed
-  answers);
+* reject private, loopback, link-local and metadata addresses, including via
+  DNS tricks. Mixed-answer rejection varies by engine: the measurements show
+  Smokescreen and Iron accepting mixed public/private answers;
 * no CONNECT tunnel abuse **where the engine supports detecting it** — SNI
   ↔ CONNECT target mismatch (domain fronting) and non-TLS bytes inside a
-  tunnel. Pipelock does unconditionally; Squid does too when
-  `--tls-interception` is on ([tls-interception.md](tls-interception.md));
-  Smokescreen never does. Iron examines SNI in passthrough mode, but permits
+  tunnel. The shipped Pipelock configuration blocks both. Squid blocks
+  non-TLS bytes with `--tls-interception`, but the measured SNI-mismatch check
+  fails with interception both off and on
+  ([findings.md](findings.md#connect-sni-mismatch)). Smokescreen blocks neither.
+  Iron examines SNI in passthrough mode, but permits
   HTTP inside CONNECT and does not require CONNECT-target/SNI equality;
   see its measured results and [Iron notes](tls-interception.md#iron).
 

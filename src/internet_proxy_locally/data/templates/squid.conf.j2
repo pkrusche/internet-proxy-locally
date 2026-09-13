@@ -39,6 +39,10 @@ negative_dns_ttl 1 seconds
 
 {% endif %}
 visible_hostname internet-proxy-locally
+# Interception starts as root to read the host-owned 0600 CA key. Squid
+# drops privileges to this user/group before serving traffic.
+cache_effective_user squid
+cache_effective_group squid
 httpd_suppress_version_string on
 # Client address stays internal. `via` is left at its RFC 9110 default.
 forwarded_for delete

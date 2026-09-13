@@ -76,7 +76,107 @@ def assess(row):
     return explain_denials(row, started_at=START, ended_at=END)
 
 
+def http_transaction():
+    return {
+        "time": (START + timedelta(milliseconds=20)).isoformat(),
+        "msg": "request",
+        "audit": {
+            "host": "example.com",
+            "remote_addr": "172.30.203.1:55506",
+            "path": "/",
+            "sni": "",
+            "mode": "mitm",
+            "method": "GET",
+            "action": "reject",
+            "status_code": 403,
+        },
+        "rejected_by": "allowlist",
+    }
+
+
+def http_result(records):
+    row = result(records)
+    return replace(
+        row,
+        name="blocked-host-http",
+        group="quick",
+        attempts=[
+            Attempt(0, "http://example.com/", [], "error", 403, 2.0, "bare HTTP 403")
+        ],
+    )
+
+
 class IronLogsTest(unittest.TestCase):
+    def test_http_denial_requires_matching_explicit_allowlist_rejection(self):
+        row = http_result([http_transaction()])
+        before = asdict(row)
+        updated = assess(row)
+        self.assertEqual(updated.outcome, "pass")
+        self.assertEqual(updated.cause, "hostname-not-allowlisted")
+        self.assertEqual(updated.attempts[0].outcome, "denied")
+        self.assertIn("bare HTTP 403", updated.detail)
+        self.assertEqual(asdict(row), before)
+        for key, value in (
+            ("host", "unrelated.test"),
+            ("remote_addr", ""),
+            ("path", "/different"),
+            ("path", None),
+            ("sni", "example.com"),
+            ("mode", "sni-only"),
+            ("method", "CONNECT"),
+            ("action", "allow"),
+            ("status_code", 502),
+        ):
+            record = http_transaction()
+            record["audit"][key] = value
+            with self.subTest(key=key, value=value):
+                self.assertEqual(assess(http_result([record])).outcome, "error")
+        for rejected_by in (None, "", "other-transform"):
+            record = {**http_transaction(), "rejected_by": rejected_by}
+            self.assertEqual(assess(http_result([record])).outcome, "error")
+
+    def test_http_stale_missing_duplicate_and_conflicting_audits_are_inconclusive(self):
+        record = http_transaction()
+        allowed = copy.deepcopy(record)
+        allowed["audit"].update(action="allow", status_code=200)
+        for records in ([], [record, record], [record, allowed]):
+            self.assertEqual(assess(http_result(records)).outcome, "error")
+        for stamp in (START - timedelta(seconds=1), END + timedelta(seconds=1)):
+            self.assertEqual(
+                assess(http_result([{**record, "time": stamp.isoformat()}])).outcome,
+                "error",
+            )
+        for status in (None, 407, 502, 503):
+            row = http_result([record])
+            row.attempts[0] = replace(row.attempts[0], status=status)
+            self.assertIs(assess(row), row)
+
+    def test_metadata_http_audit_cannot_mask_connect_errors_or_bypasses(self):
+        record = http_transaction()
+        record["audit"].update(host="169.254.169.254", path="/latest/meta-data/")
+        row = http_result([record])
+        row.name = "metadata-endpoint"
+        row.attempts[0] = replace(
+            row.attempts[0], n=1, target="http://169.254.169.254/latest/meta-data/"
+        )
+        for outcome, expected in (
+            ("denied", "pass"),
+            ("error", "error"),
+            ("established", "fail"),
+        ):
+            connect = Attempt(
+                0, "169.254.169.254:80", [], outcome, 403, 1.0, "CONNECT observation"
+            )
+            original = replace(
+                row,
+                outcome="fail" if outcome == "established" else "error",
+                attempts=[connect, row.attempts[0]],
+            )
+            with self.subTest(connect_outcome=outcome):
+                updated = assess(original)
+                self.assertEqual(updated.outcome, expected)
+                self.assertEqual(updated.attempts[0], connect)
+
     def test_explicit_refusals_in_both_modes_retain_client_evidence(self):
         for mode in ("sni-only", "mitm"):
             with self.subTest(mode=mode):

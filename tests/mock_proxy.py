@@ -146,7 +146,13 @@ class Handler(socketserver.BaseRequestHandler):
             if self.server.host_allowed(host):
                 self._send(200, "OK", f"mock response from {host}\n")
             else:
-                self._send(403, "Forbidden", self.server.deny_reason(host) + "\n")
+                self._send(
+                    403,
+                    "Forbidden",
+                    "internet-proxy-locally denied this request: "
+                    + self.server.deny_reason(host)
+                    + "\n",
+                )
             return
         self._send(400, "Bad Request", "expected absolute-form or CONNECT\n")
 

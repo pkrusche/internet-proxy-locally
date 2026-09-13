@@ -1,4 +1,4 @@
-"""Correlate Iron's late IP refusals with inconclusive DNS probes."""
+"""Correlate Iron's explicit policy refusals with inconclusive client probes."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import json
 import re
 from dataclasses import dataclass, replace
 from datetime import datetime
+from urllib.parse import urlsplit
 
 from .denial import aggregate_cause
 from .models import Attempt, Result
@@ -23,6 +24,8 @@ class _Audit:
     status: int
     time: datetime
     error: str
+    path: str
+    rejected_by: str
 
 
 def _audits(lines: list[str], started_at: datetime, ended_at: datetime) -> list[_Audit]:
@@ -43,7 +46,11 @@ def _audits(lines: list[str], started_at: datetime, ended_at: datetime) -> list[
                 for k in ("host", "remote_addr", "sni", "mode", "method", "action")
             ]
             error = entry.get("error", "")
-            if not all(isinstance(s, str) for s in [*strings, error]):
+            path = audit.get("path", "")
+            rejected_by = entry.get("rejected_by", "")
+            if not all(
+                isinstance(s, str) for s in [*strings, error, path, rejected_by]
+            ):
                 continue
             if type(audit["status_code"]) is not int:
                 continue
@@ -58,6 +65,8 @@ def _audits(lines: list[str], started_at: datetime, ended_at: datetime) -> list[
                     audit["status_code"],
                     stamp,
                     error,
+                    path,
+                    rejected_by,
                 )
             )
         except (ValueError, KeyError, TypeError, AttributeError):
@@ -66,6 +75,8 @@ def _audits(lines: list[str], started_at: datetime, ended_at: datetime) -> list[
 
 
 def _denial(attempt: Attempt, records: list[_Audit]) -> tuple[str, str] | None:
+    if attempt.target.startswith("http://"):
+        return _http_denial(attempt, records)
     if attempt.outcome != "error" or attempt.status != 200:
         return None
     host, _, port = attempt.target.rpartition(":")
@@ -123,6 +134,32 @@ def _denial(attempt: Attempt, records: list[_Audit]) -> tuple[str, str] | None:
     return cause, f"Iron audit log ({start.peer}): {end.error}"
 
 
+def _http_denial(attempt: Attempt, records: list[_Audit]) -> tuple[str, str] | None:
+    if attempt.outcome != "error" or attempt.status != 403:
+        return None
+    url = urlsplit(attempt.target)
+    matching = [r for r in records if r.target == url.netloc and r.method == "GET"]
+    # Exactly one contemporaneous request to this host. A status alone or a
+    # stale, duplicate, or conflicting audit cannot resolve the client error.
+    if len(matching) != 1:
+        return None
+    record = matching[0]
+    if (
+        not record.peer
+        or record.path != (url.path or "/")
+        or record.sni
+        or record.mode != "mitm"
+        or record.action != "reject"
+        or record.status != 403
+        or record.rejected_by != "allowlist"
+    ):
+        return None
+    return (
+        "hostname-not-allowlisted",
+        f"Iron audit log ({record.peer}): rejected_by allowlist",
+    )
+
+
 def explain_denials(
     result: Result, *, started_at: datetime, ended_at: datetime
 ) -> Result:
@@ -130,11 +167,17 @@ def explain_denials(
 
     Call only for Iron, with the wall-clock interval of this check. Logs from
     older checks remain diagnostic output but cannot supply a policy verdict.
-    Other checks have different controls and failure precedence, so they are
-    deliberately excluded from this narrow DNS/private-address reassessment.
+    Only DNS/private-address and plain-HTTP checks have the matching attempt
+    evidence needed for this reassessment.
     """
     if (
-        result.name not in ("dns-private-ipv4", "dns-private-ipv6")
+        result.name
+        not in (
+            "dns-private-ipv4",
+            "dns-private-ipv6",
+            "blocked-host-http",
+            "metadata-endpoint",
+        )
         or result.expectation != "deny"
         or result.outcome != "error"
         or not result.attempts

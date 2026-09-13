@@ -14,7 +14,7 @@ class Attempt:
     n: int
     target: str
     local_resolved: list[str]  # IPs the checker itself resolved, if any
-    # "established" means an HTTP response followed the TLS handshake;
+    # "established" means HTTP followed TLS, or plain HTTP returned 2xx/3xx;
     # "denied" is an explicit refusal; "error" is inconclusive transport.
     # Older result files may contain "aborted" from passive tunnel probes.
     outcome: str

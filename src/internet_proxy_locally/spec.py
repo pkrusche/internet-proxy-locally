@@ -30,6 +30,7 @@ class ServiceSpec:
     supports_tls_interception: bool = False
     ca_cert_mount: str = ""
     ca_key_mount: str = ""
+    tls_startup_user: str = ""
 
     @classmethod
     def load(cls, engine: str) -> ServiceSpec:
@@ -113,6 +114,9 @@ SERVICES = {
         supports_tls_interception=True,
         ca_cert_mount="/etc/squid/ca.pem",
         ca_key_mount="/etc/squid/ca-key.pem",
+        # Squid loads the private key during privileged config parsing, then
+        # drops to cache_effective_user squid before serving requests.
+        tls_startup_user="0:0",
     ),
     "iron": ServiceSpec(
         engine="iron",

@@ -54,9 +54,11 @@ command -v "$backend" >/dev/null || { echo "$backend is not installed" >&2; exit
 export IPL_ENDPOINT="${IPL_ENDPOINT:-127.0.0.1:18089}"
 host="${IPL_ENDPOINT%:*}"
 port="${IPL_ENDPOINT##*:}"
+smoke_results="$(mktemp)"
 
 cleanup() {
     uv run --no-sync ipl --backend "$backend" down >/dev/null 2>&1 || true
+    rm -f "$smoke_results"
 }
 trap cleanup EXIT
 
@@ -73,6 +75,9 @@ with socket.create_connection((host, port), timeout=2):
 print(f"proxy is listening on {host}:{port}")
 ' "$host" "$port"
 
+uv run --no-sync ipl --backend "$backend" --engine "$engine" check --json >"$smoke_results"
+uv run --no-sync python -m internet_proxy_locally.release quick "$engine" "$smoke_results"
+
 uv run --no-sync ipl --backend "$backend" down
 uv run --no-sync python -c '
 import sys
@@ -87,4 +92,5 @@ if state != "absent":
 print(f"{name} is absent after ipl down")
 ' "$backend" "$engine"
 
+rm -f "$smoke_results"
 trap - EXIT

@@ -3,15 +3,15 @@ allowlist is refused — the same rule on the request path."""
 
 from __future__ import annotations
 
-from .models import Check
-from .probes import _classify_deny_http
+from .models import Check, RawOutcome
+from .probes import _deny_attempts, _http_attempt
 from .transport import ProxyClient
 
 BLOCKED_HOST = "example.com"  # must NOT be on the allowlist
 
 
-def test_blocked_host_http(client: ProxyClient) -> tuple[str, str]:
-    return _classify_deny_http(client, f"http://{BLOCKED_HOST}/")
+def test_blocked_host_http(client: ProxyClient) -> RawOutcome:
+    return _deny_attempts([_http_attempt(client, f"http://{BLOCKED_HOST}/")])
 
 
 CHECK = Check(

@@ -607,6 +607,10 @@ class RunPyCliTest(RunPyCliFixture):
                 )
                 self.assertIn(f":{cert_mount}:ro", run_line)
                 self.assertIn(f":{key_mount}:ro", run_line)
+                self.assertEqual("--user 0:0" in run_line, engine == "squid")
+                key = self.tmp / "state/ca/ca-key.pem"
+                self.assertEqual(key.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(key.stat().st_uid, os.getuid())
 
     def test_check_reports_whether_tls_interception_was_on(self) -> None:
         self.build_engine("squid")
@@ -618,6 +622,7 @@ class RunPyCliTest(RunPyCliFixture):
                 args.append("--tls-interception")
             up = self.run_cli(*args)
             self.assertEqual(up.returncode, 0, up.stderr)
+            self.assertEqual("--user 0:0" in self.backend_log(), enabled)
 
             check = self.run_cli("--backend", "docker", "check", "--json")
             self.assertEqual(check.returncode, 0, check.stdout + check.stderr)

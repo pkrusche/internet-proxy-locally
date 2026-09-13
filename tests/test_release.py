@@ -86,6 +86,21 @@ class ReleaseScriptTest(unittest.TestCase):
                 )
                 self.assertEqual(proc.returncode, 0 if code == 60 else 1)
 
+    def test_measurement_success_still_requires_policy_acceptance(self) -> None:
+        proc = self.shell(r"""
+uv() {
+    echo "$*"
+    case "$*" in
+        *internet_proxy_locally.release*) return 7 ;;
+        *) return 0 ;;
+    esac
+}
+lab_measurement
+""")
+        self.assertEqual(proc.returncode, 7, proc.stdout + proc.stderr)
+        self.assertIn("ipl-lab --backend docker measure", proc.stdout)
+        self.assertIn("internet_proxy_locally.release benchmark", proc.stdout)
+
     def test_denials_before_and_inside_tls_require_policy_evidence(self) -> None:
         fake_curl = r"""
 curl() {

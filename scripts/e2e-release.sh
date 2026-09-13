@@ -24,9 +24,12 @@ tmp="$(mktemp -d)"
 release_root="$tmp/workspace"
 release_ca="$tmp/release-ca.pem"
 rotated_ca="$tmp/rotated-ca.pem"
+release_workspace_ready=0
 
 cleanup() {
-    uv run --no-sync ipl --backend "$backend" down >/dev/null 2>&1 || true
+    if [ "$release_workspace_ready" -eq 1 ]; then
+        IPL_ROOT="$release_root" uv run --no-sync ipl --backend "$backend" down >/dev/null 2>&1 || true
+    fi
     rm -f "$sentinel"
     rm -rf "$tmp"
 }
@@ -99,6 +102,7 @@ prepare_release_workspace() {
     cp -R config "$release_root/config" || return
     cp docs/findings.md "$release_root/docs/findings.md" || return
     export IPL_ROOT="$release_root"
+    release_workspace_ready=1
 }
 
 ipl() {
@@ -218,7 +222,9 @@ rotation_check() {
 }
 
 lab_measurement() {
-    IPL_ROOT="$release_root" uv run --no-sync ipl-lab --backend docker measure
+    IPL_ROOT="$release_root" uv run --no-sync ipl-lab --backend docker measure || return
+    uv run --no-sync python -m internet_proxy_locally.release benchmark \
+        "$release_root/results/benchmark.json"
 }
 
 print_summary() {

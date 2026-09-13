@@ -268,8 +268,11 @@ class Backend:
         lab_network: str = "",
         lab_address: str = "",
         environment: dict[str, str] | None = None,
+        user: str = "",
     ) -> None:
         cmd: list[str] = ["run", "--detach", "--name", name]
+        if user:
+            cmd += ["--user", user]
         for key, value in sorted((labels or {}).items()):
             cmd += ["--label", f"{key}={value}"]
         if publish is not None:

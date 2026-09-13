@@ -46,7 +46,7 @@ def owned_containers(include_fixture: bool = True) -> list[str]:
 def ownership_labels(
     role: str = "operational", tls_interception: bool = False
 ) -> dict[str, str]:
-    root = str(Path.cwd().resolve()).encode()
+    root = str(paths.workspace_root().resolve()).encode()
     return {
         "io.internet-proxy-locally.managed": "true",
         "io.internet-proxy-locally.workspace": hashlib.sha256(root).hexdigest()[:16],
@@ -138,6 +138,7 @@ def start_engine(
         dns=dns,
         lab_network=FIXTURE_NETWORK_NAME if keep_fixture else "",
         environment={"SSL_CERT_FILE": "/fixture/ca.pem"} if keep_fixture else None,
+        user=spec.tls_startup_user if tls_interception else "",
         labels=ownership_labels(
             "lab" if keep_fixture else "operational", tls_interception=tls_interception
         ),

@@ -89,6 +89,14 @@ packages (this should be part of the sandbox image build process).
 
 ### Squid
 
+With interception enabled, the runtime starts Squid as container root so it
+can load the read-only, host-owned `0600` key during configuration parsing.
+The generated `cache_effective_user squid` / `cache_effective_group squid`
+settings then drop its serving privileges, using
+[Squid's supported startup mechanism](https://www.squid-cache.org/Doc/config/cache_effective_user/).
+The host key's ownership and permissions are unchanged; no extra key file is
+created. Without interception, the image's `USER squid` remains in effect.
+
 Full `ssl_bump ... bump` with a CA-backed listener. In interception
 mode, `http_port` carries the certificate options and
 `generate-host-certificates=on`, an `sslcrtd_program` is configured, and a

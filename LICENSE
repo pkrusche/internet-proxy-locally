@@ -28,8 +28,11 @@ are not part of the Software covered by the MIT License above, and this
 project does not relicense or warrant them. Their use and redistribution are
 subject to their respective licenses and notices:
 
-* Pipelock — Apache License 2.0:
-  https://github.com/luckypipewrench/pipelock/blob/main/LICENSE
+* Pipelock — Apache License 2.0 for the core, and Elastic License 2.0 for
+  enterprise code included in the pre-built Docker release (currently 3.3.0).
+  Paid features require an upstream license key. See both licenses:
+  https://github.com/luckyPipewrench/pipelock/blob/v3.3.0/LICENSE
+  https://github.com/luckyPipewrench/pipelock/blob/v3.3.0/enterprise/LICENSE
 * Smokescreen — MIT License:
   https://github.com/stripe/smokescreen/blob/master/LICENSE.txt
 * Squid — GNU General Public License, version 2 or later:

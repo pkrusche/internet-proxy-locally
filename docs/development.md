@@ -17,6 +17,14 @@ CI uses the locked tools with `--frozen`. Upgrade them deliberately with
 An end to end release test that includes all the above and which checks whether real
 proxies can be started on the current system is available in `scripts/e2e-release.sh`.
 
+The release gate requires every operational quick check to pass. For full lab
+measurements, `release.py` permits only the documented SNI/raw-tunnel/mixed-DNS
+limitations of specific engines and TLS modes; missing checks, skips, errors,
+and new policy failures fail the gate. Comparative `ipl-check` / `ipl-lab measure`
+exit codes still describe measurement execution, not release acceptance.
+Container names are shared: stop the operational instance before running the
+gate. Its separate `IPL_ROOT` cannot remove an instance owned by another workspace.
+
 ## Package layout
 
 - `cli.run` implements `ipl`; `cli.lab` implements `ipl-lab`. Shared commands
