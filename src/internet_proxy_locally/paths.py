@@ -36,7 +36,7 @@ def workspace_root() -> Path:
     """
     override = os.environ.get("IPL_ROOT")
     if override:
-        return Path(override)
+        return Path(override).resolve()
     start = Path.cwd().resolve()
     for candidate in (start, *start.parents):
         if (candidate / "config.toml").is_file():

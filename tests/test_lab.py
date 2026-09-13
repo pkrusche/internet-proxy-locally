@@ -96,7 +96,9 @@ class LabCliTest(test_runpy.RunPyCliFixture):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             policy = (self.tmp / "lab/config/squid.test.conf").read_text()
             self.assertEqual("ssl_bump bump bumpable" in policy, enabled)
-            self.assertEqual(":/etc/squid/ca-key.pem:ro" in self.backend_log(), enabled)
+            self.assertEqual(
+                ":/run/ipl-ca/ca-key.pem:ro" in self.backend_log(), enabled
+            )
 
     def test_up_starts_the_dns_fixture_and_points_the_engine_at_it(self) -> None:
         self.build_engine()

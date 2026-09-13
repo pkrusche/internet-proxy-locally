@@ -175,6 +175,10 @@ tls_curl_check() {
     ipl --engine "$engine" setup --tls-interception || return
     ipl --engine "$engine" up --tls-interception || return
 
+    if [ "$engine" = squid ]; then
+        sh scripts/check-squid-runtime.sh "$backend" on || rc=1
+    fi
+
     expect_certificate_rejection "$engine without CA trust" "$tmp/$engine-untrusted.err" \
         "${curl_args[@]}" --output /dev/null https://github.com || rc=1
 

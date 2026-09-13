@@ -21,3 +21,6 @@ dist/
 # specifically. Unlike config/*, it is never reviewed in a diff —
 # committing it would make a private key a shared secret.
 state/
+
+# e2e release test log
+e2e-release.log

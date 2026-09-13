@@ -66,12 +66,12 @@ class WorkspaceGuardsTest(unittest.TestCase):
             remove_owned(backend, "internet-proxy-pipelock")
         backend.remove_container.assert_called_once_with("internet-proxy-pipelock")
 
-    def test_squid_explicitly_drops_serving_privileges(self) -> None:
+    def test_squid_configs_leave_privilege_drop_to_the_entrypoint(self) -> None:
         for enabled in (False, True):
             text = next(
                 v
                 for p, v in render_policies(tls_interception=enabled).items()
                 if p.name == "squid.conf"
             )
-            self.assertIn("cache_effective_user squid\n", text)
-            self.assertIn("cache_effective_group squid\n", text)
+            self.assertNotIn("cache_effective_user", text)
+            self.assertNotIn("cache_effective_group", text)

@@ -151,6 +151,11 @@ class IronLogsTest(unittest.TestCase):
             row.attempts[0] = replace(row.attempts[0], status=status)
             self.assertIs(assess(row), row)
 
+    def test_http_audit_accepts_the_explicit_default_port_form(self):
+        record = http_transaction()
+        record["audit"]["host"] = "example.com:80"
+        self.assertEqual(assess(http_result([record])).outcome, "pass")
+
     def test_metadata_http_audit_cannot_mask_connect_errors_or_bypasses(self):
         record = http_transaction()
         record["audit"].update(host="169.254.169.254", path="/latest/meta-data/")

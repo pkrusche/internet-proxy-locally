@@ -89,13 +89,28 @@ packages (this should be part of the sandbox image build process).
 
 ### Squid
 
-With interception enabled, the runtime starts Squid as container root so it
-can load the read-only, host-owned `0600` key during configuration parsing.
-The generated `cache_effective_user squid` / `cache_effective_group squid`
-settings then drop its serving privileges, using
-[Squid's supported startup mechanism](https://www.squid-cache.org/Doc/config/cache_effective_user/).
-The host key's ownership and permissions are unchanged; no extra key file is
-created. Without interception, the image's `USER squid` remains in effect.
+Squid runs as `squid:squid` from its first instruction, including configuration
+parsing. With interception enabled, only a small entrypoint starts as root:
+it copies the read-only CA mounts from root-only `/run/ipl-ca/` into
+`/dev/shm/ipl-squid-ca/` (a `0500` directory with `0400` files, owned by Squid),
+then uses `su-exec` to permanently drop user/group privileges before executing
+Squid. No root wrapper stays behind, and container signals reach Squid directly.
+The host key's `0600` permissions and ownership are unchanged.
+
+The entrypoint requires `/dev/shm` to be tmpfs and refuses an existing staging
+directory or any copy/permission failure. The copy survives only for the
+container's runtime lifetime, never in its writable image layer; it is needed
+for configuration reloads. As with any tmpfs, [host swap](https://docs.docker.com/engine/storage/tmpfs/)
+or VM snapshots can retain memory, so this is not a secure-erasure guarantee. Without interception,
+the image's `USER squid` remains in effect and no CA copy is made.
+
+This requires image `squid:6.12-r0-build2`; run `ipl --engine squid setup` to
+build it, then restart Squid. Recorded `build1` benchmark results remain historical
+evidence, not validation of the new image; run the release gate for fresh results.
+The gate checks Squid's real/effective/saved IDs, supplementary groups, and CA
+staging permissions. On an already running instance, the same read-only check
+is `sh scripts/check-squid-runtime.sh docker on` (or `container`, and `off`
+without interception).
 
 Full `ssl_bump ... bump` with a CA-backed listener. In interception
 mode, `http_port` carries the certificate options and

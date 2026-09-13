@@ -138,7 +138,10 @@ def _http_denial(attempt: Attempt, records: list[_Audit]) -> tuple[str, str] | N
     if attempt.outcome != "error" or attempt.status != 403:
         return None
     url = urlsplit(attempt.target)
-    matching = [r for r in records if r.target == url.netloc and r.method == "GET"]
+    target_forms = {url.netloc}
+    if url.scheme == "http" and url.port in (None, 80):
+        target_forms.add(f"{url.netloc}:80")
+    matching = [r for r in records if r.target in target_forms and r.method == "GET"]
     # Exactly one contemporaneous request to this host. A status alone or a
     # stale, duplicate, or conflicting audit cannot resolve the client error.
     if len(matching) != 1:

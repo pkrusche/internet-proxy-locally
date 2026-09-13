@@ -112,10 +112,10 @@ SERVICES = {
         config_file="config/squid.conf",
         config_mount="/etc/squid/squid.conf",
         supports_tls_interception=True,
-        ca_cert_mount="/etc/squid/ca.pem",
-        ca_key_mount="/etc/squid/ca-key.pem",
-        # Squid loads the private key during privileged config parsing, then
-        # drops to cache_effective_user squid before serving requests.
+        ca_cert_mount="/run/ipl-ca/ca.pem",
+        ca_key_mount="/run/ipl-ca/ca-key.pem",
+        # The entrypoint copies the host-owned CA into private tmpfs, then
+        # permanently drops root before executing Squid (even config parsing).
         tls_startup_user="0:0",
     ),
     "iron": ServiceSpec(

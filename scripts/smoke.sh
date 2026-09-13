@@ -75,6 +75,10 @@ with socket.create_connection((host, port), timeout=2):
 print(f"proxy is listening on {host}:{port}")
 ' "$host" "$port"
 
+if [ "$engine" = squid ]; then
+    sh scripts/check-squid-runtime.sh "$backend" off
+fi
+
 uv run --no-sync ipl --backend "$backend" --engine "$engine" check --json >"$smoke_results"
 uv run --no-sync python -m internet_proxy_locally.release quick "$engine" "$smoke_results"
 

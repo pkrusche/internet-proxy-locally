@@ -586,7 +586,7 @@ class RunPyCliTest(RunPyCliFixture):
     def test_up_mounts_ca_files_when_tls_interception_is_on(self) -> None:
         for engine, cert_mount, key_mount in (
             ("pipelock", "/config/ca.pem", "/config/ca-key.pem"),
-            ("squid", "/etc/squid/ca.pem", "/etc/squid/ca-key.pem"),
+            ("squid", "/run/ipl-ca/ca.pem", "/run/ipl-ca/ca-key.pem"),
             ("iron", "/config/ca.pem", "/config/ca-key.pem"),
         ):
             with self.subTest(engine=engine):
@@ -641,7 +641,9 @@ class RunPyCliTest(RunPyCliFixture):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             policy = (self.tmp / "config" / "squid.conf").read_text()
             self.assertEqual("ssl_bump bump bumpable" in policy, enabled)
-            self.assertEqual(":/etc/squid/ca-key.pem:ro" in self.backend_log(), enabled)
+            self.assertEqual(
+                ":/run/ipl-ca/ca-key.pem:ro" in self.backend_log(), enabled
+            )
 
     def test_ca_init_status_rotate_export(self) -> None:
         status = self.run_cli("ca", "status")
