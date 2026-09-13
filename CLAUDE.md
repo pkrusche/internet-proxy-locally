@@ -14,7 +14,10 @@ Everything runs through `uv` — there is no supported bare-interpreter path.
 `ruff` and `ty` are pinned in `uv.lock` and CI runs them with `--frozen`, so a
 local run and a CI run are the same binary. Upgrading either is a deliberate
 `uv lock --upgrade-package ruff` (or `ty`), never something a fresh checkout
-does on its own. `.github/workflows/checks.yml` runs the first three rows.
+does on its own. `.github/workflows/checks.yml` runs all four rows, and adds
+two jobs with no local equivalent: `ipl-lab report --check` for drift between
+`results/` and `docs/findings.md`, and a build of the wheel and sdist checked
+against `scripts/check-artifacts.py`.
 
 ## Versioning: jj, not git
 

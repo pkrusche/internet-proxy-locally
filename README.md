@@ -11,10 +11,10 @@ Dockerfiles to run and test + compare
 [Pipelock](https://github.com/luckyPipewrench/pipelock) (default),
 [Smokescreen](https://github.com/stripe/smokescreen),
 [Squid](https://www.squid-cache.org/) or
-[Iron](https://docs.iron.sh/). 
+[Iron](https://docs.iron.sh/).
 
-Docker and Apple `container` are both supported for running the proxy. 
-Measurements & tests in the lab only run on Docker to simplify network 
+Docker and Apple `container` are both supported for running the proxy.
+Measurements & tests in the lab only run on Docker to simplify network
 setup.
 
 ## Quick start
@@ -36,7 +36,7 @@ uv run ipl down         # remove proxy container
 ```
 
 Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and Docker or Apple
-`container`. 
+`container`.
 
 ## The allowlist
 
@@ -76,7 +76,7 @@ For reproducibility and security versions should be pinned.
 Every image is built from a Dockerfile in
 `src/internet_proxy_locally/data/images/<name>/`, and every pin it depends
 on — the base image, an apk version, an upstream commit SHA, Pipelock's
-upstream manifest digest — is a literal in that file. 
+upstream manifest digest — is a literal in that file.
 
 `images.py` holds one constant tag per image, which is what `up` runs and
 what `setup` checks before deciding to build. To upgrade an engine: edit
@@ -87,10 +87,10 @@ each tag still matches the pin its Dockerfile names.
 
 ## Choice of engine
 
-**Pipelock is the default**, according to the [findings](docs/findings.md), 
+**Pipelock is the default**, according to the [findings](docs/findings.md),
 it has the most comprehensive blocking behaviour out of the box. To note though, the Squid
-ruleset can likely be upgraded to be more secure, and Squid does have a 
-long history of operations. Our filtering configs using the other  solutions 
+ruleset can likely be upgraded to be more secure, and Squid does have a
+long history of operations. Our filtering configs using the other solutions
 (smokescreen / iron proxy) could probably be improved also.
 
 ## Documentation

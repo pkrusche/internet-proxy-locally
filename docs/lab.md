@@ -7,7 +7,7 @@ local DNS fixture, the full egress suite, and reports the comparison
 in [findings.md](findings.md). The lab lane uses Docker, including
 the fixture and all measured proxies (this is to keep network setup
 simple). Apple `container` remains supported for running `ipl` outside
-the lab setting. 
+the lab setting.
 
 `config.toml` contains both operational and lab settings. Only `ipl-lab`
 adds `[policy.test].allow` to `[policy].allow` and starts the DNS fixture.
@@ -56,13 +56,13 @@ renders both through the shared policy templates into `lab/config/`:
 
 `ipl-lab up` regenerates these files before starting the fixture and engine.
 
-The test policy should be a strict superset of the operational one. 
+The test policy should be a strict superset of the operational one.
 Extra domains: `*.nip.io` and `*.sslip.io` resolve to
 caller-chosen addresses, and the fixture zones resolve in a controlled
-manner (in an adversarial setting). 
+manner (in an adversarial setting).
 
 Operational-only configs work with `ipl`;  `[policy.test]` and `[fixture]`
-in `config.toml` are read by `ipl-lab`. 
+in `config.toml` are read by `ipl-lab`.
 
 ## The DNS fixture
 
@@ -106,7 +106,7 @@ A fresh name resolves first to the controlled origin, then to the private
 trap. The checker repeats probes after a 1.5-second gap. Lab Squid sets
 `negative_dns_ttl 1 seconds`: despite its name, that directive also sets the
 minimum positive cache lifetime, whose default is one minute. This is a
-lab-only timing adjustment, 
+lab-only timing adjustment,
 see also [Squid's directive documentation](https://www.squid-cache.org/Doc/config/negative_dns_ttl/).
 
 The fixture logs origin requests, DNS answers, and trap connections as

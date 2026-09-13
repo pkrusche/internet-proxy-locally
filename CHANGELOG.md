@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-09-13
 
 Initial release. Pipelock, Squid and Iron support optional TLS interception;
 Smokescreen does not. Upgrade by stopping the owned instance, installing the

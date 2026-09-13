@@ -2,7 +2,7 @@
 
 Off by default. The `--tls-interception` CLI switch turns
 Pipelock, Squid or Iron into the real TLS endpoint for allowlisted HTTPS
-destinations instead of an opaque CONNECT tunnel.  Smokescreen does not 
+destinations instead of an opaque CONNECT tunnel. Smokescreen does not
 support this, starting smokescreen with `--tls-interception`
 fails.
 
@@ -13,7 +13,7 @@ Initialize the CA with `ipl ca init`.
 
 ## What changes
 
-* **This enables MITM inspection for allowlisted HTTPS destinations.** 
+* **This enables MITM inspection for allowlisted HTTPS destinations.**
   With interception on, the engine decrypts and can evaluate the real HTTP request.
   Note interception could enable a content policy; it is not one by itself.
 * **The host now custodies a private key.** `ipl ca init` generates a
@@ -40,7 +40,7 @@ ipl ca rotate            # generate a new CA (same as init --rebuild)
 when no CA exists yet — a repo that never opts in gets zero new files under `state/`. `ipl up` refuses to
 start an engine with `--tls-interception` and no CA present.
 
-### Rotation 
+### Rotation
 
 If you suspect the private key has been read by anything untrusted
 (a compromised sandbox, a leaked backup of `state/`, a workstation you no
@@ -53,7 +53,7 @@ longer trust):
    the old *private* key could keep doing so until every consumer moves to
    the new cert.
 2. Re-run the manual install step (below) in every sandbox image
-   or trust store that had the old cert installed. 
+   or trust store that had the old cert installed.
 3. Restart the engine, verify a new connection chains to the exported new CA,
    and then remove old trust. A stale-trust client must fail.
 4. If the compromise was of a running sandbox rather than the host, also

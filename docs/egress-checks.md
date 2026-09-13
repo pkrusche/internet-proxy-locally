@@ -20,15 +20,15 @@ the agent to execute the request for these network scenarios to arise.
 
 The examples below illustrate requests such code could make through the proxy;
 the checks send probes directly and do not install malicious packages or test
-whether an agent follows injected instructions. 
+whether an agent follows injected instructions.
 
 ## Interpreting results
 
 `pass` means the check's implemented expectation was met; `fail` means it
 was violated. `skip` means a prerequisite was missing, and `error` means
-execution or evidence was inconclusive. 
+execution or evidence was inconclusive.
 
-The checker exits 1 for errors, **not for policy failures**; `--strict` 
+The checker exits 1 for errors, **not for policy failures**; `--strict`
 additionally treats skips as execution errors.
 
 Most CONNECT denial probes require an explicit 4xx refusal, or attempt TLS
@@ -56,7 +56,7 @@ origin availability. Fixture-dependent checks require the lab allowlist;
 the runner checks it using `1.1.1.1.nip.io:443` and skips those checks if that
 control is denied.
 
-All checks exercise traffic sent through the proxy. When using the proxy with 
+All checks exercise traffic sent through the proxy. When using the proxy with
 a sandbox, the sandbox must enforce that traffic cannot bypass it.
 See [security.md](security.md) for the threat model.
 

@@ -125,7 +125,7 @@ def start_engine(
     if port_listening(host, port):
         raise Fail(
             f"{host}:{port} is already in use by something this repository does not own — "
-            "refusing to start (choose down the other service or free the port)"
+            "refusing to start (shut down the other service or free the port)"
         )
 
     print(f"starting {engine} ({image}) on http://{host}:{port}")
