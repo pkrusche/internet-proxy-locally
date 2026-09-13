@@ -25,6 +25,13 @@ exit codes still describe measurement execution, not release acceptance.
 Container names are shared: stop the operational instance before running the
 gate. Its separate `IPL_ROOT` cannot remove an instance owned by another workspace.
 
+Unresolved Iron denial checks print `Iron audit correlation` diagnostics to stderr:
+the host's inclusive check window, audit timestamps, signed offsets from each
+window boundary, and usable audit counts. Capture stderr alongside stdout in the
+release log. These diagnostics do not relax timestamp filtering; they distinguish
+out-of-window evidence (including possible host/VM clock differences) from
+in-window records that do not establish a matching denial.
+
 ## Package layout
 
 - `cli.run` implements `ipl`; `cli.lab` implements `ipl-lab`. Shared commands

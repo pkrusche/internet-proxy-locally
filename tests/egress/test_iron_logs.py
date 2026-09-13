@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
@@ -107,6 +109,54 @@ def http_result(records):
 
 
 class IronLogsTest(unittest.TestCase):
+    def setUp(self):
+        self.stderr = io.StringIO()
+        self.enterContext(redirect_stderr(self.stderr))
+
+    def test_window_diagnostics_explain_rejection_without_relaxing_timestamps(self):
+        for offset_ms, expected_offset in ((-1, "-1.000"), (1001, "+1001.000")):
+            with self.subTest(offset_ms=offset_ms):
+                self.stderr.seek(0)
+                self.stderr.truncate()
+                stamp = START + timedelta(milliseconds=offset_ms)
+                row = http_result([{**http_transaction(), "time": stamp.isoformat()}])
+                before = asdict(row)
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    assessed = assess(row)
+                self.assertIs(assessed, row)
+                self.assertEqual(asdict(row), before)
+                self.assertEqual(stdout.getvalue(), "")
+                diagnostic = self.stderr.getvalue()
+                for expected in (
+                    "Iron audit correlation [blocked-host-http]",
+                    f"host window start={START.isoformat()} end={END.isoformat()}",
+                    f"audit time={stamp.isoformat()}",
+                    f"from_host_start_ms={expected_offset}",
+                    "from_host_end_ms=",
+                    "window=outside (rejected)",
+                    "usable in-window audits=0; unresolved attempts=1",
+                    "no clock-skew allowance",
+                ):
+                    self.assertIn(expected, diagnostic)
+
+    def test_valid_audits_including_window_boundaries_remain_quiet(self):
+        for stamp in (START, START + timedelta(milliseconds=20), END):
+            row = http_result([{**http_transaction(), "time": stamp.isoformat()}])
+            self.assertEqual(assess(row).outcome, "pass")
+        self.assertEqual(self.stderr.getvalue(), "")
+
+    def test_missing_or_unmatched_audits_report_the_window_and_counts(self):
+        row = http_result([])
+        self.assertIs(assess(row), row)
+        self.assertIn("usable in-window audits=0", self.stderr.getvalue())
+        record = http_transaction()
+        record["audit"]["host"] = "unrelated.test"
+        row = http_result([record])
+        self.assertIs(assess(row), row)
+        self.assertIn("window=inside", self.stderr.getvalue())
+        self.assertIn("usable in-window audits=1", self.stderr.getvalue())
+
     def test_http_denial_requires_matching_explicit_allowlist_rejection(self):
         row = http_result([http_transaction()])
         before = asdict(row)

@@ -225,7 +225,7 @@ printf 'bootstrap pid=%s\n' "$$" >> "$TEST_LOG"
     def test_image_and_configs_use_bootstrap_and_the_private_staged_copy(self):
         dockerfile = (IMAGE_DIR / "Dockerfile").read_text()
         self.assertIn('"su-exec=0.2-r3"', dockerfile)
-        self.assertIn("USER squid", dockerfile)
+        self.assertIn("\nUSER squid:squid\n", dockerfile)
         self.assertIn("mkdir -m 0700 /run/ipl-ca", dockerfile)
         self.assertIn('ENTRYPOINT ["/usr/local/bin/ipl-squid-entrypoint"]', dockerfile)
         self.assertIn(
@@ -252,10 +252,11 @@ printf 'bootstrap pid=%s\n' "$$" >> "$TEST_LOG"
             in {
                 "internet-proxy-locally/squid:6.12-r0-build1",
                 "internet-proxy-locally/squid:6.12-r0-build2",
+                "internet-proxy-locally/squid:6.12-r0-build3",
             }
         )
         prepare_image(backend, "squid")
-        self.assertEqual(SQUID_IMAGE, "internet-proxy-locally/squid:6.12-r0-build3")
+        self.assertEqual(SQUID_IMAGE, "internet-proxy-locally/squid:6.12-r0-build4")
         backend.build.assert_called_once_with(
             tag=SQUID_IMAGE, dockerfile=IMAGE_DIR / "Dockerfile", context=IMAGE_DIR
         )

@@ -14,7 +14,7 @@
 # `apk add` rather than silently installing something else.
 #
 # `SQUID_IMAGE`'s tag carries a `-buildN` suffix after the apk version
-# (currently `-build3`, fixing log pipe ownership after dropping root): a local
+# (currently `-build4`, restricting TLS-off supplementary groups): a local
 # build revision, not a new upstream apk release, bumped whenever this
 # Dockerfile's build context changes without the apk pin itself moving —
 # `prepare_image()` skips a build when the tag is already present, so
@@ -60,7 +60,9 @@ RUN chmod 0755 /usr/local/bin/ipl-squid-entrypoint
 LABEL org.opencontainers.image.licenses="GPL-2.0-or-later"
 LABEL org.opencontainers.image.source="https://github.com/squid-cache/squid"
 
-USER squid
+# An explicit group prevents the runtime from adding Alpine's supplementary
+# group memberships. Match the TLS bootstrap's su-exec squid_uid:squid_gid.
+USER squid:squid
 EXPOSE 3128
 
 # -N runs in the foreground (no daemon); the config sends both logs to the

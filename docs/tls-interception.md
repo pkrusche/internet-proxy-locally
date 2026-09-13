@@ -107,9 +107,10 @@ directory or any copy/permission failure. The copy survives only for the
 container's runtime lifetime, never in its writable image layer; it is needed
 for configuration reloads. As with any tmpfs, [host swap](https://docs.docker.com/engine/storage/tmpfs/)
 or VM snapshots can retain memory, so this is not a secure-erasure guarantee. Without interception,
-the image's `USER squid` remains in effect and no CA copy is made.
+the image's `USER squid:squid` remains in effect and no CA copy is made.
+The explicit primary group excludes Alpine's supplementary group memberships.
 
-This requires image `squid:6.12-r0-build3`; run `ipl --engine squid setup` to
+This requires image `squid:6.12-r0-build4`; run `ipl --engine squid setup` to
 build it, then restart Squid. Recorded `build1` benchmark results remain historical
 evidence, not validation of the new image; run the release gate for fresh results.
 The gate checks Squid's real/effective/saved IDs, supplementary groups, and CA

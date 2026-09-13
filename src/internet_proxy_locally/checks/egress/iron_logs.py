@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
+import sys
 from dataclasses import dataclass, replace
 from datetime import datetime
 from urllib.parse import urlsplit
@@ -28,7 +29,12 @@ class _Audit:
     rejected_by: str
 
 
-def _audits(lines: list[str], started_at: datetime, ended_at: datetime) -> list[_Audit]:
+def _audits(
+    lines: list[str],
+    started_at: datetime,
+    ended_at: datetime,
+    diagnostics: list[str],
+) -> list[_Audit]:
     records = []
     for line in lines:
         # Docker prefixes JSON with an RFC3339 timestamp; Apple does not.
@@ -39,7 +45,17 @@ def _audits(lines: list[str], started_at: datetime, ended_at: datetime) -> list[
             entry = json.loads("{" + payload)
             audit = entry["audit"]
             stamp = datetime.fromisoformat(entry["time"])
-            if entry.get("msg") != "request" or not started_at <= stamp <= ended_at:
+            if entry.get("msg") != "request":
+                continue
+            in_window = started_at <= stamp <= ended_at
+            diagnostics.append(
+                f"audit time={stamp.isoformat()} "
+                f"host={audit.get('host')!r} method={audit.get('method')!r} "
+                f"from_host_start_ms={(stamp - started_at).total_seconds() * 1000:+.3f} "
+                f"from_host_end_ms={(stamp - ended_at).total_seconds() * 1000:+.3f} "
+                f"window={'inside' if in_window else 'outside (rejected)'}"
+            )
+            if not in_window:
                 continue
             strings = [
                 audit[k]
@@ -69,7 +85,10 @@ def _audits(lines: list[str], started_at: datetime, ended_at: datetime) -> list[
                     rejected_by,
                 )
             )
-        except (ValueError, KeyError, TypeError, AttributeError):
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            # Do not echo malformed payloads or exception text: the raw engine
+            # logs are already retained, and may contain arbitrary input.
+            diagnostics.append(f"unusable audit record ({type(exc).__name__})")
             continue
     return records
 
@@ -187,7 +206,10 @@ def explain_denials(
         or any(a.outcome == "established" for a in result.attempts)
     ):
         return result
-    records = _audits(result.engine_logs, started_at, ended_at)
+    diagnostics = [
+        f"host window start={started_at.isoformat()} end={ended_at.isoformat()} (inclusive)"
+    ]
+    records = _audits(result.engine_logs, started_at, ended_at, diagnostics)
     attempts = []
     for attempt in result.attempts:
         evidence = _denial(attempt, records)
@@ -200,9 +222,21 @@ def explain_denials(
                 detail=f"denied — {explanation}; client observation: {attempt.detail}",
             )
         attempts.append(attempt)
+    complete = all(a.outcome == "denied" for a in attempts)
+    if not complete:
+        diagnostics.append(
+            f"usable in-window audits={len(records)}; "
+            f"unresolved attempts={sum(a.outcome != 'denied' for a in attempts)}; "
+            "timestamp filtering unchanged (no clock-skew allowance)"
+        )
+        for diagnostic in diagnostics:
+            # stderr keeps --json stdout parseable and is captured by the
+            # release log even when smoke cleanup removes the result file.
+            print(
+                f"Iron audit correlation [{result.name}]: {diagnostic}", file=sys.stderr
+            )
     if attempts == result.attempts:
         return result
-    complete = all(a.outcome == "denied" for a in attempts)
     detail = "; ".join(f"{a.target}: {a.detail}" for a in attempts)
     return replace(
         result,
