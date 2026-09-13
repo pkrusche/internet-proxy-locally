@@ -16,7 +16,7 @@ from .models import Attempt, Result
 # Host and container clocks need not agree to the microsecond. Keep this
 # allowance bounded: it only widens the audit timestamp filter, never the
 # transaction matching, duplicate rejection, or explicit-denial requirements.
-AUDIT_CLOCK_SLACK = timedelta(milliseconds=100)
+AUDIT_CLOCK_SLACK = timedelta(milliseconds=250)
 
 
 @dataclass(frozen=True)

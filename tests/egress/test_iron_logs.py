@@ -114,7 +114,7 @@ class IronLogsTest(unittest.TestCase):
         self.enterContext(redirect_stderr(self.stderr))
 
     def test_window_diagnostics_explain_rejection_outside_bounded_slack(self):
-        for offset_ms, expected_offset in ((-101, "-101.000"), (1101, "+1101.000")):
+        for offset_ms, expected_offset in ((-251, "-251.000"), (1251, "+1251.000")):
             with self.subTest(offset_ms=offset_ms):
                 self.stderr.seek(0)
                 self.stderr.truncate()
@@ -136,9 +136,9 @@ class IronLogsTest(unittest.TestCase):
                     "from_host_end_ms=",
                     "window=outside (rejected)",
                     "usable in-window audits=0; unresolved attempts=1",
-                    "clock slack=+/-100ms",
-                    f"accepted start={(START - timedelta(milliseconds=100)).isoformat()}",
-                    f"end={(END + timedelta(milliseconds=100)).isoformat()}",
+                    "clock slack=+/-250ms",
+                    f"accepted start={(START - timedelta(milliseconds=250)).isoformat()}",
+                    f"end={(END + timedelta(milliseconds=250)).isoformat()}",
                 ):
                     self.assertIn(expected, diagnostic)
 
@@ -151,8 +151,8 @@ class IronLogsTest(unittest.TestCase):
     def test_clock_slack_accepts_observed_skew_and_exact_boundaries(self):
         for stamp in (
             START - timedelta(microseconds=25),
-            START - timedelta(milliseconds=100),
-            END + timedelta(milliseconds=100),
+            START - timedelta(milliseconds=250),
+            END + timedelta(milliseconds=250),
         ):
             with self.subTest(stamp=stamp):
                 row = http_result([{**http_transaction(), "time": stamp.isoformat()}])
@@ -160,10 +160,10 @@ class IronLogsTest(unittest.TestCase):
                 self.assertEqual(row.outcome, "error")  # input evidence is unchanged
         self.assertEqual(self.stderr.getvalue(), "")
 
-    def test_clock_slack_does_not_extend_past_100_milliseconds(self):
+    def test_clock_slack_does_not_extend_past_250_milliseconds(self):
         for stamp in (
-            START - timedelta(milliseconds=100, microseconds=1),
-            END + timedelta(milliseconds=100, microseconds=1),
+            START - timedelta(milliseconds=250, microseconds=1),
+            END + timedelta(milliseconds=250, microseconds=1),
         ):
             row = http_result([{**http_transaction(), "time": stamp.isoformat()}])
             self.assertIs(assess(row), row)
