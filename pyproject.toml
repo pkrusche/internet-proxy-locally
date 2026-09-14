@@ -3,7 +3,8 @@ name = "internet-proxy-locally"
 version = "0.1.0"
 description = "Local containerized Internet filtering proxy for coding-agent sandboxes"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Peter Krusche" }]
 keywords = [
     "proxy",
@@ -20,7 +21,6 @@ dependencies = [
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Operating System :: MacOS",
@@ -44,7 +44,7 @@ ipl-lab = "internet_proxy_locally.cli.lab:main"
 ipl-check = "internet_proxy_locally.checks.egress:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
