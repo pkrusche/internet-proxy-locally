@@ -1,6 +1,6 @@
 [project]
 name = "internet-proxy-locally"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local containerized Internet filtering proxy for coding-agent sandboxes"
 readme = "README.md"
 license = "MIT"

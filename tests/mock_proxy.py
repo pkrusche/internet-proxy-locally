@@ -42,6 +42,8 @@ DEFAULT_ALLOWED = {"pypi.org", "files.pythonhosted.org", "github.com"}
 class MockProxyServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    # Accept the ten-connection probe burst even before handlers are scheduled.
+    request_queue_size = 64
 
     def __init__(
         self,

@@ -11,7 +11,6 @@ from __future__ import annotations
 import atexit
 import functools
 import shutil
-import socket
 import subprocess
 import tempfile
 import unittest
@@ -25,12 +24,6 @@ OPENSSL = shutil.which("openssl")
 requires_openssl = unittest.skipUnless(
     OPENSSL, "openssl needed to generate the mock TLS certificate"
 )
-
-
-def free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
 
 
 @functools.lru_cache(maxsize=1)
@@ -79,14 +72,13 @@ def start_mock(
     fixed set of allowed hostnames.
     """
     certfile, keyfile = _cert_and_key()
-    port = free_port()
     server = mock_proxy.start_in_thread(
-        port, mode=mode, allowed=allowed, certfile=certfile, keyfile=keyfile
+        0, mode=mode, allowed=allowed, certfile=certfile, keyfile=keyfile
     )
     if host_allowed is not None:
         server.host_allowed = host_allowed  # ty: ignore[invalid-assignment]
     test_case.addCleanup(server.stop)
-    return server, port
+    return server, server.server_address[1]
 
 
 class Outcome(Protocol):

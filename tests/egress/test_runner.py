@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,13 +20,7 @@ from tests import mock_proxy
 from tests.egress import support
 
 
-@support.requires_openssl
-class EgressSuiteTest(unittest.TestCase):
-    def run_suite(self, engine: str, mode: str, full: bool) -> dict[str, egress.Result]:
-        _, port = support.start_mock(self, mode=mode)
-        results = egress.run_suite(f"http://127.0.0.1:{port}", engine, full=full)
-        return {r.name: r for r in results}
-
+class CatalogueTest(unittest.TestCase):
     # -- catalogue integrity --------------------------------------------
 
     def test_tests_ordering_matches_the_original_19_checks(self) -> None:
@@ -56,6 +51,14 @@ class EgressSuiteTest(unittest.TestCase):
                 "concurrency-sanity",
             ],
         )
+
+
+@support.requires_openssl
+class EgressSuiteTest(unittest.TestCase):
+    def run_suite(self, engine: str, mode: str, full: bool) -> dict[str, egress.Result]:
+        _, port = support.start_mock(self, mode=mode)
+        results = egress.run_suite(f"http://127.0.0.1:{port}", engine, full=full)
+        return {r.name: r for r in results}
 
     # -- quick suite ------------------------------------------------------
 
@@ -145,24 +148,6 @@ class EgressSuiteTest(unittest.TestCase):
         self.assertEqual(results["dns-rebinding"].outcome, "skip")
         self.assertEqual(results["concurrency-sanity"].outcome, "pass")
 
-    def test_full_suite_lenient_grades_fail_on_every_engine(self) -> None:
-        """No per-engine grading override exists any more: every engine is
-        judged against the same `deny` expectation, the config this repo
-        ships (docs/findings.md §2)."""
-        for engine in ENGINES:
-            with self.subTest(engine=engine):
-                results = self.run_suite(engine, "lenient", full=True)
-                self.assertEqual(
-                    results["connect-sni-mismatch"].outcome,
-                    "fail",
-                    results["connect-sni-mismatch"].detail,
-                )
-                self.assertEqual(
-                    results["connect-raw-tunnel"].outcome,
-                    "fail",
-                    results["connect-raw-tunnel"].detail,
-                )
-
     # -- fixture detection --------------------------------------------------
 
     def test_fixture_detection_activates_with_test_policy(self) -> None:
@@ -173,6 +158,38 @@ class EgressSuiteTest(unittest.TestCase):
         )
         client = transport.ProxyClient("127.0.0.1", port)
         self.assertTrue(runner.fixtures_active(client))
+
+
+class RunnerGradingTest(unittest.TestCase):
+    def test_abuse_checks_use_the_same_grading_for_every_engine(self) -> None:
+        checks = [
+            c
+            for c in catalogue.TESTS
+            if c.name in ("connect-sni-mismatch", "connect-raw-tunnel")
+        ]
+        self.assertEqual(len(checks), 2)
+        for engine in ENGINES:
+            for observed, expected in (("allowed", "fail"), ("denied", "pass")):
+                with (
+                    self.subTest(engine=engine, observed=observed),
+                    patch.object(
+                        runner,
+                        "TESTS",
+                        [
+                            replace(
+                                c,
+                                fn=lambda client, observed=observed: (
+                                    observed,
+                                    "test evidence",
+                                ),
+                            )
+                            for c in checks
+                        ],
+                    ),
+                    patch.object(runner.socket, "create_connection"),
+                ):
+                    results = runner.run_suite("http://127.0.0.1:1", engine, full=True)
+                    self.assertEqual([r.outcome for r in results], [expected, expected])
 
 
 class LogFetchTest(unittest.TestCase):

@@ -177,27 +177,38 @@ def start_engine(
             return False, "container exited during startup"
         return None
 
-    healthy, detail = net.wait_until(settled, HEALTH_WAIT_SECONDS) or (
-        False,
-        "timed out waiting for the proxy to listen",
-    )
-    expected_binding = (host, port, spec.internal_port)
-    actual_bindings = []
-    for published_host, published_port, internal_port in backend.published_ports(
-        spec.container_name
-    ):
-        try:
-            canonical_host, canonical_port = validate_endpoint(
-                published_host, published_port
-            )
-        except ValueError:
-            continue
-        actual_bindings.append((canonical_host, canonical_port, internal_port))
-    if healthy and expected_binding not in actual_bindings:
-        healthy = False
-        detail = f"runtime did not honor requested publication {expected_binding}"
+    try:
+        healthy, detail = net.wait_until(settled, HEALTH_WAIT_SECONDS) or (
+            False,
+            "timed out waiting for the proxy to listen",
+        )
+        if healthy:
+            expected_binding = (host, port, spec.internal_port)
+            actual_bindings = []
+            for (
+                published_host,
+                published_port,
+                internal_port,
+            ) in backend.published_ports(spec.container_name):
+                try:
+                    canonical_host, canonical_port = validate_endpoint(
+                        published_host, published_port
+                    )
+                except ValueError:
+                    continue
+                actual_bindings.append((canonical_host, canonical_port, internal_port))
+            if expected_binding not in actual_bindings:
+                healthy = False
+                detail = (
+                    f"runtime did not honor requested publication {expected_binding}"
+                )
+    except (Fail, OSError) as exc:
+        healthy, detail = False, str(exc)
     if not healthy:
-        logs = backend.tail_logs(spec.container_name)
+        try:
+            logs = backend.tail_logs(spec.container_name)
+        except (Fail, OSError) as exc:
+            logs = f"could not fetch container logs: {exc}"
         try:
             remove_owned(backend, spec.container_name)
         except Fail as cleanup:

@@ -15,6 +15,23 @@ from internet_proxy_locally.constants import ENGINES
 from internet_proxy_locally.spec import ServiceSpec
 from tests import quiet
 
+# Acceptance policy is intentionally independent of the implementation table.
+EXPECTED_FAILURES = {
+    ("smokescreen", False): {
+        "dns-mixed-answers",
+        "connect-sni-mismatch",
+        "connect-raw-tunnel",
+    },
+    ("squid", False): {"connect-sni-mismatch", "connect-raw-tunnel"},
+    ("squid", True): {"connect-sni-mismatch"},
+    ("iron", False): {
+        "dns-mixed-answers",
+        "connect-sni-mismatch",
+        "connect-raw-tunnel",
+    },
+    ("iron", True): {"dns-mixed-answers", "connect-sni-mismatch", "connect-raw-tunnel"},
+}
+
 
 def sample(engine="pipelock", *, full=True, tls=False):
     return {
@@ -61,7 +78,7 @@ class ReleasePolicyTest(unittest.TestCase):
         bundle = benchmark()
         for engine, modes in bundle["runs"].items():
             for mode, run in modes.items():
-                exceptions = release.KNOWN_FAILURES.get((engine, mode == "on"), set())
+                exceptions = EXPECTED_FAILURES.get((engine, mode == "on"), set())
                 for row in run["results"]:
                     row["outcome"] = "fail"
                     with self.subTest(engine=engine, mode=mode, check=row["name"]):

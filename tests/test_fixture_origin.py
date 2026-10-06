@@ -11,6 +11,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import patch
 
 from cryptography import x509
@@ -34,9 +35,13 @@ from internet_proxy_locally.policy.render import render_policies
 from internet_proxy_locally.spec import ServiceSpec
 
 
-def fixture_module():
+def fixture_module(settings: str | None = None):
     config = load_lab_config().fixture
-    settings = f"REBIND_ZONE={config.rebind_zone}\nPUBLIC_ANSWER={config.public_answer}\nPTR_ADDRESS={config.ptr_address}\nPTR_CLAIMS={config.ptr_claims}\n"
+    settings = (
+        settings
+        if settings is not None
+        else f"REBIND_ZONE={config.rebind_zone}\nPUBLIC_ANSWER={config.public_answer}\nPTR_ADDRESS={config.ptr_address}\nPTR_CLAIMS={config.ptr_claims}\n"
+    )
     original = open
 
     def opened(path, *args, **kwargs):
@@ -46,6 +51,45 @@ def fixture_module():
 
     with patch("builtins.open", side_effect=opened):
         return runpy.run_path(str(paths.image_dir() / "dnsfixture/rebind.py"))
+
+
+class FixtureSettingsTest(unittest.TestCase):
+    SETTINGS: ClassVar[dict[str, str]] = {
+        "REBIND_ZONE": "alternate.fixture.test",
+        "PUBLIC_ANSWER": "11.203.0.9",
+        "PTR_ADDRESS": "8.7.6.5",
+        "PTR_CLAIMS": "github.com",
+    }
+
+    def test_responder_and_dnsmasq_use_mounted_settings(self) -> None:
+        code = fixture_module(
+            "\n".join(f"{key}={value}" for key, value in self.SETTINGS.items())
+        )
+        responder = code["Responder"]("172.17.0.9")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(
+                responder.answer_for("a.alternate.fixture.test"), "11.203.0.9"
+            )
+            self.assertEqual(
+                responder.answer_for("a.alternate.fixture.test"), "172.17.0.9"
+            )
+        self.assertIn(
+            "--server=/alternate.fixture.test/127.0.0.1#5353", code["DNSMASQ"]
+        )
+        self.assertIn("--ptr-record=5.6.7.8.in-addr.arpa,github.com", code["DNSMASQ"])
+
+    def test_each_mounted_setting_is_required(self) -> None:
+        for missing in self.SETTINGS:
+            settings = "\n".join(
+                f"{key}={value}"
+                for key, value in self.SETTINGS.items()
+                if key != missing
+            )
+            with (
+                self.subTest(missing=missing),
+                self.assertRaisesRegex(SystemExit, missing),
+            ):
+                fixture_module(settings)
 
 
 class FixtureOriginTest(unittest.TestCase):

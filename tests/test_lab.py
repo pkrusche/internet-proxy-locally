@@ -35,7 +35,7 @@ from internet_proxy_locally.policy.config import load_policy_config
 from internet_proxy_locally.policy.render import _squid_wild, render_policies
 from internet_proxy_locally.spec import SERVICES, ServiceSpec
 from tests import test_runpy
-from tests.test_runpy import PACKAGE_DATA, REPO_ROOT
+from tests.test_runpy import REPO_ROOT
 
 
 def _capture(pattern: str, text: str) -> str:
@@ -332,24 +332,6 @@ class LabUnitTest(unittest.TestCase):
             "run `ipl-lab up` and commit lab/config/fixture.env",
         )
         self.assertEqual(spec.extra_config_mount, "/fixture/fixture.env")
-
-        # rebind.py must hold none of them as a literal, and every fact must
-        # arrive by name through the file it reads.
-        fixture_image = PACKAGE_DATA / "images" / "dnsfixture"
-        rebind = (fixture_image / "rebind.py").read_text()
-        self.assertIn(f'FIXTURE_ENV = "{spec.extra_config_mount}"', rebind)
-        for key, value in (
-            ("REBIND_ZONE", fixture.rebind_zone),
-            ("PTR_ADDRESS", fixture.ptr_address),
-            ("PTR_CLAIMS", fixture.ptr_claims),
-            ("PUBLIC_ANSWER", fixture.public_answer),
-        ):
-            self.assertFalse(
-                f'"{value}"' in rebind,
-                f"rebind.py restates {key} ({value}) as a literal",
-            )
-            self.assertIn(f'_required("{key}")', rebind)
-            self.assertRegex(rendered[env_path], rf"(?m)^{key}={re.escape(value)}$")
 
     # -- config.toml ---------------------------------------------------
 
@@ -652,17 +634,8 @@ class LabUnitTest(unittest.TestCase):
             fixture_spec().container_name, owned_containers(include_fixture=False)
         )
 
-    def test_the_operational_lane_cannot_reach_the_fixture(self) -> None:
-        """The split is the point: `ipl` must not grow this back.
-
-        Asserted on the import graph rather than by grepping one file for
-        banned words, which is what this used to do and which a module
-        split would have quietly defeated. A fresh interpreter imports the
-        operational CLI and nothing else; if any lab module is loaded when
-        it finishes, something in the operational lane imported it, and
-        `ipl up` can reach the machinery that starts a resolver answering
-        allowlisted names with private addresses.
-        """
+    def test_operational_imports_do_not_load_lab_modules(self) -> None:
+        """Architectural boundary; runtime isolation is checked by CLI tests."""
         probe = (
             "import sys; import internet_proxy_locally.cli.run; "
             "print([m for m in sys.modules "

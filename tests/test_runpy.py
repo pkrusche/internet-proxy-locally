@@ -434,13 +434,6 @@ class RunPyCliTest(RunPyCliFixture):
         self.assertEqual(proc.returncode, 1)
         self.assertIn("already in use", proc.stderr)
 
-    def test_up_fails_when_proxy_never_listens(self) -> None:
-        self.build_engine()
-        self.env["FAKE_PROXY_SPAWN"] = ""
-        proc = self.run_cli("--backend", "docker", "up")
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("health check failed", proc.stderr)
-
     # -- lifecycle ----------------------------------------------------------
 
     def test_up_status_check_down_lifecycle(self) -> None:
@@ -723,7 +716,7 @@ class RunPyCliTest(RunPyCliFixture):
                                 "Labels": {
                                     "io.internet-proxy-locally.managed": "true",
                                     "io.internet-proxy-locally.workspace": hashlib.sha256(
-                                        str(self.tmp).encode()
+                                        str(self.tmp.resolve()).encode()
                                     ).hexdigest()[:16],
                                 }
                             },

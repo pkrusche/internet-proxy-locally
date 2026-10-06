@@ -112,6 +112,14 @@ class InstanceCliTest(RunPyCliFixture):
     ) -> str:
         return instance_spec(engine, (ip, port or self.port)).container_name
 
+    def assert_instance_healthy(self, expected_pid: str) -> None:
+        self.assertTrue((self.state / f"container-{self.name()}").exists())
+        self.assertEqual((self.state / f"pid-{self.name()}").read_text(), expected_pid)
+        status = self.run_cli("status")
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertIn("pipelock: running (active)", status.stdout)
+        self.assertIn("proxy check: OK", status.stdout)
+
     def add_container(
         self,
         name: str,
@@ -128,7 +136,7 @@ class InstanceCliTest(RunPyCliFixture):
         labels = {
             LABEL + "managed": str(managed).lower(),
             LABEL + "workspace": workspace
-            or hashlib.sha256(str(self.tmp).encode()).hexdigest()[:16],
+            or hashlib.sha256(str(self.tmp.resolve()).encode()).hexdigest()[:16],
             LABEL + "role": role,
         }
         if not legacy:
@@ -154,9 +162,9 @@ class InstanceCliTest(RunPyCliFixture):
         self.build_engine("squid")
         other_port = free_port()
         self.assertEqual(self.run_cli("up").returncode, 0)
+        original_pid = (self.state / f"pid-{self.name()}").read_text()
         other = self.run_cli("--port", str(other_port), "up")
         self.assertEqual(other.returncode, 0, other.stderr)
-        original_pid = (self.state / f"pid-{self.name()}").read_text()
         switched = self.run_cli(
             "--port", str(other_port), "--engine", "squid", "restart"
         )
@@ -197,6 +205,7 @@ class InstanceCliTest(RunPyCliFixture):
             self.skipTest(f"second loopback address unavailable: {exc}")
         self.build_engine()
         self.assertEqual(self.run_cli("up").returncode, 0)
+        original_pid = (self.state / f"pid-{self.name()}").read_text()
         other = self.run_cli("--ip", "127.0.0.2", "up")
         self.assertEqual(other.returncode, 0, other.stderr)
         listed = self.run_cli("list")
@@ -204,7 +213,7 @@ class InstanceCliTest(RunPyCliFixture):
         self.assertIn(f"127.0.0.1:{self.port}", listed.stdout)
         self.assertIn(f"127.0.0.2:{self.port}", listed.stdout)
         self.assertEqual(self.run_cli("--ip", "127.0.0.2", "down").returncode, 0)
-        self.assertEqual(self.run_cli("status").returncode, 0)
+        self.assert_instance_healthy(original_pid)
 
     def test_wildcard_binding_checks_through_loopback(self) -> None:
         self.build_engine()
@@ -247,28 +256,31 @@ class InstanceCliTest(RunPyCliFixture):
     def test_wildcard_conflict_preserves_existing_instance(self) -> None:
         self.build_engine()
         self.assertEqual(self.run_cli("up").returncode, 0)
+        original_pid = (self.state / f"pid-{self.name()}").read_text()
         result = self.run_cli("--ip", "0.0.0.0", "up")
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("already in use", result.stderr)
         self.assertTrue((self.state / f"container-{self.name()}").exists())
-        self.assertEqual(self.run_cli("status").returncode, 0)
+        self.assert_instance_healthy(original_pid)
 
     def test_failed_start_only_cleans_up_new_instance(self) -> None:
         self.build_engine()
         self.assertEqual(self.run_cli("up").returncode, 0)
+        original_pid = (self.state / f"pid-{self.name()}").read_text()
         self.env["FAKE_PROXY_SPAWN"] = ""
         port = free_port()
         failed = self.run_cli("--port", str(port), "up")
         self.assertEqual(failed.returncode, 1, failed.stderr)
         self.assertIn("created container removed", failed.stderr)
         self.assertFalse((self.state / f"container-{self.name(port=port)}").exists())
-        self.assertEqual(self.run_cli("status").returncode, 0)
+        self.assert_instance_healthy(original_pid)
 
     def test_tls_config_snapshots_are_independent(self) -> None:
         self.build_engine()
         self.assertEqual(self.run_cli("ca", "init").returncode, 0)
         first = self.run_cli("up", "--tls-interception")
         self.assertEqual(first.returncode, 0, first.stderr)
+        original_pid = (self.state / f"pid-{self.name()}").read_text()
         snapshot = (
             self.state
             / "instances"
@@ -287,7 +299,7 @@ class InstanceCliTest(RunPyCliFixture):
         self.assertEqual(snapshot.read_bytes(), before)
         self.assertNotEqual(second.read_bytes(), before)
         self.assertIn(f"{snapshot}:/config/pipelock.yaml:ro", self.backend_log())
-        self.assertEqual(self.run_cli("status").returncode, 0)
+        self.assert_instance_healthy(original_pid)
 
     def test_list_all_workspaces_roles_and_legacy(self) -> None:
         self.add_container(
@@ -372,6 +384,23 @@ class InstanceCliTest(RunPyCliFixture):
             self.assertEqual(key.read_bytes(), before)
         self.add_container(name, port=self.port + 1, workspace="foreign")
         self.assertEqual(self.run_cli("ca", "rotate").returncode, 0)
+
+    def test_alias_workspace_is_current_and_blocks_ca_rotation(self) -> None:
+        alias = self.tmp / "workspace-alias"
+        alias.symlink_to(self.tmp, target_is_directory=True)
+        self.tmp = alias
+        self.env["IPL_ROOT"] = str(alias)
+        self.assertEqual(self.run_cli("ca", "init").returncode, 0)
+        key = self.state / "ca" / "ca-key.pem"
+        before = key.read_bytes()
+        self.add_container(self.name(), port=self.port)
+        listed = self.run_cli("list")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertIn("(current)", listed.stdout)
+        for args in (("ca", "rotate"), ("ca", "init", "--rebuild")):
+            result = self.run_cli(*args)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(key.read_bytes(), before)
 
     def test_invalid_endpoint_has_no_side_effects(self) -> None:
         for args in (("--ip", "localhost"), ("--port", "0"), ("--port", "65536")):

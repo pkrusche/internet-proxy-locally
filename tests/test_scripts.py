@@ -275,6 +275,10 @@ class GeneratedComparisonTest(unittest.TestCase):
         for label in report.LABELS.values():
             self.assertIn(label, sections["matrix"])
 
+
+class ReportInjectionTest(unittest.TestCase):
+    FINDINGS = REPO_ROOT / "docs" / "findings.md"
+
     def test_injection_preserves_prose_between_generated_sections(self) -> None:
         """A replacement must leave prose at every boundary byte-for-byte."""
         prose = [
@@ -302,10 +306,12 @@ class GeneratedComparisonTest(unittest.TestCase):
         self.assertEqual(report.inject(document, sections, self.FINDINGS), expected)
 
     def test_a_missing_marker_is_fatal_rather_than_silently_skipped(self) -> None:
-        sections = report.render_sections(self.runs, self.results_dir)
-        stripped = self.FINDINGS.read_text(encoding="utf-8").replace(
-            "<!-- BEGIN GENERATED matrix -->", ""
+        sections = {name: "replacement" for name in report.SECTIONS}
+        document = "\n".join(
+            f"<!-- BEGIN GENERATED {name} -->\nold\n<!-- END GENERATED {name} -->"
+            for name in report.SECTIONS
         )
+        stripped = document.replace("<!-- BEGIN GENERATED matrix -->", "")
         with self.assertRaises(report.Fail) as ctx:
             report.inject(stripped, sections, self.FINDINGS)
         self.assertIn("matrix", str(ctx.exception))

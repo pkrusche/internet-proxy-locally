@@ -172,9 +172,13 @@ def generate_ca(force: bool = False) -> None:
             if old_key is not None:
                 ca_key_path().write_bytes(old_key)
                 os.chmod(ca_key_path(), 0o600)
+            else:
+                ca_key_path().unlink(missing_ok=True)
             if old_cert is not None:
                 ca_cert_path().write_bytes(old_cert)
                 os.chmod(ca_cert_path(), 0o644)
+            else:
+                ca_cert_path().unlink(missing_ok=True)
             raise
         validate_ca()
     finally:
