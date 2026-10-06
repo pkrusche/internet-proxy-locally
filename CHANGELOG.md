@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Add `ipl --ip ADDRESS --port PORT` for independent proxy instances, including
+IPv6 and non-loopback bindings. Lifecycle commands target the selected
+endpoint; `ipl list` shows running IPL proxies from all workspaces on the
+selected backend. Instance policy snapshots isolate TLS modes, and shared CA
+rotation requires all workspace-owned proxy instances to be stopped.
+
 ## 0.1.0 — 2026-09-14
 
 Initial release. Pipelock, Squid and Iron support optional TLS interception;

@@ -245,6 +245,7 @@ def start_in_thread(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--ip", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument(
         "--mode", choices=("strict", "lenient", "bumping"), default="strict"
@@ -254,8 +255,13 @@ def main() -> int:
     parser.add_argument("--key")
     opts = parser.parse_args()
     allowed = {h.strip() for h in opts.allow.split(",") if h.strip()}
-    server = MockProxyServer(
-        ("127.0.0.1", opts.port),
+
+    class IPv6MockProxyServer(MockProxyServer):
+        address_family = socket.AF_INET6
+
+    server_class = IPv6MockProxyServer if ":" in opts.ip else MockProxyServer
+    server = server_class(
+        (opts.ip, opts.port),
         allowed=allowed,
         mode=opts.mode,
         certfile=opts.cert,

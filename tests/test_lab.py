@@ -23,6 +23,7 @@ from internet_proxy_locally.checks.egress import dns_mixed, dns_rebind, ptr_allo
 from internet_proxy_locally.constants import DNS_FIXTURE, ENGINES
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.images import IMAGES
+from internet_proxy_locally.instances import instance_spec
 from internet_proxy_locally.lab.container import fixture_spec
 from internet_proxy_locally.lab.fixtures import load_lab_config
 from internet_proxy_locally.lab.render import (
@@ -216,6 +217,35 @@ class LabCliTest(test_runpy.RunPyCliFixture):
         self.assertIn("removed internet-proxy-dnsfixture", down.stdout)
         self.assertIn("removed internet-proxy-pipelock", down.stdout)
         self.assertFalse(list(self.state.glob("network-*")))
+
+    def test_lab_and_operational_instances_on_other_endpoints_are_preserved(
+        self,
+    ) -> None:
+        self.build_engine()
+        self.fake_dns_fixture_image()
+        operational_port = test_runpy.free_port()
+        up = self.run_cli("--port", str(operational_port), "up")
+        self.assertEqual(up.returncode, 0, up.stderr)
+        name = instance_spec("pipelock", ("127.0.0.1", operational_port)).container_name
+        lab_up = self.lab_cli("up")
+        self.assertEqual(lab_up.returncode, 0, lab_up.stderr)
+        self.assertTrue((self.state / f"container-{name}").exists())
+        listed = self.run_cli("list")
+        self.assertIn("lab", listed.stdout)
+        self.assertIn("operational", listed.stdout)
+        down = self.run_cli("--port", str(operational_port), "down")
+        self.assertEqual(down.returncode, 0, down.stderr)
+        self.assertTrue((self.state / "container-internet-proxy-dnsfixture").exists())
+        self.assertTrue(list(self.state.glob("network-*")))
+        restarted = self.run_cli("--port", str(operational_port), "up")
+        self.assertEqual(restarted.returncode, 0, restarted.stderr)
+        self.assertTrue((self.state / "container-internet-proxy-pipelock").exists())
+        lab_down = self.lab_cli("down")
+        self.assertEqual(lab_down.returncode, 0, lab_down.stderr)
+        self.assertTrue((self.state / f"container-{name}").exists())
+        self.assertEqual(
+            self.run_cli("--port", str(operational_port), "status").returncode, 0
+        )
 
     def test_up_refuses_without_the_fixture_image(self) -> None:
         self.build_engine()  # fixture image deliberately absent

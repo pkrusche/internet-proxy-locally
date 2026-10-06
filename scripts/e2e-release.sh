@@ -24,9 +24,13 @@ import sys
 
 from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.lifecycle import owned_containers
+from internet_proxy_locally.constants import ENGINES
+from internet_proxy_locally.instances import instance_spec
+from internet_proxy_locally.net import endpoint
 
 backend = Backend(sys.argv[1])
-running = [name for name in owned_containers() if backend.container_state(name) != "absent"]
+names = owned_containers() + [instance_spec(engine, endpoint(loopback_only=False)).container_name for engine in ENGINES]
+running = [name for name in names if backend.container_state(name) != "absent"]
 if running:
     print("error: found existing containers: " + ", ".join(running), file=sys.stderr)
     print(
@@ -189,9 +193,18 @@ check_denied_destination() {
     return 1
 }
 
+proxy_url() {
+    uv run --no-sync python -c '
+from internet_proxy_locally.net import endpoint, endpoint_text, probe_address
+host, port = endpoint(loopback_only=False)
+print("http://" + endpoint_text(probe_address(host), port))
+'
+}
+
 tls_curl_check() {
     local engine="$1"
-    local proxy="http://${IPL_ENDPOINT:-127.0.0.1:18089}"
+    local proxy
+    proxy="$(proxy_url)" || return
     local rc=0
     local curl_args=(
         curl --disable --silent --show-error --max-time 60 --connect-timeout 15
@@ -223,7 +236,8 @@ tls_curl_check() {
 }
 
 rotation_check() {
-    local proxy="http://${IPL_ENDPOINT:-127.0.0.1:18089}"
+    local proxy
+    proxy="$(proxy_url)" || return
     local curl_args=(
         curl --disable --silent --show-error --max-time 60 --connect-timeout 15
         --proxy "$proxy" --noproxy "" --output /dev/null

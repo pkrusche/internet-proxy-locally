@@ -311,7 +311,15 @@ stat() {
         prefix += '\nfixture_stat() { case "$1" in\n' + "\n".join(cases)
         prefix += "\n*) return 1 ;;\nesac; }\n"
         return subprocess.run(
-            ["sh", "-c", runtime + script, "check-squid", backend, mode],
+            [
+                "sh",
+                "-c",
+                runtime + script,
+                "check-squid",
+                backend,
+                mode,
+                "internet-proxy-squid",
+            ],
             env={**os.environ, "TEST_PREFIX": prefix, **env},
             capture_output=True,
             text=True,

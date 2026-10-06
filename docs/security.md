@@ -57,9 +57,15 @@ checks where we see actual differences.
 
 ## Endpoint exposure and logging
 
-The container publishes `127.0.0.1:18080` only.
+The default publication is `127.0.0.1:18080`. Operational `--ip` and `--port`
+options (or `IPL_ENDPOINT`) can select other IPv4/IPv6 addresses and ports.
+Non-loopback and wildcard bindings expose the proxy to other machines that
+can reach those interfaces; choose the bind address accordingly. The lab
+continues to require a loopback endpoint. Startup verifies that the runtime
+honored the requested publication and that the proxy denies unknown hosts.
 
-Engine logs can be viewed via `ipl logs`. Depending on engine and mode they
+Engine logs can be viewed via `ipl --ip ADDRESS --port PORT logs` for the
+selected instance, or `ipl logs` for the default endpoint. Depending on engine and mode they
 can contain full URLs and query strings, targets, verdicts, and denial reasons.
 Plain HTTP is visible with interception off. The shipped configuration does not
 deliberately log bodies/headers, but makes no general redaction guarantee.

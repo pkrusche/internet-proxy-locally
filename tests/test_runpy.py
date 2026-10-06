@@ -8,6 +8,7 @@ endpoint, so the post-start health check and `check` run for real.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -33,6 +34,7 @@ from internet_proxy_locally.backend import Backend
 from internet_proxy_locally.constants import DNS_FIXTURE, ENGINES
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.images import IMAGES
+from internet_proxy_locally.instances import instance_spec
 from internet_proxy_locally.net import probe_proxy
 from internet_proxy_locally.policy.config import PolicyConfig, load_policy_config
 from internet_proxy_locally.policy.render import (
@@ -80,6 +82,14 @@ case "$cmd" in
       rm) rm -f "$FAKE_STATE/network-$1" ;;
     esac
     ;;
+  ps|list)
+    if [ -n "${FAKE_LIST_FAIL:-}" ]; then echo "enumeration failed" >&2; exit 1; fi
+    for f in "$FAKE_STATE"/container-*; do
+      [ -f "$f" ] || continue
+      name="${f##*/container-}"
+      echo "$name"
+    done
+    ;;
   inspect)
     f="$FAKE_STATE/container-$1"
     if [ -f "$f" ]; then
@@ -121,7 +131,7 @@ case "$cmd" in
     done
     ;;
   run)
-    name=""; prev=""; published=""; label_managed=""; label_workspace=""; label_tls="false"; builtin_network=""; custom_network=""
+    name=""; prev=""; published=""; label_managed=""; label_workspace=""; label_tls="false"; label_engine=""; label_role=""; builtin_network=""; custom_network=""
     for a in "$@"; do
       if [ "$prev" = "--network" ]; then
         case "$a" in bridge|host|none) builtin_network=1;; *) custom_network=1;; esac
@@ -130,7 +140,7 @@ case "$cmd" in
       if [ "$a" = "--publish" ]; then published=1; fi
       if [ "$prev" = "--publish" ]; then publication="$a"; fi
       if [ "$prev" = "--label" ]; then
-        case "$a" in io.internet-proxy-locally.managed=*) label_managed="${a#*=}";; io.internet-proxy-locally.workspace=*) label_workspace="${a#*=}";; io.internet-proxy-locally.tls-interception=*) label_tls="${a#*=}";; esac
+        case "$a" in io.internet-proxy-locally.engine=*) label_engine="${a#*=}";; io.internet-proxy-locally.role=*) label_role="${a#*=}";; io.internet-proxy-locally.managed=*) label_managed="${a#*=}";; io.internet-proxy-locally.workspace=*) label_workspace="${a#*=}";; io.internet-proxy-locally.tls-interception=*) label_tls="${a#*=}";; esac
       fi
       prev="$a"
     done
@@ -140,10 +150,15 @@ case "$cmd" in
     fi
     echo running > "$FAKE_STATE/container-$name"
     if [ -n "$published" ]; then
-      host="${publication%%:*}"; rest="${publication#*:}"; hostport="${rest%%:*}"; containerport="${rest##*:}"
-      printf '[{"State":{"Status":"running"},"Config":{"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s","io.internet-proxy-locally.tls-interception":"%s"}},"NetworkSettings":{"IPAddress":"172.17.0.9"},"HostConfig":{"PortBindings":{"%s/tcp":[{"HostIp":"%s","HostPort":"%s"}]}}}]\n' "$label_managed" "$label_workspace" "$label_tls" "$containerport" "$host" "$hostport" > "$FAKE_STATE/meta-$name"
+      case "$publication" in
+        \[* ) host="${publication#\[}"; host="${host%%\]*}"; rest="${publication#*\]:}";;
+        * ) host="${publication%%:*}"; rest="${publication#*:}";;
+      esac
+      hostport="${rest%%:*}"; containerport="${rest##*:}"
+      metadata_host="${FAKE_PUBLISH_IP_OVERRIDE:-$host}"
+      printf '[{"State":{"Status":"running"},"Config":{"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s","io.internet-proxy-locally.tls-interception":"%s","io.internet-proxy-locally.engine":"%s","io.internet-proxy-locally.role":"%s"}},"NetworkSettings":{"IPAddress":"172.17.0.9"},"HostConfig":{"PortBindings":{"%s/tcp":[{"HostIp":"%s","HostPort":"%s"}]}}}]\n' "$label_managed" "$label_workspace" "$label_tls" "$label_engine" "$label_role" "$containerport" "$metadata_host" "$hostport" > "$FAKE_STATE/meta-$name"
     else
-      printf '[{"State":{"Status":"running"},"Config":{"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s","io.internet-proxy-locally.tls-interception":"%s"}},"NetworkSettings":{"IPAddress":"172.17.0.9"}}]\n' "$label_managed" "$label_workspace" "$label_tls" > "$FAKE_STATE/meta-$name"
+      printf '[{"State":{"Status":"running"},"Config":{"Labels":{"io.internet-proxy-locally.managed":"%s","io.internet-proxy-locally.workspace":"%s","io.internet-proxy-locally.tls-interception":"%s","io.internet-proxy-locally.engine":"%s","io.internet-proxy-locally.role":"%s"}},"NetworkSettings":{"IPAddress":"172.17.0.9"}}]\n' "$label_managed" "$label_workspace" "$label_tls" "$label_engine" "$label_role" > "$FAKE_STATE/meta-$name"
     fi
     # Only the engine publishes a port; the DNS fixture must not also try
     # to bind the test endpoint.
@@ -152,7 +167,7 @@ case "$cmd" in
       if [ -n "${FAKE_PROXY_CERT:-}" ]; then
         extra="--cert $FAKE_PROXY_CERT --key $FAKE_PROXY_KEY"
       fi
-      "$FAKE_PYTHON" "$FAKE_PROXY_SPAWN" --port "$FAKE_PROXY_PORT" --mode strict $extra >/dev/null 2>&1 &
+      "$FAKE_PYTHON" "$FAKE_PROXY_SPAWN" --ip "$host" --port "$hostport" --mode strict $extra >/dev/null 2>&1 &
       echo $! > "$FAKE_STATE/pid-$name"
     fi
     echo fakecontainerid
@@ -246,7 +261,6 @@ class RunPyCliFixture(unittest.TestCase):
                 "PATH": f"{bindir}:{self.env['PATH']}",
                 "FAKE_LOG": str(self.log),
                 "FAKE_STATE": str(self.state),
-                "FAKE_PROXY_PORT": str(self.port),
                 "FAKE_PROXY_SPAWN": str(REPO_ROOT / "tests" / "mock_proxy.py"),
                 "FAKE_PYTHON": os.fspath(Path(sys.executable)),
                 "IPL_ENDPOINT": f"127.0.0.1:{self.port}",
@@ -462,7 +476,12 @@ class RunPyCliTest(RunPyCliFixture):
         down = self.run_cli("--backend", "docker", "down")
         self.assertEqual(down.returncode, 0)
         self.assertIn("removed internet-proxy-pipelock", down.stdout)
-        self.assertFalse((self.state / "container-internet-proxy-pipelock").exists())
+        self.assertFalse(
+            (
+                self.state
+                / f"container-{instance_spec('pipelock', ('127.0.0.1', self.port)).container_name}"
+            ).exists()
+        )
 
     def test_check_wires_engine_log_capture(self) -> None:
         # `check` should pass --backend-bin/--container through to
@@ -694,6 +713,24 @@ class RunPyCliTest(RunPyCliFixture):
         for engine in ENGINES:
             state = self.state / f"container-internet-proxy-{engine}"
             state.write_text("running")
+            metadata = self.state / f"meta-internet-proxy-{engine}"
+            metadata.write_text(
+                json.dumps(
+                    [
+                        {
+                            "State": {"Status": "running"},
+                            "Config": {
+                                "Labels": {
+                                    "io.internet-proxy-locally.managed": "true",
+                                    "io.internet-proxy-locally.workspace": hashlib.sha256(
+                                        str(self.tmp).encode()
+                                    ).hexdigest()[:16],
+                                }
+                            },
+                        }
+                    ]
+                )
+            )
             try:
                 for args in (("ca", "rotate"), ("ca", "init", "--rebuild")):
                     with self.subTest(engine=engine, args=args):
@@ -704,6 +741,7 @@ class RunPyCliTest(RunPyCliFixture):
                             self.assertEqual((ca_dir / name).read_bytes(), contents)
             finally:
                 state.unlink()
+                metadata.unlink()
 
     def test_ca_export_fails_with_no_ca(self) -> None:
         proc = self.run_cli("ca", "export", "--out", str(self.tmp / "out.pem"))

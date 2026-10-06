@@ -63,11 +63,52 @@ See [docs/policy.md](docs/policy.md).
 | `ipl logs` | engine logs |
 | `ipl check` | allow/deny behavior against the live proxy |
 | `ipl restart` | render, then recreate the proxy |
-| `ipl down` | remove containers owned by this repository |
+| `ipl down` | remove this workspace's proxy at the selected endpoint |
+| `ipl list` | list running IPL proxies across all workspaces on the selected backend |
 | `ipl ca init/status/export/rotate` | manage the opt-in TLS-interception CA ([docs/tls-interception.md](docs/tls-interception.md)) |
 
 `--engine pipelock|smokescreen|squid|iron` and `--backend docker|container`
 override the defaults; `ipl --help` is the full reference.
+
+## Multiple instances
+
+Global `--ip` and `--port` options select the listening endpoint. Put them
+before the subcommand:
+
+```bash
+uv run ipl --ip 127.0.0.1 --port 18080 up
+uv run ipl --ip 127.0.0.2 --port 18080 up
+uv run ipl --port 18081 --engine squid setup
+uv run ipl --port 18081 --engine squid up
+uv run ipl list
+uv run ipl --port 18081 logs
+uv run ipl --port 18081 down
+```
+
+`up`, `restart`, `down`, `status`, `logs`, and `check` target only the selected
+endpoint in this workspace. Switching engines replaces only that endpoint's
+proxy. Each IP/port pair gets a distinct container name; equivalent IPv6
+spellings select the same instance. Different workspaces still cannot manage
+each other's containers, and cannot claim the same engine/IP/port name.
+
+Each CLI component overrides its corresponding component in `IPL_ENDPOINT`,
+which otherwise defaults to `127.0.0.1:18080`. IPv6 literals are supported,
+for example `--ip ::1`; an IPv6 environment endpoint can be `[::1]:18080`.
+Non-loopback and wildcard addresses are allowed. Binding `0.0.0.0` or `::`
+exposes the proxy on other interfaces; wildcard bindings can conflict with
+specific addresses on the same port. Local checks and client hints use
+loopback for wildcard bindings; remote clients use the host's reachable IP.
+
+`list` ignores IP, port, and engine selectors and shows running operational,
+lab, and legacy IPL proxies, their actual bind endpoints, container names,
+workspace hashes, and roles. The current workspace is marked. It does not
+check proxy health; use endpoint-specific `status` or `check` for that.
+
+Instances share images, the source policy, and the workspace CA. Each instance
+mounts a policy snapshot under `state/instances/`, so starting another instance
+with a different TLS mode leaves existing configurations intact. Stop every
+workspace-owned proxy on the selected backend before rotating the shared CA.
+`ipl-lab` retains its single-instance workflow and loopback-only endpoint.
 
 ## Version pinning
 

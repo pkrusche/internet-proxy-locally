@@ -5,9 +5,19 @@ backend="${1:?expected docker or container}"
 mode="${2:?expected on or off}"
 case "$backend" in docker|container) ;; *) exit 2 ;; esac
 case "$mode" in on|off) ;; *) exit 2 ;; esac
+name="${3:-}"
+if [ -z "$name" ]; then
+    name="$(uv run --no-sync python -c '
+import sys
+from internet_proxy_locally.backend import Backend
+from internet_proxy_locally.instances import selected_spec
+from internet_proxy_locally.net import endpoint
+print(selected_spec(Backend(sys.argv[1]), "squid", endpoint(loopback_only=False)).container_name)
+' "$backend")"
+fi
 
 # Explicit user is essential: the image bootstrap may have been started as root.
-"$backend" exec --user squid internet-proxy-squid sh -ec '
+"$backend" exec --user squid "$name" sh -ec '
     phase="resolve Squid identity"
     trap '\''rc=$?; if [ "$rc" -ne 0 ]; then echo "Squid runtime verification failed: $phase (exit $rc)" >&2; fi'\'' EXIT
     equal() {

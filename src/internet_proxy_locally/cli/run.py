@@ -20,6 +20,13 @@ from internet_proxy_locally.constants import (
 )
 from internet_proxy_locally.errors import Fail
 from internet_proxy_locally.images import prepare_image
+from internet_proxy_locally.instances import (
+    Endpoint,
+    discover_instances,
+    selected_container_names,
+    selected_spec,
+    workspace_id,
+)
 from internet_proxy_locally.lifecycle import (
     all_specs,
     owned_containers,
@@ -27,9 +34,15 @@ from internet_proxy_locally.lifecycle import (
     remove_owned,
     running_engine,
 )
-from internet_proxy_locally.net import endpoint, port_listening, probe_proxy
+from internet_proxy_locally.net import (
+    endpoint_text,
+    port_listening,
+    probe_address,
+    probe_proxy,
+)
 from internet_proxy_locally.policy.render import (
-    config_destination,
+    instance_config_destination,
+    sync_instance_policies,
     sync_policies,
 )
 from internet_proxy_locally.spec import ServiceSpec
@@ -67,10 +80,13 @@ def cmd_up(opts: argparse.Namespace) -> int:
     reachable from it would answer allowlisted names with private
     addresses.
     """
+    binding = opts.binding
     return common.run_up_command(
         opts=opts,
-        sync=partial(sync_policies, tls_interception=opts.tls_interception),
-        destination=config_destination,
+        sync=partial(
+            sync_instance_policies, binding, tls_interception=opts.tls_interception
+        ),
+        destination=partial(instance_config_destination, binding=binding),
         tls_interception=opts.tls_interception,
     )
 
@@ -78,12 +94,18 @@ def cmd_up(opts: argparse.Namespace) -> int:
 def cmd_down(opts: argparse.Namespace) -> int:
     backend = detect_backend(opts.backend)
     removed = False
-    for name in owned_containers():
+    binding: Endpoint | None = getattr(opts, "binding", None)
+    if binding is None:
+        names = owned_containers()
+    else:
+        names = selected_container_names(backend, binding)
+    for name in names:
         if remove_owned(backend, name):
             print(f"removed {name}")
             removed = True
-    backend.remove_lab_network(FIXTURE_NETWORK_NAME, ownership_labels())
-    backend.remove_lab_network(FIXTURE_PRIVATE_NETWORK_NAME, ownership_labels())
+    if ServiceSpec.load("dnsfixture").container_name in names:
+        backend.remove_lab_network(FIXTURE_NETWORK_NAME, ownership_labels())
+        backend.remove_lab_network(FIXTURE_PRIVATE_NETWORK_NAME, ownership_labels())
     if not removed:
         print("nothing to remove")
     return 0
@@ -97,11 +119,12 @@ def cmd_restart(opts: argparse.Namespace) -> int:
 
 def cmd_status(opts: argparse.Namespace) -> int:
     backend = detect_backend(opts.backend)
-    host, port = endpoint()
-    active = running_engine(backend)
+    host, port = opts.binding
+    active = running_engine(backend, opts.binding)
     print(f"backend:  {backend.name}")
-    print(f"endpoint: http://{host}:{port}")
+    print(f"endpoint: http://{endpoint_text(host, port)}")
     for spec in all_specs():
+        spec = selected_spec(backend, spec.engine, opts.binding)
         state = backend.container_state(spec.container_name)
         marker = " (active)" if spec.engine == active else ""
         print(f"{spec.engine}: {state}{marker}")
@@ -110,8 +133,8 @@ def cmd_status(opts: argparse.Namespace) -> int:
         print(f"  built:     {'yes' if backend.image_present(spec.image) else 'no'}")
     if active:
         healthy, detail, _ = (
-            probe_proxy(host, port)
-            if port_listening(host, port)
+            probe_proxy(probe_address(host), port)
+            if port_listening(probe_address(host), port)
             else (False, "endpoint not listening", False)
         )
         print(f"proxy check: {'OK' if healthy else 'FAILED'} — {detail}")
@@ -122,12 +145,12 @@ def cmd_status(opts: argparse.Namespace) -> int:
 
 def cmd_logs(opts: argparse.Namespace) -> int:
     backend = detect_backend(opts.backend)
-    engine = opts.engine or running_engine(backend)
+    engine = opts.engine or running_engine(backend, opts.binding)
     if not engine:
         raise Fail(
             "no engine is running; pass --engine to view a stopped container's logs"
         )
-    spec = ServiceSpec.load(engine)
+    spec = selected_spec(backend, engine, opts.binding)
     if backend.container_state(spec.container_name) == "absent":
         raise Fail(f"no container {spec.container_name} exists")
     return backend.logs(spec.container_name, follow=opts.follow)
@@ -145,7 +168,44 @@ def cmd_check(opts: argparse.Namespace) -> int:
         cli="ipl",
         group="--quick",
         as_json=opts.json,
+        binding=opts.binding,
     )
+
+
+def cmd_list(opts: argparse.Namespace) -> int:
+    backend = detect_backend(opts.backend)
+    instances = discover_instances(backend)
+    if not instances:
+        print("no running IPL instances")
+        return 0
+    rows = [("ENGINE", "ENDPOINT", "CONTAINER", "WORKSPACE", "ROLE")]
+    for instance in sorted(
+        instances,
+        key=lambda item: (
+            item.workspace,
+            item.binding or ("", 0),
+            item.engine,
+            item.name,
+        ),
+    ):
+        workspace = instance.workspace
+        if workspace == workspace_id():
+            workspace += " (current)"
+        rows.append(
+            (
+                instance.engine,
+                endpoint_text(*instance.binding) if instance.binding else "unknown",
+                instance.name,
+                workspace,
+                instance.role,
+            )
+        )
+    widths = [max(len(row[index]) for row in rows) for index in range(5)]
+    for row in rows:
+        print(
+            "  ".join(value.ljust(width) for value, width in zip(row, widths)).rstrip()
+        )
+    return 0
 
 
 def cmd_ca_init(opts: argparse.Namespace) -> int:
@@ -179,9 +239,16 @@ def cmd_ca_export(opts: argparse.Namespace) -> int:
 
 
 def _require_proxy_down(opts: argparse.Namespace) -> None:
-    active = running_engine(detect_backend(opts.backend))
+    active = [
+        instance
+        for instance in discover_instances(detect_backend(opts.backend))
+        if instance.workspace == workspace_id()
+    ]
     if active:
-        raise Fail(f"cannot rotate CA while {active} is running — run `ipl down` first")
+        raise Fail(
+            f"cannot rotate CA while {active[0].name} is running — "
+            "run `ipl down` first for each running endpoint (or `ipl-lab down` for the lab)"
+        )
 
 
 def cmd_ca_rotate(opts: argparse.Namespace) -> int:
@@ -206,6 +273,12 @@ def build_parser() -> argparse.ArgumentParser:
         parser,
         engine_help=f"proxy engine (default: {DEFAULT_ENGINE}; "
         "status-dependent for logs/check)",
+    )
+    parser.add_argument(
+        "--ip", help="listening IP (default: IPL_ENDPOINT or 127.0.0.1)"
+    )
+    parser.add_argument(
+        "--port", type=int, help="listening port (default: IPL_ENDPOINT or 18080)"
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -233,11 +306,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub.add_parser(
-        "down", help="remove containers owned by this repository"
+        "down", help="remove this workspace's proxy at the selected endpoint"
     ).set_defaults(func=cmd_down)
     sub.add_parser(
         "status", help="show engine/backend/image/endpoint state"
     ).set_defaults(func=cmd_status)
+    sub.add_parser(
+        "list",
+        help="list running IPL instances from all workspaces on the selected backend",
+    ).set_defaults(func=cmd_list)
 
     p_logs = sub.add_parser("logs", help="show engine logs")
     p_logs.add_argument("--follow", "-f", action="store_true")

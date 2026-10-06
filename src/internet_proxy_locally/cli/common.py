@@ -6,13 +6,16 @@ import argparse
 import subprocess
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from internet_proxy_locally.backend import Backend, detect_backend
 from internet_proxy_locally.constants import BACKENDS, DEFAULT_ENGINE, ENGINES
 from internet_proxy_locally.errors import Fail
+from internet_proxy_locally.instances import Endpoint, instance_spec
 from internet_proxy_locally.lifecycle import egress_command, start_engine
-from internet_proxy_locally.net import endpoint
+from internet_proxy_locally.net import endpoint, endpoint_text, probe_address
+from internet_proxy_locally.policy.render import instance_config_destination
 from internet_proxy_locally.spec import ServiceSpec
 
 BACKEND_HELP = (
@@ -57,6 +60,11 @@ def main(parser: argparse.ArgumentParser, argv: list[str] | None = None) -> int:
     """
     opts = parser.parse_args(argv)
     try:
+        if hasattr(opts, "ip") and opts.command != "list":
+            try:
+                opts.binding = endpoint(opts.ip, opts.port, loopback_only=False)
+            except ValueError as exc:
+                raise Fail(str(exc)) from exc
         return opts.func(opts)
     except Fail as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -68,8 +76,8 @@ def main(parser: argparse.ArgumentParser, argv: list[str] | None = None) -> int:
 def client_hint(host: str, port: int) -> None:
     """The line that tells someone how to actually use what just started."""
     print(
-        f"clients: export HTTP_PROXY=http://{host}:{port} "
-        f"HTTPS_PROXY=http://{host}:{port}"
+        f"clients: export HTTP_PROXY=http://{endpoint_text(probe_address(host), port)} "
+        f"HTTPS_PROXY=http://{endpoint_text(probe_address(host), port)}"
     )
 
 
@@ -86,7 +94,16 @@ def run_up_command(
     engine = opts.engine or DEFAULT_ENGINE
     spec = ServiceSpec.load(engine)
     backend = detect_backend(opts.backend)
-    host, port = endpoint()
+    binding = getattr(opts, "binding", None)
+    host, port = binding if binding is not None else endpoint()
+    if binding is not None:
+        spec = instance_spec(engine, binding)
+        if spec.extra_config_file:
+            extra_path = (
+                instance_config_destination(spec, binding).parent
+                / Path(spec.extra_config_file).name
+            )
+            spec = replace(spec, extra_config_file=str(extra_path))
 
     sync()
 
@@ -106,6 +123,7 @@ def run_up_command(
         dns=dns,
         keep_fixture=bool(dns),
         tls_interception=tls_interception,
+        binding=binding,
     )
     client_hint(host, port)
     return 0
@@ -119,6 +137,7 @@ def run_egress_check(
     group: str,
     as_json: bool,
     extra: list[str] | None = None,
+    binding: Endpoint | None = None,
 ) -> int:
     """`check` for either lane: build the checker argv and run it.
 
@@ -126,7 +145,7 @@ def run_egress_check(
     behavior, `--full` the adversarial suite — and in the `extra` arguments
     the lab lane adds to wire up the DNS fixture's log stream.
     """
-    cmd = egress_command(backend, engine, cli) + list(extra or [])
+    cmd = egress_command(backend, engine, cli, binding) + list(extra or [])
     cmd.append(group)
     if as_json:
         cmd.append("--json")

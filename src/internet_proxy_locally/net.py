@@ -13,30 +13,50 @@ from http.client import HTTPException, HTTPResponse
 from internet_proxy_locally.constants import DEFAULT_ENDPOINT
 
 
-def endpoint() -> tuple[str, int]:
-    """Return a validated loopback endpoint.
+def validate_endpoint(
+    host: str, port: int, *, loopback_only: bool = False
+) -> tuple[str, int]:
+    address = ipaddress.ip_address(host)
+    if getattr(address, "scope_id", None):
+        raise ValueError("scoped IPv6 addresses are not supported")
+    if loopback_only and not address.is_loopback:
+        raise ValueError("address must be loopback")
+    if not 1 <= port <= 65535:
+        raise ValueError("port must be 1..65535")
+    return str(address), port
 
-    The environment override is useful to isolate tests, but it is still an
-    input crossing the security boundary: accepting ``0.0.0.0`` here would
-    publish the proxy to the LAN.
+
+def endpoint(
+    ip: str | None = None, port: int | None = None, *, loopback_only: bool = True
+) -> tuple[str, int]:
+    """Resolve CLI components over IPL_ENDPOINT over the shipped default.
+
+    Lab callers retain loopback-only validation; operational callers explicitly
+    allow other interfaces.
     """
     raw = os.environ.get("IPL_ENDPOINT", DEFAULT_ENDPOINT)
     host, sep, port_text = raw.rpartition(":")
-    if not sep or not host or not port_text:
-        raise ValueError(
-            f"invalid IPL_ENDPOINT {raw!r}: expected loopback-address:port"
-        )
-    host = host.removeprefix("[").removesuffix("]")
     try:
-        address = ipaddress.ip_address(host)
-        port = int(port_text)
+        if (ip is None or port is None) and (not sep or not host or not port_text):
+            raise ValueError("expected IP-address:port")
+        return validate_endpoint(
+            ip if ip is not None else host.removeprefix("[").removesuffix("]"),
+            port if port is not None else int(port_text),
+            loopback_only=loopback_only,
+        )
     except ValueError as exc:
-        raise ValueError(f"invalid IPL_ENDPOINT {raw!r}: {exc}") from exc
-    if not address.is_loopback:
-        raise ValueError(f"invalid IPL_ENDPOINT {raw!r}: address must be loopback")
-    if not 1 <= port <= 65535:
-        raise ValueError(f"invalid IPL_ENDPOINT {raw!r}: port must be 1..65535")
-    return str(address), port
+        raise ValueError(f"invalid endpoint (IPL_ENDPOINT {raw!r}): {exc}") from exc
+
+
+def endpoint_text(host: str, port: int) -> str:
+    return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+
+
+def probe_address(host: str) -> str:
+    address = ipaddress.ip_address(host)
+    if address.is_unspecified:
+        return "::1" if address.version == 6 else "127.0.0.1"
+    return host
 
 
 def port_listening(host: str, port: int, timeout: float = 1.0) -> bool:

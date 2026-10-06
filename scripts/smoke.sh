@@ -52,8 +52,6 @@ esac
 command -v "$backend" >/dev/null || { echo "$backend is not installed" >&2; exit 1; }
 
 export IPL_ENDPOINT="${IPL_ENDPOINT:-127.0.0.1:18089}"
-host="${IPL_ENDPOINT%:*}"
-port="${IPL_ENDPOINT##*:}"
 smoke_results="$(mktemp)"
 
 cleanup() {
@@ -68,8 +66,11 @@ cleanup() {
         uv run --no-sync python -c '
 import sys
 from internet_proxy_locally.backend import Backend
-from internet_proxy_locally.spec import ServiceSpec
-print(Backend(sys.argv[1]).tail_logs(ServiceSpec.load(sys.argv[2]).container_name, lines=40))
+from internet_proxy_locally.instances import selected_spec
+from internet_proxy_locally.net import endpoint
+backend = Backend(sys.argv[1])
+spec = selected_spec(backend, sys.argv[2], endpoint(loopback_only=False))
+print(backend.tail_logs(spec.container_name, lines=40))
 ' "$backend" "$engine" >&2 || true
     fi
     uv run --no-sync ipl --backend "$backend" down >/dev/null 2>&1 || true
@@ -84,12 +85,14 @@ fi
 uv run --no-sync ipl --backend "$backend" --engine "$engine" up
 
 uv run --no-sync python -c '
-import socket, sys
-host, port = sys.argv[1], int(sys.argv[2])
+import socket
+from internet_proxy_locally.net import endpoint, probe_address, endpoint_text
+host, port = endpoint(loopback_only=False)
+host = probe_address(host)
 with socket.create_connection((host, port), timeout=2):
     pass
-print(f"proxy is listening on {host}:{port}")
-' "$host" "$port"
+print(f"proxy is listening on {endpoint_text(host, port)}")
+'
 
 if [ "$engine" = squid ]; then
     sh scripts/check-squid-runtime.sh "$backend" off
@@ -109,10 +112,11 @@ uv run --no-sync ipl --backend "$backend" down
 uv run --no-sync python -c '
 import sys
 from internet_proxy_locally.backend import Backend
-from internet_proxy_locally.spec import ServiceSpec
+from internet_proxy_locally.instances import instance_spec
+from internet_proxy_locally.net import endpoint
 
 backend, engine = sys.argv[1:]
-name = ServiceSpec.load(engine).container_name
+name = instance_spec(engine, endpoint(loopback_only=False)).container_name
 state = Backend(backend).container_state(name)
 if state != "absent":
     raise SystemExit(f"error: {name} is {state} after ipl down")

@@ -34,9 +34,11 @@ ipl-lab down      # remove both
 `--engine` selects the proxy. `--backend docker` is optional and is the only
 lab backend; `--backend container` is rejected before starting anything.
 
-`ipl-lab down` removes the Docker proxies, fixture, and both owned networks.
-Operational `ipl --backend docker up` also removes stale lab networks after
-removing its containers. Apple operational commands do not contact Docker.
+`ipl-lab down` removes the fixed-name lab proxy, fixture, and both owned
+networks, leaving endpoint-specific operational instances alone. Operational
+`ipl --backend docker up` replaces a legacy lab proxy and removes its fixture
+and networks only when that proxy publishes the selected endpoint. Lab
+instances on other endpoints are preserved. Apple operational commands do not contact Docker.
 Network ownership labels are checked before reuse or removal.
 
 

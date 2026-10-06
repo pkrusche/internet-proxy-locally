@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from internet_proxy_locally import ca, net, paths
@@ -16,7 +16,22 @@ from internet_proxy_locally.constants import (
     HEALTH_WAIT_SECONDS,
 )
 from internet_proxy_locally.errors import Fail
-from internet_proxy_locally.net import endpoint, port_listening, probe_proxy
+from internet_proxy_locally.instances import (
+    LABEL,
+    Endpoint,
+    instance_spec,
+    selected_container_names,
+    selected_spec,
+    workspace_id,
+)
+from internet_proxy_locally.net import (
+    endpoint,
+    endpoint_text,
+    port_listening,
+    probe_address,
+    probe_proxy,
+    validate_endpoint,
+)
 from internet_proxy_locally.spec import ServiceSpec
 
 
@@ -25,17 +40,10 @@ def all_specs() -> list[ServiceSpec]:
 
 
 def owned_containers(include_fixture: bool = True) -> list[str]:
-    """Every container name this repository is allowed to remove.
+    """Fixed lab/legacy names; operational endpoint cleanup is separate.
 
-    One definition, because both lanes sweep this list and a container
-    added to one copy and not the other would survive a `down`. The DNS
-    fixture is in it even from the operational lane: a stale resolver must
-    never be left running alongside a real policy. `include_fixture=False`
-    is for `ipl-lab up`, which starts the fixture *before* the engine —
-    it has to, the engine needs its address for `--dns`.
-
-    The fixture's name is read from `spec.SERVICES` rather than restated:
-    `spec` is shared, so naming it here is a lookup and not a lab import.
+    Lab startup preserves the fixture it has just started. Actual removal
+    always checks ownership labels, including the workspace identifier.
     """
     names = [spec.container_name for spec in all_specs()]
     if include_fixture:
@@ -46,10 +54,9 @@ def owned_containers(include_fixture: bool = True) -> list[str]:
 def ownership_labels(
     role: str = "operational", tls_interception: bool = False
 ) -> dict[str, str]:
-    root = str(paths.workspace_root().resolve()).encode()
     return {
         "io.internet-proxy-locally.managed": "true",
-        "io.internet-proxy-locally.workspace": hashlib.sha256(root).hexdigest()[:16],
+        "io.internet-proxy-locally.workspace": workspace_id(),
         "io.internet-proxy-locally.role": role,
         "io.internet-proxy-locally.tls-interception": "true"
         if tls_interception
@@ -74,8 +81,10 @@ def remove_owned(backend: Backend, name: str) -> bool:
     return backend.remove_container(name)
 
 
-def running_engine(backend: Backend) -> str | None:
+def running_engine(backend: Backend, binding: Endpoint | None = None) -> str | None:
     for spec in all_specs():
+        if binding is not None:
+            spec = selected_spec(backend, spec.engine, binding)
         if backend.container_state(spec.container_name) == "running":
             return spec.engine
     return None
@@ -88,12 +97,18 @@ def start_engine(
     dns: str = "",
     keep_fixture: bool = False,
     tls_interception: bool = False,
+    binding: Endpoint | None = None,
 ) -> None:
     """Recreate one engine container on `config_path` and health-check it."""
     if keep_fixture and backend.name != "docker":
         raise Fail("the lab requires Docker")
     engine = spec.engine
-    host, port = endpoint()
+    host, port = binding if binding is not None else endpoint()
+    if binding is not None:
+        spec = replace(
+            spec, container_name=instance_spec(engine, binding).container_name
+        )
+    connect_host = probe_address(host)
     image = spec.image
     if not backend.image_present(image):
         raise Fail(f"image {image} not built yet — run `ipl --engine {engine} setup`")
@@ -113,22 +128,32 @@ def start_engine(
             (paths.fixture_tls_dir() / "ca.pem", "/fixture/ca.pem"),
         ]
 
-    # Engines share one endpoint; also remove stale fixtures from operational runs.
-    for name in owned_containers(include_fixture=not keep_fixture):
+    # Recreate only this endpoint; fixed-name lab cleanup stays in its lane.
+    if binding is None:
+        names = owned_containers(include_fixture=not keep_fixture)
+    else:
+        names = selected_container_names(backend, binding)
+    for name in dict.fromkeys(names):
         if remove_owned(backend, name):
             print(f"removed existing container {name}")
 
-    if not keep_fixture:
+    if not keep_fixture and ServiceSpec.load(DNS_FIXTURE).container_name in names:
         backend.remove_lab_network(FIXTURE_NETWORK_NAME, ownership_labels())
         backend.remove_lab_network(FIXTURE_PRIVATE_NETWORK_NAME, ownership_labels())
 
-    if port_listening(host, port):
+    if port_listening(connect_host, port):
         raise Fail(
             f"{host}:{port} is already in use by something this repository does not own — "
             "refusing to start (shut down the other service or free the port)"
         )
 
-    print(f"starting {engine} ({image}) on http://{host}:{port}")
+    print(f"starting {engine} ({image}) on http://{endpoint_text(host, port)}")
+    labels = ownership_labels(
+        "lab" if keep_fixture else "operational", tls_interception=tls_interception
+    )
+    labels.update(
+        {LABEL + "engine": engine, LABEL + "ip": host, LABEL + "port": str(port)}
+    )
     backend.run_detached(
         name=spec.container_name,
         image=image,
@@ -139,15 +164,13 @@ def start_engine(
         lab_network=FIXTURE_NETWORK_NAME if keep_fixture else "",
         environment={"SSL_CERT_FILE": "/fixture/ca.pem"} if keep_fixture else None,
         user=spec.tls_startup_user if tls_interception else "",
-        labels=ownership_labels(
-            "lab" if keep_fixture else "operational", tls_interception=tls_interception
-        ),
+        labels=labels,
     )
 
     def settled():
         """A verdict, or None while the engine is still coming up."""
-        if port_listening(host, port):
-            healthy, detail, retryable = probe_proxy(host, port)
+        if port_listening(connect_host, port):
+            healthy, detail, retryable = probe_proxy(connect_host, port)
             if healthy or not retryable:
                 return healthy, detail
         if backend.container_state(spec.container_name) != "running":
@@ -159,9 +182,20 @@ def start_engine(
         "timed out waiting for the proxy to listen",
     )
     expected_binding = (host, port, spec.internal_port)
-    if healthy and expected_binding not in backend.published_ports(spec.container_name):
+    actual_bindings = []
+    for published_host, published_port, internal_port in backend.published_ports(
+        spec.container_name
+    ):
+        try:
+            canonical_host, canonical_port = validate_endpoint(
+                published_host, published_port
+            )
+        except ValueError:
+            continue
+        actual_bindings.append((canonical_host, canonical_port, internal_port))
+    if healthy and expected_binding not in actual_bindings:
         healthy = False
-        detail = f"runtime did not honor loopback publication {expected_binding}"
+        detail = f"runtime did not honor requested publication {expected_binding}"
     if not healthy:
         logs = backend.tail_logs(spec.container_name)
         try:
@@ -178,7 +212,9 @@ def start_engine(
     print(f"healthy: {detail}")
 
 
-def egress_command(backend: Backend, engine: str | None, cli: str) -> list[str]:
+def egress_command(
+    backend: Backend, engine: str | None, cli: str, binding: Endpoint | None = None
+) -> list[str]:
     """The `checks.egress` invocation for whichever engine is running.
 
     Shared by `ipl check` and `ipl-lab check`, which differ only in
@@ -188,7 +224,7 @@ def egress_command(backend: Backend, engine: str | None, cli: str) -> list[str]:
     calling entry point so each lane's errors quote the command that fixes
     them.
     """
-    active = running_engine(backend)
+    active = running_engine(backend, binding)
     if not active:
         raise Fail(f"no engine is running — `{cli} up` first")
     if engine and engine != active:
@@ -197,13 +233,15 @@ def egress_command(backend: Backend, engine: str | None, cli: str) -> list[str]:
             f"`{cli} --engine {engine} up` first"
         )
     spec = ServiceSpec.load(active)
-    host, port = endpoint()
+    host, port = binding if binding is not None else endpoint()
+    if binding is not None:
+        spec = selected_spec(backend, active, binding)
     cmd = [
         sys.executable,
         "-m",
         "internet_proxy_locally.checks.egress",
         "--proxy",
-        f"http://{host}:{port}",
+        f"http://{endpoint_text(probe_address(host), port)}",
         "--engine",
         active,
         "--backend-bin",

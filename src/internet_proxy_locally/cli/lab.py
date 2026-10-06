@@ -65,13 +65,7 @@ def cmd_up(opts: argparse.Namespace) -> int:
 
 
 def cmd_down(opts: argparse.Namespace) -> int:
-    """Identical to `ipl down`, and delegated rather than repeated.
-
-    Both lanes remove every engine plus the DNS fixture: "what this
-    repository owns" has to have exactly one definition, or a container
-    added to one list and not the other survives a `down` in the other
-    lane.
-    """
+    """Remove fixed lab containers and networks, preserving operational instances."""
     return run_cli.cmd_down(opts)
 
 

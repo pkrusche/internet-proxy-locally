@@ -13,6 +13,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from internet_proxy_locally import paths
 from internet_proxy_locally.constants import ENGINES
 from internet_proxy_locally.errors import Fail
+from internet_proxy_locally.instances import Endpoint, endpoint_key
 from internet_proxy_locally.policy.config import PolicyConfig, load_policy_config
 from internet_proxy_locally.spec import ServiceSpec
 
@@ -127,6 +128,40 @@ def sync_policies(
 ) -> list[Path]:
     """Regenerate the engine configs from config.toml; return what changed."""
     return write_rendered(render_policies(config, tls_interception=tls_interception))
+
+
+def instance_config_destination(spec: ServiceSpec, binding: Endpoint) -> Path:
+    return (
+        paths.workspace_root()
+        / "state"
+        / "instances"
+        / endpoint_key(binding)
+        / Path(spec.config_file).name
+    )
+
+
+def sync_instance_policies(
+    binding: Endpoint, *, tls_interception: bool = False
+) -> list[Path]:
+    """Render once, preserving reviewed outputs and independent instance mounts."""
+    rendered = render_policies(tls_interception=tls_interception)
+    snapshots = {
+        instance_config_destination(ServiceSpec.load(engine), binding): rendered[
+            config_destination(ServiceSpec.load(engine))
+        ]
+        for engine in ENGINES
+    }
+    # Snapshot extra engine configuration as well; it is hand-maintained.
+    for engine in ENGINES:
+        spec = ServiceSpec.load(engine)
+        if spec.extra_config_file:
+            source = paths.workspace_root() / spec.extra_config_file
+            if not source.is_file():
+                raise Fail(f"missing config file: {source}")
+            snapshots[
+                instance_config_destination(spec, binding).parent / source.name
+            ] = source.read_text(encoding="utf-8")
+    return write_rendered(rendered) + write_rendered(snapshots)
 
 
 def write_rendered(rendered: dict[Path, str]) -> list[Path]:

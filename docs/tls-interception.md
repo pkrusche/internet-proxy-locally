@@ -46,7 +46,11 @@ If you suspect the private key has been read by anything untrusted
 (a compromised sandbox, a leaked backup of `state/`, a workstation you no
 longer trust):
 
-1. Stop the engine, then run `ipl ca rotate`. The validated pair is replaced
+1. Stop every proxy owned by this workspace on the selected backend, then run
+   `ipl ca rotate`. Use `ipl list` to find endpoints, `ipl --ip ADDRESS --port
+   PORT down` for each operational instance, and `ipl-lab down` for the lab.
+   The CA is shared across instances; rotation and `ca init --rebuild` refuse
+   while any owned proxy is running. The validated pair is replaced
    transactionally. A running process or old connection may retain old key
    material, so neither may be relied on after rotation. Anything that only had the
    old *public* cert cannot forge anything with it, but anything that had

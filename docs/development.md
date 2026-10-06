@@ -22,8 +22,9 @@ measurements, `release.py` permits only the documented SNI/raw-tunnel/mixed-DNS
 limitations of specific engines and TLS modes; missing checks, skips, errors,
 and new policy failures fail the gate. Comparative `ipl-check` / `ipl-lab measure`
 exit codes still describe measurement execution, not release acceptance.
-Container names are shared: stop the operational instance before running the
-gate. Its separate `IPL_ROOT` cannot remove an instance owned by another workspace.
+The gate checks for conflicting endpoint-specific names and fixed lab/legacy
+names before starting. Its separate `IPL_ROOT` cannot remove an instance owned
+by another workspace. Other operational endpoints can remain running.
 
 Unresolved Iron denial checks print `Iron audit correlation` diagnostics to stderr:
 the host's inclusive check window, audit timestamps, signed offsets from each
@@ -41,6 +42,8 @@ transaction ordering, and duplicate/conflict rejection are unchanged.
 - `policy` validates and renders operational policy. `lab` adds fixture
   domains through the same renderer. Operational code must not import `lab`.
 - `spec` defines container names, ports, and mounts; `images` defines tags.
+- `instances` derives endpoint-specific names and discovers managed proxies
+  across workspaces. Operational policy snapshots live under `state/instances/`.
 - `checks.egress` provides `ipl-check`; `report` renders measured findings.
 - `Fail` represents actionable errors, printed by the lifecycle CLIs with
   exit status 1. Unexpected exceptions retain their tracebacks.

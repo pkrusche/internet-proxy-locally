@@ -10,6 +10,7 @@ from pathlib import Path
 
 from internet_proxy_locally.constants import BACKENDS, FIXTURE_PRIVATE_NETWORK_NAME
 from internet_proxy_locally.errors import Fail
+from internet_proxy_locally.net import endpoint_text
 
 COMMAND_TIMEOUT = 30
 BUILD_TIMEOUT = 1800
@@ -88,6 +89,14 @@ class Backend:
         return entry if isinstance(entry, dict) else {}
 
     # -- containers ---------------------------------------------------------
+
+    def container_names(self) -> list[str]:
+        """Enumerate running and stopped containers on this backend."""
+        if self.name == "docker":
+            proc = self._run("ps", "--all", "--format", "{{.Names}}")
+        else:
+            proc = self._run("list", "--all", "--quiet")
+        return [name.strip() for name in proc.stdout.splitlines() if name.strip()]
 
     def container_state(self, name: str) -> str:
         """Return 'running', 'stopped', or 'absent'."""
@@ -277,7 +286,10 @@ class Backend:
             cmd += ["--label", f"{key}={value}"]
         if publish is not None:
             publish_host, publish_port = publish
-            cmd += ["--publish", f"{publish_host}:{publish_port}:{internal_port}"]
+            cmd += [
+                "--publish",
+                f"{endpoint_text(publish_host, publish_port)}:{internal_port}",
+            ]
         if dns:
             # Both CLIs spell this `--dns <ip>`. Docker also has --add-host,
             # which would be a tidier way to inject a single record, but
